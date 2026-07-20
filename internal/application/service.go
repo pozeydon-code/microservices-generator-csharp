@@ -48,6 +48,7 @@ type GenerateRequest struct {
 }
 
 type GenerationPlan struct {
+	Config        ConfigSummary
 	OutputDir     string
 	OutputAction  string
 	ForceRequired bool
@@ -56,6 +57,16 @@ type GenerationPlan struct {
 	Files         []PlannedFile
 
 	generatedFiles []GeneratedFile
+}
+
+type ConfigSummary struct {
+	SolutionName        string
+	SolutionDescription string
+	TargetFramework     string
+	ServiceCount        int
+	EntityCount         int
+	ValueObjectCount    int
+	ServiceNames        []string
 }
 
 type PlannedFile struct {
@@ -137,6 +148,7 @@ func (s Service) PlanGeneration(request GenerateRequest) (GenerationPlan, error)
 	}
 
 	plan := GenerationPlan{
+		Config:         summarizeConfig(cfg),
 		OutputDir:      outputPlan.OutputDir,
 		OutputAction:   outputPlan.Action,
 		ForceRequired:  outputPlan.ForceRequired,
@@ -149,6 +161,22 @@ func (s Service) PlanGeneration(request GenerateRequest) (GenerationPlan, error)
 		plan.Files[index] = PlannedFile{Path: file.Path, Action: file.Action}
 	}
 	return plan, nil
+}
+
+func summarizeConfig(cfg spec.Config) ConfigSummary {
+	summary := ConfigSummary{
+		SolutionName:        cfg.Solution.Name,
+		SolutionDescription: cfg.Solution.Description,
+		TargetFramework:     cfg.TargetFramework(),
+		ServiceCount:        len(cfg.Services),
+		ServiceNames:        make([]string, len(cfg.Services)),
+	}
+	for index, service := range cfg.Services {
+		summary.ServiceNames[index] = service.Name
+		summary.EntityCount += len(service.Entities)
+		summary.ValueObjectCount += len(service.ValueObjects)
+	}
+	return summary
 }
 
 func (s Service) Generate(request GenerateRequest) (GenerateResult, error) {

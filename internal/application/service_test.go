@@ -63,6 +63,18 @@ func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T)
 	if plan.FileCount != 2 {
 		t.Fatalf("expected file count 2, got %d", plan.FileCount)
 	}
+	expectedSummary := ConfigSummary{
+		SolutionName:        "CommercePlatform",
+		SolutionDescription: "Product management.",
+		TargetFramework:     "net8.0",
+		ServiceCount:        2,
+		EntityCount:         3,
+		ValueObjectCount:    3,
+		ServiceNames:        []string{"ProductService", "OrderService"},
+	}
+	if !reflect.DeepEqual(plan.Config, expectedSummary) {
+		t.Fatalf("expected config summary %#v, got %#v", expectedSummary, plan.Config)
+	}
 	expectedFiles := []PlannedFile{{Path: "README.md", Action: "replace"}, {Path: "src/ProductService/Product.cs", Action: "replace"}}
 	if !reflect.DeepEqual(plan.Files, expectedFiles) {
 		t.Fatalf("expected planned files %#v, got %#v", expectedFiles, plan.Files)
@@ -282,10 +294,14 @@ func (planner fakeOutputPlanner) PlanOutput(outputDir string, files []GeneratedF
 
 func validConfig() spec.Config {
 	return spec.Config{
-		Solution: spec.Solution{Name: "CommercePlatform", Description: "Product management."},
+		Generation: spec.GenerationOptions{TargetFramework: "net8.0"},
+		Solution:   spec.Solution{Name: "CommercePlatform", Description: "Product management."},
 		Services: []spec.Service{
 			{
 				Name: "ProductService",
+				ValueObjects: []spec.ValueObject{
+					{Name: "ProductName", Type: "string"},
+				},
 				Entities: []spec.Entity{
 					{
 						Name: "Product",
@@ -294,6 +310,17 @@ func validConfig() spec.Config {
 							{Name: "Name", Type: "string"},
 						},
 					},
+				},
+			},
+			{
+				Name: "OrderService",
+				ValueObjects: []spec.ValueObject{
+					{Name: "OrderNumber", Type: "string"},
+					{Name: "Money", Type: "decimal"},
+				},
+				Entities: []spec.Entity{
+					{Name: "Order"},
+					{Name: "OrderLine"},
 				},
 			},
 		},

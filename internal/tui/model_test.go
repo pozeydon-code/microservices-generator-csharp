@@ -11,6 +11,15 @@ import (
 
 func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	plan := application.GenerationPlan{
+		Config: application.ConfigSummary{
+			SolutionName:        "CommercePlatform",
+			SolutionDescription: "Product management.",
+			TargetFramework:     "net8.0",
+			ServiceCount:        2,
+			EntityCount:         3,
+			ValueObjectCount:    3,
+			ServiceNames:        []string{"ProductService", "OrderService"},
+		},
 		OutputDir:     "/tmp/generated",
 		OutputAction:  "replace",
 		ForceRequired: true,
@@ -29,6 +38,11 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	view := NewModel(plan, application.GenerateRequest{}, nil).View()
 
 	assertContains(t, view, "Microgen")
+	assertContains(t, view, "Product: CommercePlatform")
+	assertContains(t, view, "Description: Product management.")
+	assertContains(t, view, "Target framework: net8.0")
+	assertContains(t, view, "Services: 2, entities: 3, value objects: 3")
+	assertContains(t, view, "Service names: ProductService, OrderService")
 	assertContains(t, view, "Output directory: /tmp/generated")
 	assertContains(t, view, "Output action: replace")
 	assertContains(t, view, "Force: required=yes, used=yes")

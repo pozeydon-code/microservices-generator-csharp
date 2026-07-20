@@ -90,6 +90,16 @@ func (m Model) View() string {
 	var builder strings.Builder
 	fmt.Fprintln(&builder, "Microgen")
 	fmt.Fprintln(&builder)
+	fmt.Fprintf(&builder, "Product: %s\n", m.plan.Config.SolutionName)
+	if m.plan.Config.SolutionDescription != "" {
+		fmt.Fprintf(&builder, "Description: %s\n", m.plan.Config.SolutionDescription)
+	}
+	fmt.Fprintf(&builder, "Target framework: %s\n", m.plan.Config.TargetFramework)
+	fmt.Fprintf(&builder, "Services: %d, entities: %d, value objects: %d\n", m.plan.Config.ServiceCount, m.plan.Config.EntityCount, m.plan.Config.ValueObjectCount)
+	if len(m.plan.Config.ServiceNames) > 0 {
+		fmt.Fprintf(&builder, "Service names: %s\n", strings.Join(m.plan.Config.ServiceNames, ", "))
+	}
+	fmt.Fprintln(&builder)
 	fmt.Fprintf(&builder, "Output directory: %s\n", m.plan.OutputDir)
 	fmt.Fprintf(&builder, "Output action: %s\n", m.plan.OutputAction)
 	fmt.Fprintf(&builder, "Force: required=%s, used=%s\n", yesNo(m.plan.ForceRequired), yesNo(m.plan.ForceUsed))
