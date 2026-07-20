@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -253,6 +254,61 @@ func TestGenerateSlnxReferencesAllProjectsDeterministically(t *testing.T) {
 	assertContains(t, slnx, `  <Project Path="src/ProductService/ProductService.Api/ProductService.Api.csproj" />`)
 	assertContains(t, slnx, `  <Project Path="tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj" />`)
 	assertNotContains(t, slnx, "ProjectConfigurationPlatforms")
+}
+
+func TestGenerateExampleSolutionFilesAreRuntimeParseable(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	dotnet, dotnetErr := exec.LookPath("dotnet")
+
+	tests := []struct {
+		name               string
+		targetFramework    string
+		solutionFormat     string
+		expectedSolution   string
+		unexpectedSolution string
+		validateWithDotnet bool
+	}{
+		{name: "net8 default", targetFramework: "net8.0", expectedSolution: "CommercePlatform.sln", unexpectedSolution: "CommercePlatform.slnx"},
+		{name: "net8 explicit sln", targetFramework: "net8.0", solutionFormat: "sln", expectedSolution: "CommercePlatform.sln", unexpectedSolution: "CommercePlatform.slnx"},
+		{name: "net10 default", targetFramework: "net10.0", expectedSolution: "CommercePlatform.slnx", unexpectedSolution: "CommercePlatform.sln", validateWithDotnet: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := exampleConfig(t)
+			cfg.Generation.TargetFramework = tt.targetFramework
+			cfg.Generation.SolutionFormat = tt.solutionFormat
+
+			files, err := gen.Generate(cfg)
+			if err != nil {
+				t.Fatalf("generate: %v", err)
+			}
+			outputDir := t.TempDir()
+			writeGeneratedFiles(t, outputDir, files)
+
+			assertPathExists(t, filepath.Join(outputDir, tt.expectedSolution))
+			assertPathMissing(t, filepath.Join(outputDir, tt.unexpectedSolution))
+
+			if !tt.validateWithDotnet {
+				return
+			}
+			if testing.Short() {
+				t.Skip("skipping dotnet solution parse in short mode")
+			}
+			if dotnetErr != nil {
+				t.Skipf("dotnet not installed: %v", dotnetErr)
+			}
+			cmd := exec.Command(dotnet, "sln", filepath.Join(outputDir, tt.expectedSolution), "list")
+			cmd.Dir = outputDir
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("dotnet sln list failed: %v\n%s", err, output)
+			}
+		})
+	}
 }
 
 func TestGenerateUsesPluralizedEntityNamesForFeatureAndRoute(t *testing.T) {
@@ -537,6 +593,46 @@ func generatedContent(t *testing.T, files []GeneratedFile, generatedPath string)
 	}
 	t.Fatalf("generated file %s not found", generatedPath)
 	return nil
+}
+
+func exampleConfig(t *testing.T) spec.Config {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join("..", "..", "examples", "product-service.json"))
+	if err != nil {
+		t.Fatalf("read example config: %v", err)
+	}
+	var cfg spec.Config
+	if err := json.Unmarshal(content, &cfg); err != nil {
+		t.Fatalf("decode example config: %v", err)
+	}
+	return cfg
+}
+
+func writeGeneratedFiles(t *testing.T, outputDir string, files []GeneratedFile) {
+	t.Helper()
+	for _, file := range files {
+		path := filepath.Join(outputDir, file.Path)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatalf("create generated parent: %v", err)
+		}
+		if err := os.WriteFile(path, file.Content, 0644); err != nil {
+			t.Fatalf("write generated file: %v", err)
+		}
+	}
+}
+
+func assertPathExists(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected %s to exist: %v", path, err)
+	}
+}
+
+func assertPathMissing(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected %s to be missing, got %v", path, err)
+	}
 }
 
 func testConfig() spec.Config {

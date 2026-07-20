@@ -491,6 +491,9 @@ func (m Model) View() string {
 		fmt.Fprintf(&builder, "Description: %s\n", m.plan.Config.SolutionDescription)
 	}
 	fmt.Fprintf(&builder, "Target framework: %s\n", m.plan.Config.TargetFramework)
+	if m.plan.Config.SolutionFormat != "" {
+		fmt.Fprintf(&builder, "Solution format: .%s\n", m.plan.Config.SolutionFormat)
+	}
 	fmt.Fprintf(&builder, "Services: %d, entities: %d, value objects: %d\n", m.plan.Config.ServiceCount, m.plan.Config.EntityCount, m.plan.Config.ValueObjectCount)
 	if len(m.plan.Config.ServiceNames) > 0 {
 		fmt.Fprintf(&builder, "Service names: %s\n", strings.Join(m.plan.Config.ServiceNames, ", "))
@@ -593,10 +596,10 @@ func (m Model) renderSettingsEditor(builder *strings.Builder) {
 	fmt.Fprintf(builder, "%s Description: %s\n", editCursor(m.edit.focused == editFieldDescription), m.edit.description.string())
 	fmt.Fprintf(builder, "%s Target framework: %s\n", editCursor(m.edit.focused == editFieldTargetFramework), m.edit.targetFramework.string())
 	if len(m.targetFrameworkSuggestions) > 0 {
-		fmt.Fprintf(builder, "  Suggestions: %s\n", strings.Join(m.targetFrameworkSuggestions, ", "))
+		fmt.Fprintf(builder, "  Suggestions (newest first): %s\n", strings.Join(m.targetFrameworkSuggestions, ", "))
 	}
 	fmt.Fprintln(builder)
-	fmt.Fprintln(builder, "Type a major or TFM such as 10 or net10.0. Ctrl+n cycles suggestions. Enter saves. Esc cancels.")
+	fmt.Fprintln(builder, "Type a major or TFM such as 6, 7, 10, or net10.0. Ctrl+n cycles suggestions. Enter saves. Esc cancels.")
 	fmt.Fprintln(builder, "Tab/down and shift+tab/up move fields.")
 }
 

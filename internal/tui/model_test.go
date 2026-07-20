@@ -16,6 +16,7 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 			SolutionName:        "CommercePlatform",
 			SolutionDescription: "Product management.",
 			TargetFramework:     "net8.0",
+			SolutionFormat:      "sln",
 			ServiceCount:        2,
 			EntityCount:         3,
 			ValueObjectCount:    3,
@@ -42,6 +43,7 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	assertContains(t, view, "Product: CommercePlatform")
 	assertContains(t, view, "Description: Product management.")
 	assertContains(t, view, "Target framework: net8.0")
+	assertContains(t, view, "Solution format: .sln")
 	assertContains(t, view, "Services: 2, entities: 3, value objects: 3")
 	assertContains(t, view, "Service names: ProductService, OrderService")
 	assertContains(t, view, "Output directory: /tmp/generated")
@@ -608,8 +610,8 @@ func TestModelViewShowsTargetFrameworkSuggestionsAndCyclesThem(t *testing.T) {
 	model = updated.(Model)
 
 	view := model.View()
-	assertContains(t, view, "Suggestions: net10.0, net9.0, net8.0")
-	assertContains(t, view, "Type a major or TFM such as 10 or net10.0.")
+	assertContains(t, view, "Suggestions (newest first): net10.0, net9.0, net8.0")
+	assertContains(t, view, "Type a major or TFM such as 6, 7, 10, or net10.0.")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
 	model = updated.(Model)
