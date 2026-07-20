@@ -61,9 +61,6 @@ func (w FilesystemWriter) Write(outputDir string, files []generator.GeneratedFil
 }
 
 func (w FilesystemWriter) WriteDetailed(outputDir string, files []generator.GeneratedFile, force bool) (result WriteResult, err error) {
-	if strings.TrimSpace(outputDir) == "" {
-		return WriteResult{}, errors.New("output directory is required")
-	}
 	if w.rename == nil {
 		w.rename = os.Rename
 	}
@@ -74,7 +71,7 @@ func (w FilesystemWriter) WriteDetailed(outputDir string, files []generator.Gene
 		w.remove = os.Remove
 	}
 
-	root, err := canonicalPublishPath(outputDir)
+	root, err := CanonicalPublishPath(outputDir)
 	if err != nil {
 		return WriteResult{}, err
 	}
@@ -322,7 +319,12 @@ type rootState struct {
 	owned  bool
 }
 
-func canonicalPublishPath(outputDir string) (string, error) {
+// CanonicalPublishPath resolves the output path using the same safety contract
+// enforced before publishing generated files.
+func CanonicalPublishPath(outputDir string) (string, error) {
+	if strings.TrimSpace(outputDir) == "" {
+		return "", errors.New("output directory is required")
+	}
 	abs, err := filepath.Abs(outputDir)
 	if err != nil {
 		return "", fmt.Errorf("resolve output directory: %w", err)

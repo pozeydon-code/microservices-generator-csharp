@@ -7,9 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/pozeydon-code/generator-microservices-go/internal/configloader"
-	"github.com/pozeydon-code/generator-microservices-go/internal/generator"
-	"github.com/pozeydon-code/generator-microservices-go/internal/output"
+	"github.com/pozeydon-code/generator-microservices-go/internal/application"
 )
 
 const (
@@ -70,24 +68,12 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 		return ExitUsage
 	}
 
-	cfg, err := configloader.LoadJSON(*configPath)
+	service, err := application.DefaultService()
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return ExitError
 	}
-
-	gen, err := generator.New()
-	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return ExitError
-	}
-	files, err := gen.Generate(cfg)
-	if err != nil {
-		fmt.Fprintf(stderr, "%v\n", err)
-		return ExitError
-	}
-
-	result, err := output.NewFilesystemWriter().WriteDetailed(*outputDir, files, *force)
+	result, err := service.Generate(application.GenerateRequest{ConfigPath: *configPath, OutputDir: *outputDir, Force: *force})
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return ExitError
@@ -96,7 +82,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "Warning: %s\n", result.Warning)
 	}
 
-	fmt.Fprintf(stdout, "Generated %d files in %s\n", len(files), result.OutputDir)
+	fmt.Fprintf(stdout, "Generated %d files in %s\n", result.Plan.FileCount, result.OutputDir)
 	return ExitOK
 }
 

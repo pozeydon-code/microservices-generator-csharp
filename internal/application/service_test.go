@@ -1,0 +1,265 @@
+package application
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/pozeydon-code/generator-microservices-go/internal/spec"
+)
+
+func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T) {
+	cfg := validConfig()
+	loader := &fakeConfigLoader{cfg: cfg}
+	validator := &fakeConfigValidator{}
+	gen := &fakeGenerator{files: []GeneratedFile{
+		{Path: "README.md", Content: []byte("readme")},
+		{Path: "src/ProductService/Product.cs", Content: []byte("entity")},
+	}}
+	writer := &fakeOutputWriter{}
+	service := NewService(Ports{
+		ConfigLoader:            loader,
+		ConfigValidator:         validator,
+		Generator:               gen,
+		OutputWriter:            writer,
+		OutputDirectoryResolver: fakeOutputResolver{outputDir: "/abs/generated"},
+	})
+
+	plan, err := service.PlanGeneration(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"})
+
+	if err != nil {
+		t.Fatalf("expected plan, got %v", err)
+	}
+	if loader.path != "microgen.json" {
+		t.Fatalf("expected config path to be loaded, got %q", loader.path)
+	}
+	if !reflect.DeepEqual(validator.cfg, cfg) {
+		t.Fatalf("expected validator to receive loaded config")
+	}
+	if !reflect.DeepEqual(gen.cfg, cfg) {
+		t.Fatalf("expected generator to receive loaded config")
+	}
+	if writer.called {
+		t.Fatal("expected planning not to write output")
+	}
+	if plan.OutputDir != "/abs/generated" {
+		t.Fatalf("expected resolved output dir, got %q", plan.OutputDir)
+	}
+	if plan.FileCount != 2 {
+		t.Fatalf("expected file count 2, got %d", plan.FileCount)
+	}
+	expectedFiles := []PlannedFile{{Path: "README.md"}, {Path: "src/ProductService/Product.cs"}}
+	if !reflect.DeepEqual(plan.Files, expectedFiles) {
+		t.Fatalf("expected planned files %#v, got %#v", expectedFiles, plan.Files)
+	}
+}
+
+func TestServiceGenerateWritesGeneratedFilesThroughOutputPort(t *testing.T) {
+	files := []GeneratedFile{{Path: "README.md", Content: []byte("readme")}}
+	writer := &fakeOutputWriter{result: WriteResult{OutputDir: "/published/generated", Warning: "cleanup warning"}}
+	service := NewService(Ports{
+		ConfigLoader:            &fakeConfigLoader{cfg: validConfig()},
+		ConfigValidator:         &fakeConfigValidator{},
+		Generator:               &fakeGenerator{files: files},
+		OutputWriter:            writer,
+		OutputDirectoryResolver: fakeOutputResolver{outputDir: "/planned/generated"},
+	})
+
+	result, err := service.Generate(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated", Force: true})
+
+	if err != nil {
+		t.Fatalf("expected generate success, got %v", err)
+	}
+	if writer.outputDir != "generated" || !writer.force {
+		t.Fatalf("expected writer outputDir generated with force, got outputDir=%q force=%v", writer.outputDir, writer.force)
+	}
+	if !reflect.DeepEqual(writer.files, files) {
+		t.Fatalf("expected writer to receive generated files")
+	}
+	if result.OutputDir != "/published/generated" || result.Warning != "cleanup warning" {
+		t.Fatalf("unexpected write result: %#v", result)
+	}
+	if result.Plan.FileCount != 1 || result.Plan.OutputDir != "/planned/generated" {
+		t.Fatalf("unexpected plan in generate result: %#v", result.Plan)
+	}
+}
+
+func TestServicePlanGenerationStopsAtValidationError(t *testing.T) {
+	expectedErr := errors.New("invalid config")
+	gen := &fakeGenerator{}
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validConfig()},
+		ConfigValidator: &fakeConfigValidator{err: expectedErr},
+		Generator:       gen,
+		OutputWriter:    &fakeOutputWriter{},
+	})
+
+	_, err := service.PlanGeneration(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"})
+
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+	if gen.called {
+		t.Fatal("expected validation error to stop before generation")
+	}
+}
+
+func TestDefaultServicePlanGenerationUsesRealPortsWithoutWriting(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "microgen.json")
+	if err := os.WriteFile(configPath, []byte(validJSONConfig), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	outputDir := filepath.Join(t.TempDir(), "generated")
+	service, err := DefaultService()
+	if err != nil {
+		t.Fatalf("create default service: %v", err)
+	}
+
+	plan, err := service.PlanGeneration(GenerateRequest{ConfigPath: configPath, OutputDir: outputDir})
+
+	if err != nil {
+		t.Fatalf("expected plan, got %v", err)
+	}
+	if plan.OutputDir != outputDir {
+		t.Fatalf("expected output dir %q, got %q", outputDir, plan.OutputDir)
+	}
+	if plan.FileCount != 44 || len(plan.Files) != 44 {
+		t.Fatalf("expected 44 planned files, got count=%d len=%d", plan.FileCount, len(plan.Files))
+	}
+	if plan.Files[0].Path != "CommercePlatform.sln" {
+		t.Fatalf("expected first deterministic planned path, got %q", plan.Files[0].Path)
+	}
+	if _, err := os.Stat(outputDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected planning not to create output dir, stat err=%v", err)
+	}
+}
+
+func TestDefaultServicePlanGenerationRejectsSymlinkOutputAncestor(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "microgen.json")
+	if err := os.WriteFile(configPath, []byte(validJSONConfig), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	root := t.TempDir()
+	realOutputParent := filepath.Join(root, "real-output-parent")
+	if err := os.Mkdir(realOutputParent, 0o755); err != nil {
+		t.Fatalf("create real output parent: %v", err)
+	}
+	symlinkOutputParent := filepath.Join(root, "linked-output-parent")
+	if err := os.Symlink(realOutputParent, symlinkOutputParent); err != nil {
+		t.Fatalf("create symlink output parent: %v", err)
+	}
+	service, err := DefaultService()
+	if err != nil {
+		t.Fatalf("create default service: %v", err)
+	}
+
+	_, err = service.PlanGeneration(GenerateRequest{ConfigPath: configPath, OutputDir: filepath.Join(symlinkOutputParent, "generated")})
+
+	if err == nil {
+		t.Fatal("expected symlink output ancestor to be rejected")
+	}
+	if !strings.Contains(err.Error(), "because existing ancestor") || !strings.Contains(err.Error(), "is a symlink") {
+		t.Fatalf("expected symlink ancestor rejection, got %v", err)
+	}
+}
+
+type fakeConfigLoader struct {
+	path string
+	cfg  spec.Config
+	err  error
+}
+
+func (loader *fakeConfigLoader) LoadConfig(path string) (spec.Config, error) {
+	loader.path = path
+	return loader.cfg, loader.err
+}
+
+type fakeConfigValidator struct {
+	cfg spec.Config
+	err error
+}
+
+func (validator *fakeConfigValidator) ValidateConfig(cfg spec.Config) error {
+	validator.cfg = cfg
+	return validator.err
+}
+
+type fakeGenerator struct {
+	called bool
+	cfg    spec.Config
+	files  []GeneratedFile
+	err    error
+}
+
+func (gen *fakeGenerator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
+	gen.called = true
+	gen.cfg = cfg
+	return gen.files, gen.err
+}
+
+type fakeOutputWriter struct {
+	called    bool
+	outputDir string
+	files     []GeneratedFile
+	force     bool
+	result    WriteResult
+	err       error
+}
+
+func (writer *fakeOutputWriter) WriteGeneration(outputDir string, files []GeneratedFile, force bool) (WriteResult, error) {
+	writer.called = true
+	writer.outputDir = outputDir
+	writer.files = files
+	writer.force = force
+	return writer.result, writer.err
+}
+
+type fakeOutputResolver struct {
+	outputDir string
+	err       error
+}
+
+func (resolver fakeOutputResolver) ResolveOutputDir(string) (string, error) {
+	return resolver.outputDir, resolver.err
+}
+
+func validConfig() spec.Config {
+	return spec.Config{
+		Solution: spec.Solution{Name: "CommercePlatform", Description: "Product management."},
+		Services: []spec.Service{
+			{
+				Name: "ProductService",
+				Entities: []spec.Entity{
+					{
+						Name: "Product",
+						Fields: []spec.Field{
+							{Name: "Id", Type: "Guid"},
+							{Name: "Name", Type: "string"},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+const validJSONConfig = `{
+  "solution": { "name": "CommercePlatform", "description": "Product management." },
+  "services": [
+    {
+      "name": "ProductService",
+      "entities": [
+        {
+          "name": "Product",
+          "fields": [
+            { "name": "Id", "type": "Guid" },
+            { "name": "Name", "type": "string" }
+          ]
+        }
+      ]
+    }
+  ]
+}`
