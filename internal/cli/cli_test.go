@@ -110,7 +110,7 @@ func TestRunTUIReturnsNonZeroForInvalidConfigBeforeStartingProgram(t *testing.T)
 	var stderr bytes.Buffer
 	programStarted := false
 	originalRunTUIProgram := runTUIProgram
-	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, generate tui.GenerateFunc) error {
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc) error {
 		programStarted = true
 		return nil
 	}
@@ -140,13 +140,22 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 	var stderr bytes.Buffer
 	var capturedPlan application.GenerationPlan
 	var capturedRequest application.GenerateRequest
+	refreshCalled := false
 	generateCalled := false
 	programStarted := false
 	originalRunTUIProgram := runTUIProgram
-	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, generate tui.GenerateFunc) error {
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc) error {
 		programStarted = true
 		capturedPlan = plan
 		capturedRequest = request
+		refreshedPlan, err := planFunc(request)
+		if err != nil {
+			t.Fatalf("expected refresh action to succeed: %v", err)
+		}
+		if refreshedPlan.FileCount != 44 || refreshedPlan.OutputDir != outputDir {
+			t.Fatalf("expected refreshed plan for output dir %s, got %#v", outputDir, refreshedPlan)
+		}
+		refreshCalled = true
 		result, err := generate(request)
 		if err != nil {
 			t.Fatalf("expected generation action to succeed: %v", err)
@@ -173,8 +182,8 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 	if capturedRequest.ConfigPath != configPath || capturedRequest.OutputDir != outputDir || !capturedRequest.Force {
 		t.Fatalf("expected generation request to be passed to TUI, got %#v", capturedRequest)
 	}
-	if !generateCalled {
-		t.Fatal("expected generation action to be passed to TUI")
+	if !refreshCalled || !generateCalled {
+		t.Fatalf("expected refresh and generation actions to be passed to TUI, refresh=%t generate=%t", refreshCalled, generateCalled)
 	}
 	if stdout.String() != "" || stderr.String() != "" {
 		t.Fatalf("expected no CLI output around TUI, got stdout %q stderr %q", stdout.String(), stderr.String())

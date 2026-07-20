@@ -8,15 +8,24 @@ import (
 	"github.com/pozeydon-code/generator-microservices-go/internal/application"
 )
 
-const plannedFilePreviewLimit = 5
-const navigationHelp = "Navigate files: up/down, k/j, pgup/pgdown, home/end."
+const (
+	defaultFileWindowRows = 5
+	minFileWindowRows     = 3
+	maxFileWindowRows     = 12
+	reservedViewRows      = 18
+)
 
+const readyHelp = "Navigate files: up/down, k/j, pgup/pgdown, home/end. Press r to refresh the plan, g to generate."
+const generatedHelp = "Generation is complete. Navigate files: up/down, k/j, pgup/pgdown, home/end. Press r to refresh the plan."
+
+type PlanFunc func(application.GenerateRequest) (application.GenerationPlan, error)
 type GenerateFunc func(application.GenerateRequest) (application.GenerateResult, error)
 
 type modelStatus int
 
 const (
 	statusReady modelStatus = iota
+	statusRefreshing
 	statusGenerating
 	statusGenerated
 	statusFailed
@@ -25,20 +34,23 @@ const (
 type Model struct {
 	plan       application.GenerationPlan
 	request    application.GenerateRequest
+	planFunc   PlanFunc
 	generate   GenerateFunc
 	status     modelStatus
 	result     application.GenerateResult
 	err        error
+	errContext string
 	fileCursor int
 	fileOffset int
+	windowRows int
 }
 
-func NewModel(plan application.GenerationPlan, request application.GenerateRequest, generate GenerateFunc) Model {
-	return Model{plan: plan, request: request, generate: generate, status: statusReady}
+func NewModel(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc) Model {
+	return Model{plan: plan, request: request, planFunc: planFunc, generate: generate, status: statusReady, windowRows: defaultFileWindowRows}
 }
 
-func Run(plan application.GenerationPlan, request application.GenerateRequest, generate GenerateFunc) error {
-	_, err := tea.NewProgram(NewModel(plan, request, generate)).Run()
+func Run(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc) error {
+	_, err := tea.NewProgram(NewModel(plan, request, planFunc, generate)).Run()
 	return err
 }
 
@@ -48,6 +60,10 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.windowRows = visibleFileRows(msg.Height)
+		m.clampFileCursor()
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
@@ -56,60 +72,87 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 		case "up", "k":
-			if m.status == statusGenerating {
+			if m.status == statusGenerating || m.status == statusRefreshing {
 				return m, nil
 			}
 			m.moveFileCursor(-1)
 			return m, nil
 		case "down", "j":
-			if m.status == statusGenerating {
+			if m.status == statusGenerating || m.status == statusRefreshing {
 				return m, nil
 			}
 			m.moveFileCursor(1)
 			return m, nil
 		case "home":
-			if m.status == statusGenerating {
+			if m.status == statusGenerating || m.status == statusRefreshing {
 				return m, nil
 			}
 			m.fileCursor = 0
 			m.fileOffset = 0
 			return m, nil
 		case "end":
-			if m.status == statusGenerating {
+			if m.status == statusGenerating || m.status == statusRefreshing {
 				return m, nil
 			}
 			m.fileCursor = len(m.plan.Files) - 1
 			m.clampFileCursor()
 			return m, nil
 		case "pgup":
-			if m.status == statusGenerating {
+			if m.status == statusGenerating || m.status == statusRefreshing {
 				return m, nil
 			}
-			m.moveFileCursor(-plannedFilePreviewLimit)
+			m.moveFileCursor(-m.visibleFileRows())
 			return m, nil
 		case "pgdown":
-			if m.status == statusGenerating {
+			if m.status == statusGenerating || m.status == statusRefreshing {
 				return m, nil
 			}
-			m.moveFileCursor(plannedFilePreviewLimit)
+			m.moveFileCursor(m.visibleFileRows())
 			return m, nil
+		case "r":
+			if m.status == statusGenerating || m.status == statusRefreshing {
+				return m, nil
+			}
+			m.status = statusRefreshing
+			m.err = nil
+			m.errContext = ""
+			return m, m.planCmd()
 		case "g":
-			if m.status != statusReady && m.status != statusFailed {
+			if m.status == statusRefreshing || (m.status != statusReady && m.status != statusFailed) {
 				return m, nil
 			}
 			m.status = statusGenerating
+			m.err = nil
+			m.errContext = ""
 			return m, m.generateCmd()
 		}
+	case planFinishedMsg:
+		if msg.err != nil {
+			m.status = statusFailed
+			m.err = msg.err
+			m.errContext = "Refresh"
+			return m, nil
+		}
+		m.status = statusReady
+		m.plan = msg.plan
+		m.result = application.GenerateResult{}
+		m.err = nil
+		m.errContext = ""
+		m.clampFileCursor()
+		return m, nil
+
 	case generationFinishedMsg:
 		if msg.err != nil {
 			m.status = statusFailed
 			m.err = msg.err
+			m.errContext = "Generation"
 			return m, nil
 		}
 		m.status = statusGenerated
 		m.result = msg.result
 		m.plan = msg.result.Plan
 		m.err = nil
+		m.errContext = ""
 		m.clampFileCursor()
 		return m, nil
 	}
@@ -137,10 +180,11 @@ func (m *Model) clampFileCursor() {
 	if m.fileOffset > m.fileCursor {
 		m.fileOffset = m.fileCursor
 	}
-	if m.fileCursor >= m.fileOffset+plannedFilePreviewLimit {
-		m.fileOffset = m.fileCursor - plannedFilePreviewLimit + 1
+	rows := m.visibleFileRows()
+	if m.fileCursor >= m.fileOffset+rows {
+		m.fileOffset = m.fileCursor - rows + 1
 	}
-	lastOffset := fileCount - plannedFilePreviewLimit
+	lastOffset := fileCount - rows
 	if lastOffset < 0 {
 		lastOffset = 0
 	}
@@ -152,9 +196,42 @@ func (m *Model) clampFileCursor() {
 	}
 }
 
+func (m Model) visibleFileRows() int {
+	if m.windowRows == 0 {
+		return defaultFileWindowRows
+	}
+	return m.windowRows
+}
+
+func visibleFileRows(height int) int {
+	if height <= 0 {
+		return defaultFileWindowRows
+	}
+	rows := height - reservedViewRows
+	if rows < minFileWindowRows {
+		return minFileWindowRows
+	}
+	if rows > maxFileWindowRows {
+		return maxFileWindowRows
+	}
+	return rows
+}
+
+type planFinishedMsg struct {
+	plan application.GenerationPlan
+	err  error
+}
+
 type generationFinishedMsg struct {
 	result application.GenerateResult
 	err    error
+}
+
+func (m Model) planCmd() tea.Cmd {
+	return func() tea.Msg {
+		plan, err := m.planFunc(m.request)
+		return planFinishedMsg{plan: plan, err: err}
+	}
 }
 
 func (m Model) generateCmd() tea.Cmd {
@@ -190,7 +267,7 @@ func (m Model) View() string {
 		fmt.Fprintln(&builder, "- No files planned")
 	} else {
 		start := m.fileOffset
-		end := start + plannedFilePreviewLimit
+		end := start + m.visibleFileRows()
 		if end > fileCount {
 			end = fileCount
 		}
@@ -207,7 +284,10 @@ func (m Model) View() string {
 	fmt.Fprintln(&builder)
 	switch m.status {
 	case statusReady:
-		fmt.Fprintln(&builder, "Press g to generate files. This writes files to the output directory.")
+		fmt.Fprintln(&builder, "Press r to refresh the plan or g to generate files. Generation writes files to the output directory.")
+	case statusRefreshing:
+		fmt.Fprintln(&builder, "Refreshing plan...")
+		fmt.Fprintln(&builder, "Please wait while the read-only plan refresh finishes. Press q, esc, or ctrl+c to quit.")
 	case statusGenerating:
 		fmt.Fprintln(&builder, "Generating files...")
 		fmt.Fprintln(&builder, "Generation is in progress. Exit will be available after it finishes.")
@@ -217,12 +297,20 @@ func (m Model) View() string {
 			fmt.Fprintf(&builder, "Warning: %s\n", m.result.Warning)
 		}
 	case statusFailed:
-		fmt.Fprintf(&builder, "Generation failed: %v\n", m.err)
-		fmt.Fprintln(&builder, "Press g to retry generation. This writes files to the output directory.")
+		context := m.errContext
+		if context == "" {
+			context = "Generation"
+		}
+		fmt.Fprintf(&builder, "%s failed: %v\n", context, m.err)
+		fmt.Fprintln(&builder, "Press r to refresh the plan or g to retry generation.")
 	}
 	fmt.Fprintln(&builder)
-	if m.status != statusGenerating {
-		fmt.Fprintln(&builder, navigationHelp)
+	if m.status != statusGenerating && m.status != statusRefreshing {
+		if m.status == statusGenerated {
+			fmt.Fprintln(&builder, generatedHelp)
+		} else {
+			fmt.Fprintln(&builder, readyHelp)
+		}
 		fmt.Fprintln(&builder, "Press q, esc, or ctrl+c to quit.")
 	}
 	return builder.String()

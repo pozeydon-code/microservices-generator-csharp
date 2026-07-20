@@ -36,7 +36,7 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 		},
 	}
 
-	view := NewModel(plan, application.GenerateRequest{}, nil).View()
+	view := NewModel(plan, application.GenerateRequest{}, nil, nil).View()
 
 	assertContains(t, view, "Microgen")
 	assertContains(t, view, "Product: CommercePlatform")
@@ -51,8 +51,8 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	assertContains(t, view, "Files 1-5 of 6")
 	assertContains(t, view, "> replace README.md")
 	assertContains(t, view, "  create tests/ProductService/ProductService.Api.Tests/ProductEndpointsTests.cs")
-	assertContains(t, view, "Press g to generate files. This writes files to the output directory.")
-	assertContains(t, view, navigationHelp)
+	assertContains(t, view, "Press r to refresh the plan or g to generate files. Generation writes files to the output directory.")
+	assertContains(t, view, readyHelp)
 	assertContains(t, view, "Press q, esc, or ctrl+c to quit.")
 	if strings.Contains(view, "tests/ProductService/ProductService.Domain.Tests/ProductTests.cs") {
 		t.Fatalf("expected file preview to be truncated, got view %q", view)
@@ -60,7 +60,7 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 }
 
 func TestModelViewShowsPlannedFileRangeAndCursor(t *testing.T) {
-	view := NewModel(plannedFilesPlan(6), application.GenerateRequest{}, nil).View()
+	view := NewModel(plannedFilesPlan(6), application.GenerateRequest{}, nil, nil).View()
 
 	assertContains(t, view, "Files 1-5 of 6")
 	assertContains(t, view, "> create file-01.txt")
@@ -69,7 +69,7 @@ func TestModelViewShowsPlannedFileRangeAndCursor(t *testing.T) {
 }
 
 func TestModelUpdateMovesPlannedFileCursorAndWindow(t *testing.T) {
-	model := NewModel(plannedFilesPlan(7), application.GenerateRequest{}, nil)
+	model := NewModel(plannedFilesPlan(7), application.GenerateRequest{}, nil, nil)
 
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
 	model = updated.(Model)
@@ -102,7 +102,7 @@ func TestModelUpdateMovesPlannedFileCursorAndWindow(t *testing.T) {
 }
 
 func TestModelUpdateClampsPlannedFileNavigationBounds(t *testing.T) {
-	model := NewModel(plannedFilesPlan(3), application.GenerateRequest{}, nil)
+	model := NewModel(plannedFilesPlan(3), application.GenerateRequest{}, nil, nil)
 
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyUp})
 	model = updated.(Model)
@@ -120,7 +120,7 @@ func TestModelUpdateClampsPlannedFileNavigationBounds(t *testing.T) {
 }
 
 func TestModelUpdateSupportsPlannedFileHomeEndAndPageKeys(t *testing.T) {
-	model := NewModel(plannedFilesPlan(12), application.GenerateRequest{}, nil)
+	model := NewModel(plannedFilesPlan(12), application.GenerateRequest{}, nil, nil)
 
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
 	model = updated.(Model)
@@ -147,18 +147,76 @@ func TestModelUpdateSupportsPlannedFileHomeEndAndPageKeys(t *testing.T) {
 	assertContains(t, view, "> create file-01.txt")
 }
 
-func TestModelUpdateIgnoresPlannedFileNavigationWhileGenerating(t *testing.T) {
-	model := NewModel(plannedFilesPlan(6), application.GenerateRequest{}, nil)
-	model.status = statusGenerating
+func TestModelUpdateWindowSizeChangesVisibleFileRange(t *testing.T) {
+	model := NewModel(plannedFilesPlan(20), application.GenerateRequest{}, nil, nil)
 
-	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
-	updatedModel := updated.(Model)
-
+	updated, cmd := model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	model = updated.(Model)
 	if cmd != nil {
 		t.Fatal("expected no command")
 	}
-	if updatedModel.fileCursor != 0 || updatedModel.fileOffset != 0 {
-		t.Fatalf("expected navigation to be ignored while generating, got cursor=%d offset=%d", updatedModel.fileCursor, updatedModel.fileOffset)
+	view := model.View()
+	assertContains(t, view, "Files 1-6 of 20")
+	assertContains(t, view, "  create file-06.txt")
+	assertNotContains(t, view, "file-07.txt")
+
+	updated, cmd = model.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	model = updated.(Model)
+	if cmd != nil {
+		t.Fatal("expected no command")
+	}
+	view = model.View()
+	assertContains(t, view, "Files 1-12 of 20")
+	assertContains(t, view, "  create file-12.txt")
+	assertNotContains(t, view, "file-13.txt")
+
+	updated, cmd = model.Update(tea.WindowSizeMsg{Width: 80, Height: 19})
+	model = updated.(Model)
+	if cmd != nil {
+		t.Fatal("expected no command")
+	}
+	view = model.View()
+	assertContains(t, view, "Files 1-3 of 20")
+	assertContains(t, view, "  create file-03.txt")
+	assertNotContains(t, view, "file-04.txt")
+}
+
+func TestModelUpdateClampsNavigationAfterResize(t *testing.T) {
+	model := NewModel(plannedFilesPlan(20), application.GenerateRequest{}, nil, nil)
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	model = updated.(Model)
+	assertContains(t, model.View(), "Files 9-20 of 20")
+	assertContains(t, model.View(), "> create file-20.txt")
+
+	updated, cmd := model.Update(tea.WindowSizeMsg{Width: 80, Height: 19})
+	model = updated.(Model)
+	if cmd != nil {
+		t.Fatal("expected no command")
+	}
+	view := model.View()
+	assertContains(t, view, "Files 18-20 of 20")
+	assertContains(t, view, "> create file-20.txt")
+	assertNotContains(t, view, "file-17.txt")
+}
+
+func TestModelUpdateIgnoresPlannedFileNavigationWhileBusy(t *testing.T) {
+	for _, status := range []modelStatus{statusRefreshing, statusGenerating} {
+		t.Run(fmt.Sprintf("status %d", status), func(t *testing.T) {
+			model := NewModel(plannedFilesPlan(6), application.GenerateRequest{}, nil, nil)
+			model.status = status
+
+			updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+			updatedModel := updated.(Model)
+
+			if cmd != nil {
+				t.Fatal("expected no command")
+			}
+			if updatedModel.fileCursor != 0 || updatedModel.fileOffset != 0 {
+				t.Fatalf("expected navigation to be ignored while busy, got cursor=%d offset=%d", updatedModel.fileCursor, updatedModel.fileOffset)
+			}
+		})
 	}
 }
 
@@ -174,7 +232,7 @@ func TestModelUpdateQuitsOnExitKeys(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, cmd := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil).Update(tt.msg)
+			_, cmd := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil).Update(tt.msg)
 
 			if cmd == nil {
 				t.Fatal("expected quit command")
@@ -195,7 +253,7 @@ func TestModelUpdateIgnoresExitKeysWhileGenerating(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil)
+			model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil)
 			model.status = statusGenerating
 
 			updated, cmd := model.Update(tt.msg)
@@ -209,6 +267,44 @@ func TestModelUpdateIgnoresExitKeysWhileGenerating(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestModelUpdateAllowsExitKeysWhileRefreshing(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  tea.KeyMsg
+	}{
+		{name: "q", msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}},
+		{name: "esc", msg: tea.KeyMsg{Type: tea.KeyEsc}},
+		{name: "ctrl+c", msg: tea.KeyMsg{Type: tea.KeyCtrlC}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil)
+			model.status = statusRefreshing
+
+			_, cmd := model.Update(tt.msg)
+
+			if cmd == nil {
+				t.Fatal("expected quit command while refreshing")
+			}
+		})
+	}
+}
+
+func TestModelViewShowsRefreshWaitHelpOnly(t *testing.T) {
+	model := NewModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil)
+	model.status = statusRefreshing
+
+	view := model.View()
+
+	assertContains(t, view, "Refreshing plan...")
+	assertContains(t, view, "Please wait while the read-only plan refresh finishes. Press q, esc, or ctrl+c to quit.")
+	assertNotContains(t, view, readyHelp)
+	assertNotContains(t, view, generatedHelp)
+	assertNotContains(t, view, "Press r to refresh the plan")
+	assertNotContains(t, view, "g to generate")
 }
 
 func TestModelUpdateAllowsExitKeysAfterGenerationFinishes(t *testing.T) {
@@ -227,7 +323,7 @@ func TestModelUpdateAllowsExitKeysAfterGenerationFinishes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil)
+			model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil)
 			model.status = statusGenerating
 			finished, finishCmd := model.Update(tt.finishMsg)
 
@@ -245,7 +341,7 @@ func TestModelUpdateAllowsExitKeysAfterGenerationFinishes(t *testing.T) {
 }
 
 func TestModelUpdateIgnoresOtherKeys(t *testing.T) {
-	_, cmd := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	_, cmd := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 
 	if cmd != nil {
 		t.Fatal("expected no command")
@@ -254,7 +350,7 @@ func TestModelUpdateIgnoresOtherKeys(t *testing.T) {
 
 func TestModelUpdateStartsGenerationOnConfirmedKey(t *testing.T) {
 	request := application.GenerateRequest{ConfigPath: "config.json", OutputDir: "/tmp/generated", Force: true}
-	model := NewModel(application.GenerationPlan{}, request, func(actual application.GenerateRequest) (application.GenerateResult, error) {
+	model := NewModel(application.GenerationPlan{}, request, nil, func(actual application.GenerateRequest) (application.GenerateResult, error) {
 		if actual != request {
 			t.Fatalf("expected request %#v, got %#v", request, actual)
 		}
@@ -282,19 +378,128 @@ func TestModelUpdateStartsGenerationOnConfirmedKey(t *testing.T) {
 	view := updatedModel.View()
 	assertContains(t, view, "Generating files...")
 	assertContains(t, view, "Generation is in progress. Exit will be available after it finishes.")
-	assertNotContains(t, view, navigationHelp)
+	assertNotContains(t, view, readyHelp)
 	assertNotContains(t, view, "Press q, esc, or ctrl+c to quit.")
 }
 
+func TestModelUpdateStartsRefreshOnRefreshKey(t *testing.T) {
+	request := application.GenerateRequest{ConfigPath: "config.json", OutputDir: "/tmp/generated", Force: true}
+	model := NewModel(application.GenerationPlan{}, request, func(actual application.GenerateRequest) (application.GenerationPlan, error) {
+		if actual != request {
+			t.Fatalf("expected request %#v, got %#v", request, actual)
+		}
+		return plannedFilesPlan(2), nil
+	}, nil)
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	updatedModel := updated.(Model)
+
+	if updatedModel.status != statusRefreshing {
+		t.Fatalf("expected refreshing status, got %v", updatedModel.status)
+	}
+	if cmd == nil {
+		t.Fatal("expected refresh command")
+	}
+	msg := cmd()
+	finished, ok := msg.(planFinishedMsg)
+	if !ok {
+		t.Fatalf("expected planFinishedMsg, got %#v", msg)
+	}
+	if finished.err != nil || finished.plan.FileCount != 2 {
+		t.Fatalf("expected successful refresh message, got %#v", finished)
+	}
+	view := updatedModel.View()
+	assertContains(t, view, "Refreshing plan...")
+	assertContains(t, view, "Please wait while the read-only plan refresh finishes. Press q, esc, or ctrl+c to quit.")
+	assertNotContains(t, view, readyHelp)
+	assertNotContains(t, view, "g to generate")
+}
+
+func TestModelUpdateRecordsRefreshSuccess(t *testing.T) {
+	model := NewModel(plannedFilesPlan(10), application.GenerateRequest{}, nil, nil)
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	model = updated.(Model)
+
+	plan := plannedFilesPlan(2)
+	plan.Config = application.ConfigSummary{SolutionName: "Refreshed", TargetFramework: "net9.0", ServiceCount: 1}
+	plan.OutputDir = "/tmp/refreshed"
+	plan.OutputAction = "replace"
+	updated, cmd := model.Update(planFinishedMsg{plan: plan})
+	updatedModel := updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("expected no command")
+	}
+	if updatedModel.status != statusReady || updatedModel.plan.OutputDir != "/tmp/refreshed" || updatedModel.plan.Config.SolutionName != "Refreshed" {
+		t.Fatalf("expected refreshed ready state, got %#v", updatedModel)
+	}
+	view := updatedModel.View()
+	assertContains(t, view, "Product: Refreshed")
+	assertContains(t, view, "Target framework: net9.0")
+	assertContains(t, view, "Output directory: /tmp/refreshed")
+	assertContains(t, view, "Files 1-2 of 2")
+	assertContains(t, view, "> create file-02.txt")
+}
+
+func TestModelUpdateRecordsRefreshFailureAndAllowsRetry(t *testing.T) {
+	refreshErr := errors.New("plan failed")
+	retries := 0
+	model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
+		retries++
+		return application.GenerationPlan{}, nil
+	}, nil)
+
+	failed, cmd := model.Update(planFinishedMsg{err: refreshErr})
+	failedModel := failed.(Model)
+
+	if cmd != nil {
+		t.Fatal("expected no command")
+	}
+	if failedModel.status != statusFailed || failedModel.err != refreshErr || failedModel.errContext != "Refresh" {
+		t.Fatalf("expected refresh failed state, got %#v", failedModel)
+	}
+	view := failedModel.View()
+	assertContains(t, view, "Refresh failed: plan failed")
+	assertContains(t, view, "Press r to refresh the plan or g to retry generation.")
+
+	retrying, retryCmd := failedModel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if retrying.(Model).status != statusRefreshing {
+		t.Fatalf("expected retry to enter refreshing, got %#v", retrying)
+	}
+	if retryCmd == nil {
+		t.Fatal("expected retry command")
+	}
+	retryCmd()
+	if retries != 1 {
+		t.Fatalf("expected one retry, got %d", retries)
+	}
+}
+
 func TestModelUpdateIgnoresGenerationKeyWhileGeneratingOrGenerated(t *testing.T) {
-	for _, status := range []modelStatus{statusGenerating, statusGenerated} {
-		model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerateResult, error) {
+	for _, status := range []modelStatus{statusRefreshing, statusGenerating, statusGenerated} {
+		model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
 			t.Fatal("generation should not run")
 			return application.GenerateResult{}, nil
 		})
 		model.status = status
 
 		_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+
+		if cmd != nil {
+			t.Fatalf("expected no command for status %v", status)
+		}
+	}
+}
+
+func TestModelUpdateIgnoresRefreshKeyWhileRefreshingOrGenerating(t *testing.T) {
+	for _, status := range []modelStatus{statusRefreshing, statusGenerating} {
+		model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
+			t.Fatal("refresh should not run")
+			return application.GenerationPlan{}, nil
+		}, nil)
+		model.status = status
+
+		_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 
 		if cmd != nil {
 			t.Fatalf("expected no command for status %v", status)
@@ -309,7 +514,7 @@ func TestModelUpdateRecordsGenerationSuccess(t *testing.T) {
 		Plan:      application.GenerationPlan{OutputDir: "/tmp/generated", FileCount: 3},
 	}
 
-	updated, cmd := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil).Update(generationFinishedMsg{result: result})
+	updated, cmd := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil).Update(generationFinishedMsg{result: result})
 	updatedModel := updated.(Model)
 
 	if cmd != nil {
@@ -321,13 +526,15 @@ func TestModelUpdateRecordsGenerationSuccess(t *testing.T) {
 	view := updatedModel.View()
 	assertContains(t, view, "Generated 3 files in /tmp/generated.")
 	assertContains(t, view, "Warning: existing warning")
-	assertContains(t, view, navigationHelp)
+	assertContains(t, view, generatedHelp)
+	assertNotContains(t, view, readyHelp)
+	assertNotContains(t, view, "g to generate")
 }
 
 func TestModelUpdateRecordsGenerationFailureAndAllowsRetry(t *testing.T) {
 	generationErr := errors.New("write failed")
 	retries := 0
-	model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerateResult, error) {
+	model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
 		retries++
 		return application.GenerateResult{}, nil
 	})
@@ -343,8 +550,8 @@ func TestModelUpdateRecordsGenerationFailureAndAllowsRetry(t *testing.T) {
 	}
 	view := failedModel.View()
 	assertContains(t, view, "Generation failed: write failed")
-	assertContains(t, view, "Press g to retry generation. This writes files to the output directory.")
-	assertContains(t, view, navigationHelp)
+	assertContains(t, view, "Press r to refresh the plan or g to retry generation.")
+	assertContains(t, view, readyHelp)
 
 	retrying, retryCmd := failedModel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	if retrying.(Model).status != statusGenerating {
