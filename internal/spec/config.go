@@ -12,15 +12,23 @@ import (
 )
 
 const (
-	MaxIdentifierLength   = 64
-	MaxServices           = 20
-	MaxEntitiesPerService = 100
-	MaxFieldsPerEntity    = 100
+	ConfigSchemaVersion    = 1
+	DefaultTargetFramework = "net8.0"
+	MaxIdentifierLength    = 64
+	MaxServices            = 20
+	MaxEntitiesPerService  = 100
+	MaxFieldsPerEntity     = 100
 )
 
 type Config struct {
-	Solution Solution  `json:"solution"`
-	Services []Service `json:"services"`
+	SchemaVersion int               `json:"schemaVersion,omitempty"`
+	Generation    GenerationOptions `json:"generation,omitempty"`
+	Solution      Solution          `json:"solution"`
+	Services      []Service         `json:"services"`
+}
+
+type GenerationOptions struct {
+	TargetFramework string `json:"targetFramework,omitempty"`
 }
 
 type Solution struct {
@@ -83,6 +91,11 @@ var supportedFieldTypes = map[string]struct{}{
 	"Guid": {}, "int": {}, "long": {}, "string": {},
 }
 
+var supportedTargetFrameworks = map[string]struct{}{
+	"net8.0": {},
+	"net9.0": {},
+}
+
 var csharpKeywords = map[string]struct{}{
 	"abstract": {}, "as": {}, "base": {}, "bool": {}, "break": {}, "byte": {}, "case": {}, "catch": {}, "char": {}, "checked": {},
 	"class": {}, "const": {}, "continue": {}, "decimal": {}, "default": {}, "delegate": {}, "do": {}, "double": {}, "else": {},
@@ -104,6 +117,12 @@ var windowsReservedPathSegments = map[string]struct{}{
 func (c Config) Validate() error {
 	var problems []string
 
+	if c.SchemaVersion != 0 && c.SchemaVersion != ConfigSchemaVersion {
+		problems = append(problems, fmt.Sprintf("schemaVersion must be %d", ConfigSchemaVersion))
+	}
+	if _, ok := supportedTargetFrameworks[c.TargetFramework()]; !ok {
+		problems = append(problems, fmt.Sprintf("generation.targetFramework must be one of %s", strings.Join(SupportedTargetFrameworks(), ", ")))
+	}
 	validateRequiredIdentifier(&problems, "solution.name", c.Solution.Name)
 	validateCount(&problems, "services", len(c.Services), 1, MaxServices)
 
@@ -120,9 +139,13 @@ func (c Config) Validate() error {
 		}
 
 		valueObjectNames := map[string]ValueObject{}
+		valueObjectExactNames := map[string]struct{}{}
 		for valueObjectIndex, valueObject := range service.ValueObjects {
 			valueObjectPath := fmt.Sprintf("%s.valueObjects[%d]", servicePath, valueObjectIndex)
 			validateRequiredIdentifier(&problems, valueObjectPath+".name", valueObject.Name)
+			if strings.TrimSpace(valueObject.Name) != "" {
+				valueObjectExactNames[valueObject.Name] = struct{}{}
+			}
 			if _, primitive := supportedFieldTypes[valueObject.Name]; primitive {
 				problems = append(problems, valueObjectPath+".name must not collide with a supported primitive type")
 			}
@@ -175,7 +198,7 @@ func (c Config) Validate() error {
 				}
 				addUnique(&problems, fieldNames, field.Name, "field in entity "+entity.Name)
 				if _, ok := supportedFieldTypes[field.Type]; !ok {
-					if _, valueObject := valueObjectNames[strings.ToLower(field.Type)]; !valueObject {
+					if _, valueObject := valueObjectExactNames[field.Type]; !valueObject {
 						problems = append(problems, fmt.Sprintf("%s.type must be one of %s or a declared service value object", fieldPath, strings.Join(SupportedFieldTypes(), ", ")))
 					}
 				}
@@ -193,6 +216,13 @@ func (c Config) Validate() error {
 		return ValidationError{Problems: problems}
 	}
 	return nil
+}
+
+func (c Config) TargetFramework() string {
+	if strings.TrimSpace(c.Generation.TargetFramework) == "" {
+		return DefaultTargetFramework
+	}
+	return c.Generation.TargetFramework
 }
 
 func generatedTypeNamesFor(entityName string) map[string]struct{} {
@@ -220,6 +250,15 @@ func SupportedFieldTypes() []string {
 	}
 	sort.Strings(types)
 	return types
+}
+
+func SupportedTargetFrameworks() []string {
+	frameworks := make([]string, 0, len(supportedTargetFrameworks))
+	for framework := range supportedTargetFrameworks {
+		frameworks = append(frameworks, framework)
+	}
+	sort.Strings(frameworks)
+	return frameworks
 }
 
 func validateRequiredIdentifier(problems *[]string, path, value string) {

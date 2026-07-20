@@ -207,9 +207,12 @@ func (g *Generator) render(name string, data any) ([]byte, error) {
 }
 
 type SolutionTemplateData struct {
-	Solution spec.Solution
-	Services []ServiceView
-	Projects []ProjectView
+	Solution                   spec.Solution
+	TargetFramework            string
+	AspNetCorePackageVersion   string
+	EntityFrameworkCoreVersion string
+	Services                   []ServiceView
+	Projects                   []ProjectView
 }
 
 type ServiceView struct {
@@ -283,6 +286,7 @@ type InvalidSampleView struct {
 
 type EntityView struct {
 	Name                 string
+	PluralName           string
 	FeatureName          string
 	Route                string
 	Fields               []FieldView
@@ -318,7 +322,14 @@ type FieldView struct {
 
 func buildSolutionView(cfg spec.Config) SolutionTemplateData {
 	services := sortedServices(cfg.Services)
-	view := SolutionTemplateData{Solution: cfg.Solution, Services: make([]ServiceView, 0, len(services))}
+	targetFramework := cfg.TargetFramework()
+	view := SolutionTemplateData{
+		Solution:                   cfg.Solution,
+		TargetFramework:            targetFramework,
+		AspNetCorePackageVersion:   dotNetPackageVersion(targetFramework),
+		EntityFrameworkCoreVersion: dotNetPackageVersion(targetFramework),
+		Services:                   make([]ServiceView, 0, len(services)),
+	}
 	for _, service := range services {
 		serviceView := ServiceView{Name: service.Name}
 		serviceView.DomainProject = projectView(service.Name, service.Name+".Domain")
@@ -719,7 +730,8 @@ func entityViewWithSortedFields(entity spec.Entity, valueObjects map[string]Valu
 	fields := append([]spec.Field(nil), entity.Fields...)
 	sort.Slice(fields, func(i, j int) bool { return fields[i].Name < fields[j].Name })
 
-	view := EntityView{Name: entity.Name, FeatureName: entity.Name + "s", Route: strings.ToLower(entity.Name) + "s"}
+	pluralName := pluralize(entity.Name)
+	view := EntityView{Name: entity.Name, PluralName: pluralName, FeatureName: pluralName, Route: routeName(pluralName)}
 	for _, field := range fields {
 		primitiveType := field.Type
 		domainType := field.Type

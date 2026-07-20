@@ -166,6 +166,52 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	}
 }
 
+func TestGenerateUsesSelectedTargetFramework(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := testConfig()
+	cfg.SchemaVersion = spec.ConfigSchemaVersion
+	cfg.Generation.TargetFramework = "net9.0"
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	props := string(generatedContent(t, files, "Directory.Build.props"))
+	packages := string(generatedContent(t, files, "Directory.Packages.props"))
+	metadata := string(generatedContent(t, files, "microgen.json"))
+	readme := string(generatedContent(t, files, "README.md"))
+
+	assertContains(t, props, "<TargetFramework>net9.0</TargetFramework>")
+	assertContains(t, packages, `Microsoft.AspNetCore.Mvc.Testing" Version="9.0.7`)
+	assertContains(t, packages, `Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.7`)
+	assertContains(t, metadata, `"targetFramework": "net9.0"`)
+	assertNotContains(t, props, "net8.0")
+	assertNotContains(t, packages, "Version=\"8.0.28")
+	assertNotContains(t, metadata, "net8.0")
+	assertContains(t, readme, "Minimal generated .NET 8 microservice workspace for product management.")
+}
+
+func TestGenerateUsesPluralizedEntityNamesForFeatureAndRoute(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := testConfig()
+	cfg.Services[0].Entities[0].Name = "Category"
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	endpoints := string(generatedContent(t, files, "src/ProductService/ProductService.Api/Features/Categories/CategoryEndpoints.cs"))
+
+	assertContains(t, endpoints, "MapGroup(\"/categories\")")
+	assertNotContains(t, endpoints, "Categorys")
+}
+
 func TestGenerateRejectsReservedRowVersionFieldBeforeWritingFiles(t *testing.T) {
 	gen, err := New()
 	if err != nil {

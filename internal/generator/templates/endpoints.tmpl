@@ -24,7 +24,7 @@ public static class {{ .Entity.Name }}Endpoints
                 return Results.BadRequest(new { error = ex.Message });
             }
         })
-            .WithName("List{{ .Entity.Name }}s");
+            .WithName("List{{ .Entity.PluralName }}");
 
         group.MapGet("/{id:guid}", async (Guid id, I{{ .Entity.Name }}UseCases useCases, CancellationToken cancellationToken) =>
         {

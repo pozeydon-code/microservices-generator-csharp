@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pozeydon-code/generator-microservices-go/internal/spec"
 )
 
 func TestLoadJSONRejectsStrictJSONProblems(t *testing.T) {
@@ -32,6 +34,11 @@ func TestLoadJSONRejectsStrictJSONProblems(t *testing.T) {
 			name:        "incorrectly cased known key",
 			content:     `{"Solution":{"name":"CommercePlatform"},"services":[]}`,
 			expectedErr: "incorrectly cased key \"Solution\"",
+		},
+		{
+			name:        "unknown generation key",
+			content:     `{"schemaVersion":1,"generation":{"framework":"net9.0"},"solution":{"name":"CommercePlatform"},"services":[]}`,
+			expectedErr: "unknown key \"framework\" in generation object",
 		},
 		{
 			name:        "duplicate service key",
@@ -117,6 +124,85 @@ func TestLoadJSONAcceptsExactConfigByteLimit(t *testing.T) {
 
 	if _, err := LoadJSON(writeConfig(t, content)); err != nil {
 		t.Fatalf("expected exact byte limit config to load, got %v", err)
+	}
+}
+
+func TestLoadJSONAcceptsSchemaVersionAndGenerationOptions(t *testing.T) {
+	cfg, err := LoadJSON(writeConfig(t, `{
+  "schemaVersion": 1,
+  "generation": { "targetFramework": "net9.0" },
+  "solution": { "name": "CommercePlatform", "description": "Product management." },
+  "services": [
+    {
+      "name": "ProductService",
+      "entities": [
+        {
+          "name": "Product",
+          "fields": [
+            { "name": "Id", "type": "Guid" },
+            { "name": "Name", "type": "string" }
+          ]
+        }
+      ]
+    }
+  ]
+}`))
+	if err != nil {
+		t.Fatalf("expected config to load, got %v", err)
+	}
+	if cfg.SchemaVersion != spec.ConfigSchemaVersion {
+		t.Fatalf("expected schema version %d, got %d", spec.ConfigSchemaVersion, cfg.SchemaVersion)
+	}
+	if cfg.TargetFramework() != "net9.0" {
+		t.Fatalf("expected net9.0 target framework, got %q", cfg.TargetFramework())
+	}
+}
+
+func TestLoadJSONSchemaVersionCompatibility(t *testing.T) {
+	tests := []struct {
+		name        string
+		content     string
+		expectedErr string
+	}{
+		{
+			name:    "missing schema version remains valid",
+			content: validConfigJSON,
+		},
+		{
+			name:        "explicit zero schema version is rejected",
+			content:     strings.Replace(validConfigJSON, `{`, `{"schemaVersion":0,`, 1),
+			expectedErr: "schemaVersion must be 1",
+		},
+		{
+			name:    "current schema version is valid",
+			content: strings.Replace(validConfigJSON, `{`, `{"schemaVersion":1,`, 1),
+		},
+		{
+			name:        "unsupported schema version is rejected",
+			content:     strings.Replace(validConfigJSON, `{`, `{"schemaVersion":2,`, 1),
+			expectedErr: "schemaVersion must be 1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := LoadJSON(writeConfig(t, tt.content))
+			if tt.expectedErr == "" {
+				if err != nil {
+					t.Fatalf("expected config to load, got %v", err)
+				}
+				if cfg.TargetFramework() != spec.DefaultTargetFramework {
+					t.Fatalf("expected default target framework %q, got %q", spec.DefaultTargetFramework, cfg.TargetFramework())
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tt.expectedErr) {
+				t.Fatalf("expected %q, got %v", tt.expectedErr, err)
+			}
+		})
 	}
 }
 

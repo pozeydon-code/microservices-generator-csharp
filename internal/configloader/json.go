@@ -62,7 +62,8 @@ var valueObjectSchema = objectSchema{name: "valueObject", allowedKeys: allowed("
 var fieldSchema = objectSchema{name: "field", allowedKeys: allowed("name", "type")}
 var entitySchema = objectSchema{name: "entity", allowedKeys: allowed("name", "fields"), arrayTargets: map[string]objectSchema{"fields": fieldSchema}}
 var serviceSchema = objectSchema{name: "service", allowedKeys: allowed("name", "valueObjects", "entities"), arrayTargets: map[string]objectSchema{"valueObjects": valueObjectSchema, "entities": entitySchema}}
-var rootSchema = objectSchema{name: "root", allowedKeys: allowed("solution", "services"), arrayTargets: map[string]objectSchema{"services": serviceSchema}}
+var rootSchema = objectSchema{name: "root", allowedKeys: allowed("schemaVersion", "generation", "solution", "services"), arrayTargets: map[string]objectSchema{"services": serviceSchema}}
+var generationSchema = objectSchema{name: "generation", allowedKeys: allowed("targetFramework")}
 var solutionSchema = objectSchema{name: "solution", allowedKeys: allowed("name", "description")}
 
 func allowed(keys ...string) map[string]string {
@@ -138,6 +139,9 @@ func readObject(decoder *json.Decoder, schema objectSchema) error {
 			return fmt.Errorf("unknown key %q in %s object", key, schema.name)
 		}
 		childSchema := objectSchema{}
+		if schema.name == "root" && canonical == "generation" {
+			childSchema = generationSchema
+		}
 		if schema.name == "root" && canonical == "solution" {
 			childSchema = solutionSchema
 		}
@@ -147,10 +151,32 @@ func readObject(decoder *json.Decoder, schema objectSchema) error {
 		if target, ok := schema.objectTargets[canonical]; ok {
 			childSchema = target
 		}
+		if schema.name == "root" && canonical == "schemaVersion" {
+			if err := readSchemaVersion(decoder); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := readValue(decoder, childSchema); err != nil {
 			return err
 		}
 	}
 	_, err := decoder.Token()
 	return err
+}
+
+func readSchemaVersion(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	version, ok := token.(json.Number)
+	if !ok {
+		return fmt.Errorf("schemaVersion must be %d", spec.ConfigSchemaVersion)
+	}
+	value, err := version.Int64()
+	if err != nil || value != spec.ConfigSchemaVersion {
+		return fmt.Errorf("schemaVersion must be %d", spec.ConfigSchemaVersion)
+	}
+	return nil
 }

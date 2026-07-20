@@ -1,6 +1,6 @@
 {
   "generator": "microgen",
-  "targetFramework": "net8.0",
+  "targetFramework": "{{ .TargetFramework }}",
   "solution": "{{ .Solution.Name }}",
   "services": [{{ range $index, $service := .Services }}{{ if $index }}, {{ end }}"{{ $service.Name }}"{{ end }}]
 }

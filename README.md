@@ -1,10 +1,10 @@
-# microgen: .NET 8 CRUD microservice generator
+# microgen: .NET CRUD microservice generator
 
-`microgen` generates deterministic .NET 8 CRUD microservice scaffolds from JSON. The generator stays CLI-first and UI-independent so a future TUI can be added as an adapter, not as a place for business rules.
+`microgen` generates deterministic .NET CRUD microservice scaffolds from JSON. The generator stays CLI-first and UI-independent so a future TUI can be added as an adapter, not as a place for business rules.
 
 ## Quick path from a fresh clone
 
-Prerequisites: Go 1.22+ for the generator and .NET 8 SDK for generated output builds.
+Prerequisites: Go 1.22+ for the generator and a .NET SDK matching the configured generated target framework.
 
 ```bash
 go test ./...
@@ -64,6 +64,26 @@ microgen generate --config <path> --output <dir> [--force]
 
 ## Config convention
 
+Configs may declare the current schema and generated .NET target framework:
+
+```json
+{
+  "schemaVersion": 1,
+  "generation": { "targetFramework": "net8.0" },
+  "solution": { "name": "CommercePlatform" },
+  "services": [
+    {
+      "name": "ProductService",
+      "entities": [
+        { "name": "Product", "fields": [{ "name": "Id", "type": "Guid" }] }
+      ]
+    }
+  ]
+}
+```
+
+`schemaVersion` defaults to the current schema when omitted for existing examples/configs. `generation.targetFramework` defaults to `net8.0`; supported values are `net8.0` and `net9.0`.
+
 Each entity must contain exactly one identity field:
 
 ```json
@@ -103,7 +123,7 @@ Generated HTTP create/update contracts expose primitive values, not a Domain JSO
 
 ## SQL Server and migrations
 
-Generated Infrastructure uses EF Core SQL Server with packages pinned to `8.0.28`. The Host reads `ConnectionStrings:DefaultConnection`, including from `ConnectionStrings__DefaultConnection`, and passes configuration into Infrastructure composition. SQL command timeout/retry settings are bounded so database work fits inside the Host request timeout budget.
+Generated Infrastructure uses EF Core SQL Server with framework-aligned package versions pinned by the generator. The Host reads `ConnectionStrings:DefaultConnection`, including from `ConnectionStrings__DefaultConnection`, and passes configuration into Infrastructure composition. SQL command timeout/retry settings are bounded so database work fits inside the Host request timeout budget.
 JWT Bearer auth reads `Authentication:Authority` and `Authentication:Audience`, including `Authentication__Authority` and `Authentication__Audience`; no signing secrets are generated.
 
 Generated files do not contain credentials and do not run migrations, `EnsureCreated`, package installation, or database commands. Migration commands are manual user actions. A production runbook should include backup, target-environment verification, SQL review, apply, smoke test, readiness verification, repair criteria, and fix-forward planning:

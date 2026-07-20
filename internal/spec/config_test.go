@@ -15,6 +15,47 @@ func TestConfigValidateAcceptsValidConfig(t *testing.T) {
 	}
 }
 
+func TestConfigValidateDefaultsMissingSchemaVersionAndTargetFramework(t *testing.T) {
+	cfg := validConfig()
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid config, got %v", err)
+	}
+	if cfg.TargetFramework() != DefaultTargetFramework {
+		t.Fatalf("expected default target framework %q, got %q", DefaultTargetFramework, cfg.TargetFramework())
+	}
+}
+
+func TestConfigValidateAcceptsSupportedSchemaVersionAndTargetFramework(t *testing.T) {
+	cfg := validConfig()
+	cfg.SchemaVersion = ConfigSchemaVersion
+	cfg.Generation.TargetFramework = "net9.0"
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected net9.0 config to be valid, got %v", err)
+	}
+	if cfg.TargetFramework() != "net9.0" {
+		t.Fatalf("expected selected target framework, got %q", cfg.TargetFramework())
+	}
+}
+
+func TestConfigValidateRejectsUnsupportedSchemaVersionAndTargetFramework(t *testing.T) {
+	cfg := validConfig()
+	cfg.SchemaVersion = 99
+	cfg.Generation.TargetFramework = "net7.0"
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	message := err.Error()
+	for _, expected := range []string{"schemaVersion must be 1", "generation.targetFramework must be one of net8.0, net9.0"} {
+		if !strings.Contains(message, expected) {
+			t.Fatalf("expected error to contain %q, got:\n%s", expected, message)
+		}
+	}
+}
+
 func TestConfigValidateAggregatesActionableErrors(t *testing.T) {
 	cfg := Config{
 		Solution: Solution{Name: "class"},
@@ -233,6 +274,20 @@ func TestConfigValidateAcceptsDeclaredValueObjectFieldTypes(t *testing.T) {
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected value object field type to be valid, got %v", err)
+	}
+}
+
+func TestConfigValidateRejectsValueObjectFieldTypeCasingMismatch(t *testing.T) {
+	cfg := validConfig()
+	cfg.Services[0].ValueObjects = []ValueObject{{Name: "ProductName", Type: "string", Validations: ValidationRules{Required: boolPtr(true)}}}
+	cfg.Services[0].Entities[0].Fields[0].Type = "productname"
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "services[0].entities[0].fields[0].type must be one of") {
+		t.Fatalf("expected value object casing mismatch error, got %v", err)
 	}
 }
 

@@ -1,4 +1,8 @@
 {
+  "schemaVersion": 1,
+  "generation": {
+    "targetFramework": "net8.0"
+  },
   "solution": {
     "name": "CommercePlatform",
     "description": "Minimal generated .NET 8 microservice workspace for product management."
