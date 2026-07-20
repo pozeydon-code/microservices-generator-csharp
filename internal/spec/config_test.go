@@ -26,33 +26,96 @@ func TestConfigValidateDefaultsMissingSchemaVersionAndTargetFramework(t *testing
 	}
 }
 
-func TestConfigValidateAcceptsSupportedSchemaVersionAndTargetFramework(t *testing.T) {
-	cfg := validConfig()
-	cfg.SchemaVersion = ConfigSchemaVersion
-	cfg.Generation.TargetFramework = "net9.0"
+func TestConfigValidateAcceptsFlexibleTargetFrameworks(t *testing.T) {
+	for _, targetFramework := range []string{"net6.0", "net7.0", "net9.0", "net10.0", "net11.0"} {
+		t.Run(targetFramework, func(t *testing.T) {
+			cfg := validConfig()
+			cfg.SchemaVersion = ConfigSchemaVersion
+			cfg.Generation.TargetFramework = targetFramework
 
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("expected net9.0 config to be valid, got %v", err)
-	}
-	if cfg.TargetFramework() != "net9.0" {
-		t.Fatalf("expected selected target framework, got %q", cfg.TargetFramework())
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("expected %s config to be valid, got %v", targetFramework, err)
+			}
+			if cfg.TargetFramework() != targetFramework {
+				t.Fatalf("expected selected target framework, got %q", cfg.TargetFramework())
+			}
+		})
 	}
 }
 
-func TestConfigValidateRejectsUnsupportedSchemaVersionAndTargetFramework(t *testing.T) {
+func TestConfigValidateRejectsUnsupportedSchemaVersionAndInvalidTargetFramework(t *testing.T) {
 	cfg := validConfig()
 	cfg.SchemaVersion = 99
-	cfg.Generation.TargetFramework = "net7.0"
+	cfg.Generation.TargetFramework = "latest"
 
 	err := cfg.Validate()
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
 	message := err.Error()
-	for _, expected := range []string{"schemaVersion must be 1", "generation.targetFramework must be one of net8.0, net9.0"} {
+	for _, expected := range []string{"schemaVersion must be 1", "generation.targetFramework must be netN.0"} {
 		if !strings.Contains(message, expected) {
 			t.Fatalf("expected error to contain %q, got:\n%s", expected, message)
 		}
+	}
+}
+
+func TestNormalizeTargetFramework(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+		ok    bool
+	}{
+		{name: "major only", input: "7", want: "net7.0", ok: true},
+		{name: "tfm", input: "net10.0", want: "net10.0", ok: true},
+		{name: "case and spaces", input: " NET11.0 ", want: "net11.0", ok: true},
+		{name: "minor not zero", input: "net8.1", ok: false},
+		{name: "zero", input: "0", ok: false},
+		{name: "too high", input: "100", ok: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := NormalizeTargetFramework(tt.input)
+			if ok != tt.ok || got != tt.want {
+				t.Fatalf("NormalizeTargetFramework(%q) = %q, %t; want %q, %t", tt.input, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+func TestDefaultSolutionFormat(t *testing.T) {
+	tests := []struct {
+		targetFramework string
+		want            string
+	}{
+		{targetFramework: "net6.0", want: "sln"},
+		{targetFramework: "net9.0", want: "sln"},
+		{targetFramework: "net10.0", want: "slnx"},
+		{targetFramework: "11", want: "slnx"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.targetFramework, func(t *testing.T) {
+			if got := DefaultSolutionFormat(tt.targetFramework); got != tt.want {
+				t.Fatalf("expected %s, got %s", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestConfigSolutionFormatUsesExplicitOrTargetDefault(t *testing.T) {
+	cfg := validConfig()
+	cfg.Generation.TargetFramework = "net10.0"
+	if got := cfg.SolutionFormat(); got != "slnx" {
+		t.Fatalf("expected net10.0 to default to slnx, got %q", got)
+	}
+	cfg.Generation.SolutionFormat = "sln"
+	if got := cfg.SolutionFormat(); got != "sln" {
+		t.Fatalf("expected explicit sln, got %q", got)
+	}
+	cfg.Generation.SolutionFormat = "zip"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "generation.solutionFormat must be sln or slnx") {
+		t.Fatalf("expected solution format validation error, got %v", err)
 	}
 }
 

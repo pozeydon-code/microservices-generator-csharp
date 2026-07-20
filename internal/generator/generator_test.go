@@ -194,6 +194,67 @@ func TestGenerateUsesSelectedTargetFramework(t *testing.T) {
 	assertContains(t, readme, "Minimal generated .NET 8 microservice workspace for product management.")
 }
 
+func TestGenerateDefaultsSolutionFileFormatFromTargetFramework(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	tests := []struct {
+		name               string
+		targetFramework    string
+		expectedSolution   string
+		unexpectedSolution string
+	}{
+		{name: "below net10", targetFramework: "net7.0", expectedSolution: "CommercePlatform.sln", unexpectedSolution: "CommercePlatform.slnx"},
+		{name: "net10", targetFramework: "net10.0", expectedSolution: "CommercePlatform.slnx", unexpectedSolution: "CommercePlatform.sln"},
+		{name: "future", targetFramework: "net11.0", expectedSolution: "CommercePlatform.slnx", unexpectedSolution: "CommercePlatform.sln"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := testConfig()
+			cfg.Generation.TargetFramework = tt.targetFramework
+
+			files, err := gen.Generate(cfg)
+			if err != nil {
+				t.Fatalf("generate: %v", err)
+			}
+			contentByPath := map[string]string{}
+			for _, file := range files {
+				contentByPath[file.Path] = string(file.Content)
+			}
+			if _, ok := contentByPath[tt.expectedSolution]; !ok {
+				t.Fatalf("expected %s to be generated", tt.expectedSolution)
+			}
+			if _, ok := contentByPath[tt.unexpectedSolution]; ok {
+				t.Fatalf("did not expect %s to be generated", tt.unexpectedSolution)
+			}
+			readme := contentByPath["README.md"]
+			assertContains(t, readme, "dotnet build ./"+tt.expectedSolution)
+			assertContains(t, readme, "dotnet test ./"+tt.expectedSolution)
+		})
+	}
+}
+
+func TestGenerateSlnxReferencesAllProjectsDeterministically(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := testConfig()
+	cfg.Generation.TargetFramework = "net10.0"
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	slnx := string(generatedContent(t, files, "CommercePlatform.slnx"))
+
+	assertContains(t, slnx, "<Solution>\n")
+	assertContains(t, slnx, `  <Project Path="src/ProductService/ProductService.Api/ProductService.Api.csproj" />`)
+	assertContains(t, slnx, `  <Project Path="tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj" />`)
+	assertNotContains(t, slnx, "ProjectConfigurationPlatforms")
+}
+
 func TestGenerateUsesPluralizedEntityNamesForFeatureAndRoute(t *testing.T) {
 	gen, err := New()
 	if err != nil {

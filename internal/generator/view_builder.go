@@ -14,6 +14,8 @@ import (
 type SolutionTemplateData struct {
 	Solution                   spec.Solution
 	TargetFramework            string
+	SolutionFormat             string
+	SolutionFileName           string
 	AspNetCorePackageVersion   string
 	EntityFrameworkCoreVersion string
 	Services                   []ServiceView
@@ -128,9 +130,12 @@ type FieldView struct {
 func buildSolutionView(cfg spec.Config) SolutionTemplateData {
 	services := sortedServices(cfg.Services)
 	targetFramework := cfg.TargetFramework()
+	solutionFormat := cfg.SolutionFormat()
 	view := SolutionTemplateData{
 		Solution:                   cfg.Solution,
 		TargetFramework:            targetFramework,
+		SolutionFormat:             solutionFormat,
+		SolutionFileName:           cfg.Solution.Name + "." + solutionFormat,
 		AspNetCorePackageVersion:   dotNetPackageVersion(targetFramework),
 		EntityFrameworkCoreVersion: dotNetPackageVersion(targetFramework),
 		Services:                   make([]ServiceView, 0, len(services)),

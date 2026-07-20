@@ -29,6 +29,7 @@ type Config struct {
 
 type GenerationOptions struct {
 	TargetFramework string `json:"targetFramework,omitempty"`
+	SolutionFormat  string `json:"solutionFormat,omitempty"`
 }
 
 type Solution struct {
@@ -91,10 +92,7 @@ var supportedFieldTypes = map[string]struct{}{
 	"Guid": {}, "int": {}, "long": {}, "string": {},
 }
 
-var supportedTargetFrameworks = map[string]struct{}{
-	"net8.0": {},
-	"net9.0": {},
-}
+var targetFrameworkPattern = regexp.MustCompile(`^net([1-9][0-9]?)\.0$`)
 
 var csharpKeywords = map[string]struct{}{
 	"abstract": {}, "as": {}, "base": {}, "bool": {}, "break": {}, "byte": {}, "case": {}, "catch": {}, "char": {}, "checked": {},
@@ -120,8 +118,11 @@ func (c Config) Validate() error {
 	if c.SchemaVersion != 0 && c.SchemaVersion != ConfigSchemaVersion {
 		problems = append(problems, fmt.Sprintf("schemaVersion must be %d", ConfigSchemaVersion))
 	}
-	if _, ok := supportedTargetFrameworks[c.TargetFramework()]; !ok {
-		problems = append(problems, fmt.Sprintf("generation.targetFramework must be one of %s", strings.Join(SupportedTargetFrameworks(), ", ")))
+	if !IsSupportedTargetFramework(c.TargetFramework()) {
+		problems = append(problems, "generation.targetFramework must be netN.0 with a numeric major version from 1 through 99")
+	}
+	if !isSupportedSolutionFormat(c.Generation.SolutionFormat) {
+		problems = append(problems, "generation.solutionFormat must be sln or slnx")
 	}
 	validateRequiredIdentifier(&problems, "solution.name", c.Solution.Name)
 	validateCount(&problems, "services", len(c.Services), 1, MaxServices)
@@ -222,7 +223,74 @@ func (c Config) TargetFramework() string {
 	if strings.TrimSpace(c.Generation.TargetFramework) == "" {
 		return DefaultTargetFramework
 	}
-	return c.Generation.TargetFramework
+	return strings.TrimSpace(c.Generation.TargetFramework)
+}
+
+func (c Config) SolutionFormat() string {
+	if strings.TrimSpace(c.Generation.SolutionFormat) == "" {
+		return DefaultSolutionFormat(c.TargetFramework())
+	}
+	return strings.TrimSpace(strings.ToLower(c.Generation.SolutionFormat))
+}
+
+func NormalizeTargetFramework(value string) (string, bool) {
+	trimmed := strings.TrimSpace(strings.ToLower(value))
+	if trimmed == "" {
+		return "", false
+	}
+	if major, err := strconv.Atoi(trimmed); err == nil {
+		return normalizeTargetFrameworkMajor(major)
+	}
+	match := targetFrameworkPattern.FindStringSubmatch(trimmed)
+	if len(match) != 2 {
+		return "", false
+	}
+	major, err := strconv.Atoi(match[1])
+	if err != nil {
+		return "", false
+	}
+	return normalizeTargetFrameworkMajor(major)
+}
+
+func IsSupportedTargetFramework(value string) bool {
+	_, ok := TargetFrameworkMajor(value)
+	return ok
+}
+
+func DefaultSolutionFormat(targetFramework string) string {
+	framework, ok := NormalizeTargetFramework(targetFramework)
+	if !ok {
+		return "sln"
+	}
+	major, ok := TargetFrameworkMajor(framework)
+	if !ok || major < 10 {
+		return "sln"
+	}
+	return "slnx"
+}
+
+func TargetFrameworkMajor(targetFramework string) (int, bool) {
+	match := targetFrameworkPattern.FindStringSubmatch(strings.TrimSpace(strings.ToLower(targetFramework)))
+	if len(match) != 2 {
+		return 0, false
+	}
+	major, err := strconv.Atoi(match[1])
+	if err != nil {
+		return 0, false
+	}
+	return major, true
+}
+
+func normalizeTargetFrameworkMajor(major int) (string, bool) {
+	if major < 1 || major > 99 {
+		return "", false
+	}
+	return fmt.Sprintf("net%d.0", major), true
+}
+
+func isSupportedSolutionFormat(value string) bool {
+	format := strings.TrimSpace(strings.ToLower(value))
+	return format == "" || format == "sln" || format == "slnx"
 }
 
 func generatedTypeNamesFor(entityName string) map[string]struct{} {
@@ -253,12 +321,7 @@ func SupportedFieldTypes() []string {
 }
 
 func SupportedTargetFrameworks() []string {
-	frameworks := make([]string, 0, len(supportedTargetFrameworks))
-	for framework := range supportedTargetFrameworks {
-		frameworks = append(frameworks, framework)
-	}
-	sort.Strings(frameworks)
-	return frameworks
+	return []string{"net11.0", "net10.0", "net9.0", "net8.0", "net7.0", "net6.0"}
 }
 
 func validateRequiredIdentifier(problems *[]string, path, value string) {

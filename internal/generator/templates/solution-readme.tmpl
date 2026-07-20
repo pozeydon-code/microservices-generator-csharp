@@ -48,10 +48,10 @@ This output is generated as source files only. It does not run dotnet, NuGet, mi
 ## Build and test
 
 ```bash
-dotnet restore ./{{ .Solution.Name }}.sln
-dotnet build ./{{ .Solution.Name }}.sln --nologo -warnaserror
+dotnet restore ./{{ .SolutionFileName }}
+dotnet build ./{{ .SolutionFileName }} --nologo -warnaserror
 MICROGEN_TEST_SQLSERVER='Server=localhost,1433;User Id=sa;Password=<password>;Encrypt=True;TrustServerCertificate=True' \
-  dotnet test ./{{ .Solution.Name }}.sln --nologo -warnaserror --blame-hang --blame-hang-timeout 90s --logger "trx;LogFileName=generated-tests.trx"
+  dotnet test ./{{ .SolutionFileName }} --nologo -warnaserror --blame-hang --blame-hang-timeout 90s --logger "trx;LogFileName=generated-tests.trx"
 ```
 
 ## Manual migrations
@@ -74,7 +74,7 @@ Run the same sequence for each generated service:
 
 ```bash
 mkdir -p ./artifacts
-dotnet test ./{{ $.Solution.Name }}.sln --nologo -warnaserror --logger "trx;LogFileName={{ .Name }}-tests.trx"
+dotnet test ./{{ $.SolutionFileName }} --nologo -warnaserror --logger "trx;LogFileName={{ .Name }}-tests.trx"
 TARGET_DATABASE='<confirmed-database-name>'
 TARGET_SERVER='<confirmed-server-name-or-host,port>'
 test -n "$TARGET_DATABASE"

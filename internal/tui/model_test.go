@@ -520,7 +520,7 @@ func TestModelUpdateEditsSolutionSettingsAndSaves(t *testing.T) {
 		}
 		capturedSettings = settings
 		return application.UpdateSolutionSettingsResult{Saved: true, Plan: updatedPlan}, nil
-	})
+	}, []string{"net10.0", "net9.0", "net8.0"})
 
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
 	model = updated.(Model)
@@ -555,10 +555,14 @@ func TestModelUpdateEditsSolutionSettingsAndSaves(t *testing.T) {
 	if model.edit.focused != editFieldTargetFramework {
 		t.Fatalf("expected target framework field, got %v", model.edit.focused)
 	}
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeySpace})
+	for range len([]rune("net8.0")) {
+		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		model = updated.(Model)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("9")})
 	model = updated.(Model)
-	if model.edit.targetFramework != "net9.0" {
-		t.Fatalf("expected target framework toggle to net9.0, got %q", model.edit.targetFramework)
+	if model.edit.targetFramework.string() != "9" {
+		t.Fatalf("expected manual target framework entry, got %q", model.edit.targetFramework.string())
 	}
 	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
@@ -577,7 +581,7 @@ func TestModelUpdateEditsSolutionSettingsAndSaves(t *testing.T) {
 	if finished.err != nil || finished.result.Plan.FileCount != 3 {
 		t.Fatalf("expected successful settings message, got %#v", finished)
 	}
-	expectedSettings := application.SolutionSettings{SolutionName: "CatalogPlatform", SolutionDescription: "New description", TargetFramework: "net9.0"}
+	expectedSettings := application.SolutionSettings{SolutionName: "CatalogPlatform", SolutionDescription: "New description", TargetFramework: "9"}
 	if capturedSettings != expectedSettings {
 		t.Fatalf("expected settings %#v, got %#v", expectedSettings, capturedSettings)
 	}
@@ -590,6 +594,28 @@ func TestModelUpdateEditsSolutionSettingsAndSaves(t *testing.T) {
 		t.Fatalf("expected ready state with refreshed plan, got %#v", model)
 	}
 	assertContains(t, model.View(), "Settings saved. Plan refreshed.")
+}
+
+func TestModelViewShowsTargetFrameworkSuggestionsAndCyclesThem(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{SolutionName: "CommercePlatform", TargetFramework: "net8.0"}
+	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil, []string{"net10.0", "net9.0", "net8.0"})
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(Model)
+
+	view := model.View()
+	assertContains(t, view, "Suggestions: net10.0, net9.0, net8.0")
+	assertContains(t, view, "Type a major or TFM such as 10 or net10.0.")
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlN})
+	model = updated.(Model)
+	if model.edit.targetFramework.string() != "net10.0" {
+		t.Fatalf("expected ctrl+n to cycle to first suggestion, got %q", model.edit.targetFramework.string())
+	}
 }
 
 func TestModelUpdateSupportsEditNavigationAndCancel(t *testing.T) {

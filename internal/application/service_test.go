@@ -67,6 +67,7 @@ func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T)
 		SolutionName:        "CommercePlatform",
 		SolutionDescription: "Product management.",
 		TargetFramework:     "net8.0",
+		SolutionFormat:      "sln",
 		ServiceCount:        2,
 		EntityCount:         3,
 		ValueObjectCount:    3,
@@ -178,11 +179,7 @@ func TestServiceUpdateSolutionSettingsRejectsInvalidSettingsWithoutSaving(t *tes
 			settings: SolutionSettings{SolutionName: "1Bad", SolutionDescription: "Updated", TargetFramework: "net9.0"},
 			wantErr:  "solution.name must be a valid C# identifier",
 		},
-		{
-			name:     "unsupported target framework",
-			settings: SolutionSettings{SolutionName: "CommercePlatform", SolutionDescription: "Updated", TargetFramework: "net10.0"},
-			wantErr:  "generation.targetFramework must be one of net8.0, net9.0",
-		},
+		{name: "invalid target framework", settings: SolutionSettings{SolutionName: "CommercePlatform", SolutionDescription: "Updated", TargetFramework: "latest"}, wantErr: "generation.targetFramework must be netN.0"},
 	}
 
 	for _, tt := range tests {
@@ -234,6 +231,9 @@ func TestServiceUpdateSolutionSettingsSavesValidSettingsAndReturnsPlan(t *testin
 	if saver.cfg.Solution.Name != settings.SolutionName || saver.cfg.Solution.Description != settings.SolutionDescription || saver.cfg.Generation.TargetFramework != "net9.0" {
 		t.Fatalf("expected saved solution settings, got %#v", saver.cfg)
 	}
+	if saver.cfg.Generation.SolutionFormat != "sln" {
+		t.Fatalf("expected net9.0 to persist sln solution format, got %q", saver.cfg.Generation.SolutionFormat)
+	}
 	if len(saver.cfg.Services) != 1 || len(saver.cfg.Services[0].Entities) != 1 || len(saver.cfg.Services[0].ValueObjects) != 1 {
 		t.Fatalf("expected service/entity/value-object data to be preserved, got %#v", saver.cfg.Services)
 	}
@@ -246,8 +246,42 @@ func TestServiceUpdateSolutionSettingsSavesValidSettingsAndReturnsPlan(t *testin
 	if result.Config.SolutionName != settings.SolutionName || result.Config.SolutionDescription != settings.SolutionDescription || result.Config.TargetFramework != "net9.0" {
 		t.Fatalf("expected saved config summary, got %#v", result.Config)
 	}
+	if result.Config.SolutionFormat != "sln" {
+		t.Fatalf("expected saved config summary solution format sln, got %#v", result.Config)
+	}
 	if result.Plan.Config.SolutionName != settings.SolutionName || result.Plan.Config.TargetFramework != "net9.0" || result.Plan.FileCount != 1 || result.Plan.OutputDir != "/planned/generated" {
 		t.Fatalf("expected refreshed plan from saved settings, got %#v", result.Plan)
+	}
+}
+
+func TestServiceUpdateSolutionSettingsNormalizesManualTargetFrameworkAndDefaultsSolutionFormat(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validPersistableConfig()},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       &fakeGenerator{files: []GeneratedFile{{Path: "README.md", Content: []byte("readme")}}},
+		OutputPlanner:   fakeOutputPlanner{plan: OutputPlan{OutputDir: "/planned/generated", Action: "create", Files: []OutputPlannedFile{{Path: "README.md", Action: "create"}}}},
+	})
+
+	result, err := service.UpdateSolutionSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, SolutionSettings{SolutionName: "CatalogPlatform", SolutionDescription: "Catalog management.", TargetFramework: "10"})
+
+	if err != nil {
+		t.Fatalf("expected update success, got %v", err)
+	}
+	if saver.cfg.Generation.TargetFramework != "net10.0" || saver.cfg.Generation.SolutionFormat != "slnx" {
+		t.Fatalf("expected normalized net10.0/slnx save, got %#v", saver.cfg.Generation)
+	}
+	if result.Config.TargetFramework != "net10.0" || result.Config.SolutionFormat != "slnx" {
+		t.Fatalf("expected net10.0/slnx summary, got %#v", result.Config)
+	}
+}
+
+func TestTargetFrameworkSuggestionsParseInstalledSDKMajorsNewestFirst(t *testing.T) {
+	got := targetFrameworksFromSDKList("8.0.404 [/sdk]\n10.0.110 [/sdk]\nnot-a-version [/sdk]\n10.0.111 [/sdk]\n")
+	want := []string{"net10.0", "net8.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected suggestions %#v, got %#v", want, got)
 	}
 }
 

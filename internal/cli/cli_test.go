@@ -110,7 +110,7 @@ func TestRunTUIReturnsNonZeroForInvalidConfigBeforeStartingProgram(t *testing.T)
 	var stderr bytes.Buffer
 	programStarted := false
 	originalRunTUIProgram := runTUIProgram
-	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc) error {
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, targetFrameworkSuggestions []string) error {
 		programStarted = true
 		return nil
 	}
@@ -140,15 +140,17 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 	var stderr bytes.Buffer
 	var capturedPlan application.GenerationPlan
 	var capturedRequest application.GenerateRequest
+	var capturedSuggestions []string
 	refreshCalled := false
 	generateCalled := false
 	updateCalled := false
 	programStarted := false
 	originalRunTUIProgram := runTUIProgram
-	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc) error {
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, targetFrameworkSuggestions []string) error {
 		programStarted = true
 		capturedPlan = plan
 		capturedRequest = request
+		capturedSuggestions = append([]string(nil), targetFrameworkSuggestions...)
 		refreshedPlan, err := planFunc(request)
 		if err != nil {
 			t.Fatalf("expected refresh action to succeed: %v", err)
@@ -190,6 +192,9 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 	}
 	if capturedRequest.ConfigPath != configPath || capturedRequest.OutputDir != outputDir || !capturedRequest.Force {
 		t.Fatalf("expected generation request to be passed to TUI, got %#v", capturedRequest)
+	}
+	if len(capturedSuggestions) == 0 {
+		t.Fatal("expected target framework suggestions to be passed to TUI")
 	}
 	if !refreshCalled || !generateCalled || !updateCalled {
 		t.Fatalf("expected refresh, generation, and settings actions to be passed to TUI, refresh=%t generate=%t update=%t", refreshCalled, generateCalled, updateCalled)

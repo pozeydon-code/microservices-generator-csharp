@@ -131,7 +131,7 @@ func TestLoadJSONAcceptsExactConfigByteLimit(t *testing.T) {
 func TestLoadJSONAcceptsSchemaVersionAndGenerationOptions(t *testing.T) {
 	cfg, err := LoadJSON(writeConfig(t, `{
   "schemaVersion": 1,
-  "generation": { "targetFramework": "net9.0" },
+  "generation": { "targetFramework": "net10.0", "solutionFormat": "slnx" },
   "solution": { "name": "CommercePlatform", "description": "Product management." },
   "services": [
     {
@@ -154,8 +154,11 @@ func TestLoadJSONAcceptsSchemaVersionAndGenerationOptions(t *testing.T) {
 	if cfg.SchemaVersion != spec.ConfigSchemaVersion {
 		t.Fatalf("expected schema version %d, got %d", spec.ConfigSchemaVersion, cfg.SchemaVersion)
 	}
-	if cfg.TargetFramework() != "net9.0" {
-		t.Fatalf("expected net9.0 target framework, got %q", cfg.TargetFramework())
+	if cfg.TargetFramework() != "net10.0" {
+		t.Fatalf("expected net10.0 target framework, got %q", cfg.TargetFramework())
+	}
+	if cfg.SolutionFormat() != "slnx" {
+		t.Fatalf("expected slnx solution format, got %q", cfg.SolutionFormat())
 	}
 }
 
@@ -236,7 +239,7 @@ func TestSaveJSONLoadJSONRoundTripPreservesConfigData(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "microgen.json")
 	cfg := spec.Config{
 		SchemaVersion: spec.ConfigSchemaVersion,
-		Generation:    spec.GenerationOptions{TargetFramework: "net9.0"},
+		Generation:    spec.GenerationOptions{TargetFramework: "net10.0", SolutionFormat: "slnx"},
 		Solution:      spec.Solution{Name: "CommercePlatform", Description: "Product management."},
 		Services: []spec.Service{
 			{
@@ -267,7 +270,7 @@ func TestSaveJSONLoadJSONRoundTripPreservesConfigData(t *testing.T) {
 	if !strings.HasPrefix(string(content), "{\n  \"schemaVersion\": 1,") {
 		t.Fatalf("expected deterministic pretty JSON with schemaVersion first, got %q", string(content))
 	}
-	if !strings.Contains(string(content), "\"targetFramework\": \"net9.0\"") {
+	if !strings.Contains(string(content), "\"targetFramework\": \"net10.0\"") || !strings.Contains(string(content), "\"solutionFormat\": \"slnx\"") {
 		t.Fatalf("expected target framework to be saved, got %q", string(content))
 	}
 	loaded, err := LoadJSON(path)

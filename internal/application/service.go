@@ -2,6 +2,10 @@ package application
 
 import (
 	"errors"
+	"os/exec"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/pozeydon-code/generator-microservices-go/internal/configloader"
 	"github.com/pozeydon-code/generator-microservices-go/internal/generator"
@@ -33,13 +37,18 @@ type OutputPlanner interface {
 	PlanOutput(outputDir string, files []GeneratedFile, force bool) (OutputPlan, error)
 }
 
+type TargetFrameworkSuggester interface {
+	SuggestedTargetFrameworks() []string
+}
+
 type Ports struct {
-	ConfigLoader    ConfigLoader
-	ConfigSaver     ConfigSaver
-	ConfigValidator ConfigValidator
-	Generator       Generator
-	OutputWriter    OutputWriter
-	OutputPlanner   OutputPlanner
+	ConfigLoader     ConfigLoader
+	ConfigSaver      ConfigSaver
+	ConfigValidator  ConfigValidator
+	Generator        Generator
+	OutputWriter     OutputWriter
+	OutputPlanner    OutputPlanner
+	TargetFrameworks TargetFrameworkSuggester
 }
 
 type Service struct {
@@ -81,6 +90,7 @@ type ConfigSummary struct {
 	SolutionName        string
 	SolutionDescription string
 	TargetFramework     string
+	SolutionFormat      string
 	ServiceCount        int
 	EntityCount         int
 	ValueObjectCount    int
@@ -148,6 +158,10 @@ func (s Service) ValidateConfig(cfg spec.Config) error {
 	return s.ports.ConfigValidator.ValidateConfig(cfg)
 }
 
+func (s Service) TargetFrameworkSuggestions() []string {
+	return s.ports.TargetFrameworks.SuggestedTargetFrameworks()
+}
+
 func (s Service) PlanGeneration(request GenerateRequest) (GenerationPlan, error) {
 	cfg, err := s.LoadConfig(request.ConfigPath)
 	if err != nil {
@@ -163,7 +177,12 @@ func (s Service) UpdateSolutionSettings(request GenerateRequest, settings Soluti
 	}
 	cfg.Solution.Name = settings.SolutionName
 	cfg.Solution.Description = settings.SolutionDescription
-	cfg.Generation.TargetFramework = settings.TargetFramework
+	targetFramework, ok := spec.NormalizeTargetFramework(settings.TargetFramework)
+	if !ok {
+		targetFramework = settings.TargetFramework
+	}
+	cfg.Generation.TargetFramework = targetFramework
+	cfg.Generation.SolutionFormat = spec.DefaultSolutionFormat(targetFramework)
 	if cfg.SchemaVersion == 0 {
 		cfg.SchemaVersion = spec.ConfigSchemaVersion
 	}
@@ -216,6 +235,7 @@ func summarizeConfig(cfg spec.Config) ConfigSummary {
 		SolutionName:        cfg.Solution.Name,
 		SolutionDescription: cfg.Solution.Description,
 		TargetFramework:     cfg.TargetFramework(),
+		SolutionFormat:      cfg.SolutionFormat(),
 		ServiceCount:        len(cfg.Services),
 		ServiceNames:        make([]string, len(cfg.Services)),
 	}
@@ -260,7 +280,51 @@ func (ports Ports) withDefaults() Ports {
 	if ports.OutputPlanner == nil {
 		ports.OutputPlanner = filesystemOutputPlanner{}
 	}
+	if ports.TargetFrameworks == nil {
+		ports.TargetFrameworks = dotnetTargetFrameworkSuggester{}
+	}
 	return ports
+}
+
+type dotnetTargetFrameworkSuggester struct{}
+
+func (dotnetTargetFrameworkSuggester) SuggestedTargetFrameworks() []string {
+	output, err := exec.Command("dotnet", "--list-sdks").Output()
+	if err != nil {
+		return spec.SupportedTargetFrameworks()
+	}
+	frameworks := targetFrameworksFromSDKList(string(output))
+	if len(frameworks) == 0 {
+		return spec.SupportedTargetFrameworks()
+	}
+	return frameworks
+}
+
+func targetFrameworksFromSDKList(output string) []string {
+	seen := map[int]struct{}{}
+	for _, line := range strings.Split(output, "\n") {
+		version, _, _ := strings.Cut(strings.TrimSpace(line), " ")
+		majorText, _, _ := strings.Cut(version, ".")
+		major, err := strconv.Atoi(majorText)
+		if err != nil {
+			continue
+		}
+		if framework, ok := spec.NormalizeTargetFramework(strconv.Itoa(major)); ok {
+			frameworkMajor, _ := spec.TargetFrameworkMajor(framework)
+			seen[frameworkMajor] = struct{}{}
+		}
+	}
+	majors := make([]int, 0, len(seen))
+	for major := range seen {
+		majors = append(majors, major)
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(majors)))
+	frameworks := make([]string, 0, len(majors))
+	for _, major := range majors {
+		framework, _ := spec.NormalizeTargetFramework(strconv.Itoa(major))
+		frameworks = append(frameworks, framework)
+	}
+	return frameworks
 }
 
 type generatorAdapter struct {

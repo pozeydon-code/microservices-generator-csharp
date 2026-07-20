@@ -51,34 +51,39 @@ type textField struct {
 type editState struct {
 	name            textField
 	description     textField
-	targetFramework string
+	targetFramework textField
 	focused         editField
 	returnStatus    modelStatus
 }
 
 type Model struct {
-	plan       application.GenerationPlan
-	request    application.GenerateRequest
-	planFunc   PlanFunc
-	generate   GenerateFunc
-	update     UpdateSettingsFunc
-	status     modelStatus
-	result     application.GenerateResult
-	err        error
-	errContext string
-	message    string
-	edit       editState
-	fileCursor int
-	fileOffset int
-	windowRows int
+	plan                       application.GenerationPlan
+	request                    application.GenerateRequest
+	planFunc                   PlanFunc
+	generate                   GenerateFunc
+	update                     UpdateSettingsFunc
+	status                     modelStatus
+	result                     application.GenerateResult
+	err                        error
+	errContext                 string
+	message                    string
+	edit                       editState
+	targetFrameworkSuggestions []string
+	fileCursor                 int
+	fileOffset                 int
+	windowRows                 int
 }
 
-func NewModel(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc) Model {
-	return Model{plan: plan, request: request, planFunc: planFunc, generate: generate, update: update, status: statusReady, windowRows: defaultFileWindowRows}
+func NewModel(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, targetFrameworkSuggestions ...[]string) Model {
+	suggestions := []string(nil)
+	if len(targetFrameworkSuggestions) > 0 {
+		suggestions = append([]string(nil), targetFrameworkSuggestions[0]...)
+	}
+	return Model{plan: plan, request: request, planFunc: planFunc, generate: generate, update: update, status: statusReady, targetFrameworkSuggestions: suggestions, windowRows: defaultFileWindowRows}
 }
 
-func Run(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc) error {
-	_, err := tea.NewProgram(NewModel(plan, request, planFunc, generate, update)).Run()
+func Run(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, targetFrameworkSuggestions []string) error {
+	_, err := tea.NewProgram(NewModel(plan, request, planFunc, generate, update, targetFrameworkSuggestions)).Run()
 	return err
 }
 
@@ -256,11 +261,11 @@ func (m *Model) startEditing() {
 	m.edit = editState{
 		name:            newTextField(m.plan.Config.SolutionName),
 		description:     newTextField(m.plan.Config.SolutionDescription),
-		targetFramework: m.plan.Config.TargetFramework,
+		targetFramework: newTextField(m.plan.Config.TargetFramework),
 		returnStatus:    returnStatus,
 	}
-	if m.edit.targetFramework == "" {
-		m.edit.targetFramework = "net8.0"
+	if m.edit.targetFramework.string() == "" {
+		m.edit.targetFramework = newTextField("net8.0")
 	}
 }
 
@@ -284,35 +289,27 @@ func (m Model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case " ":
 		if m.edit.focused == editFieldTargetFramework {
-			m.toggleTargetFramework()
 			return m, nil
 		}
 	case "left":
-		if m.edit.focused == editFieldTargetFramework {
-			m.toggleTargetFramework()
-			return m, nil
-		}
 		m.focusedTextField().move(-1)
 		return m, nil
 	case "right":
-		if m.edit.focused == editFieldTargetFramework {
-			m.toggleTargetFramework()
-			return m, nil
-		}
 		m.focusedTextField().move(1)
 		return m, nil
-	case "backspace":
-		if m.edit.focused != editFieldTargetFramework {
-			m.focusedTextField().backspace()
+	case "ctrl+n":
+		if m.edit.focused == editFieldTargetFramework {
+			m.cycleTargetFrameworkSuggestion()
 		}
+		return m, nil
+	case "backspace":
+		m.focusedTextField().backspace()
 		return m, nil
 	case "delete":
-		if m.edit.focused != editFieldTargetFramework {
-			m.focusedTextField().delete()
-		}
+		m.focusedTextField().delete()
 		return m, nil
 	}
-	if msg.Type == tea.KeyRunes && m.edit.focused != editFieldTargetFramework {
+	if msg.Type == tea.KeyRunes {
 		m.focusedTextField().insert(msg.Runes)
 		return m, nil
 	}
@@ -362,18 +359,28 @@ func (field *textField) move(delta int) {
 }
 
 func (m *Model) focusedTextField() *textField {
-	if m.edit.focused == editFieldDescription {
+	switch m.edit.focused {
+	case editFieldDescription:
 		return &m.edit.description
+	case editFieldTargetFramework:
+		return &m.edit.targetFramework
+	default:
+		return &m.edit.name
 	}
-	return &m.edit.name
 }
 
-func (m *Model) toggleTargetFramework() {
-	if m.edit.targetFramework == "net9.0" {
-		m.edit.targetFramework = "net8.0"
+func (m *Model) cycleTargetFrameworkSuggestion() {
+	if len(m.targetFrameworkSuggestions) == 0 {
 		return
 	}
-	m.edit.targetFramework = "net9.0"
+	current := m.edit.targetFramework.string()
+	for index, suggestion := range m.targetFrameworkSuggestions {
+		if suggestion == current {
+			m.edit.targetFramework = newTextField(m.targetFrameworkSuggestions[(index+1)%len(m.targetFrameworkSuggestions)])
+			return
+		}
+	}
+	m.edit.targetFramework = newTextField(m.targetFrameworkSuggestions[0])
 }
 
 func (m *Model) moveFileCursor(delta int) {
@@ -467,7 +474,7 @@ func (m Model) saveSettingsCmd() tea.Cmd {
 	settings := application.SolutionSettings{
 		SolutionName:        m.edit.name.string(),
 		SolutionDescription: m.edit.description.string(),
-		TargetFramework:     m.edit.targetFramework,
+		TargetFramework:     m.edit.targetFramework.string(),
 	}
 	return func() tea.Msg {
 		result, err := m.update(m.request, settings)
@@ -584,9 +591,13 @@ func (m Model) renderSettingsEditor(builder *strings.Builder) {
 	}
 	fmt.Fprintf(builder, "%s Solution name: %s\n", editCursor(m.edit.focused == editFieldName), m.edit.name.string())
 	fmt.Fprintf(builder, "%s Description: %s\n", editCursor(m.edit.focused == editFieldDescription), m.edit.description.string())
-	fmt.Fprintf(builder, "%s Target framework: %s (space/left/right toggles net8.0/net9.0)\n", editCursor(m.edit.focused == editFieldTargetFramework), m.edit.targetFramework)
+	fmt.Fprintf(builder, "%s Target framework: %s\n", editCursor(m.edit.focused == editFieldTargetFramework), m.edit.targetFramework.string())
+	if len(m.targetFrameworkSuggestions) > 0 {
+		fmt.Fprintf(builder, "  Suggestions: %s\n", strings.Join(m.targetFrameworkSuggestions, ", "))
+	}
 	fmt.Fprintln(builder)
-	fmt.Fprintln(builder, "Tab/down and shift+tab/up move fields. Enter saves. Esc cancels.")
+	fmt.Fprintln(builder, "Type a major or TFM such as 10 or net10.0. Ctrl+n cycles suggestions. Enter saves. Esc cancels.")
+	fmt.Fprintln(builder, "Tab/down and shift+tab/up move fields.")
 }
 
 func editCursor(focused bool) string {

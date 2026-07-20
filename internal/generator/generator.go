@@ -51,7 +51,8 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 	if err := g.appendRendered(&files, "microgen.json", "solution-metadata.tmpl", solution); err != nil {
 		return nil, err
 	}
-	if err := g.appendRendered(&files, solution.Solution.Name+".sln", "solution-sln.tmpl", solution); err != nil {
+	solutionTemplate := "solution-" + solution.SolutionFormat + ".tmpl"
+	if err := g.appendRendered(&files, solution.SolutionFileName, solutionTemplate, solution); err != nil {
 		return nil, err
 	}
 
