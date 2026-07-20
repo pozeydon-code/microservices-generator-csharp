@@ -110,7 +110,7 @@ func TestRunTUIReturnsNonZeroForInvalidConfigBeforeStartingProgram(t *testing.T)
 	var stderr bytes.Buffer
 	programStarted := false
 	originalRunTUIProgram := runTUIProgram
-	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc) error {
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc) error {
 		programStarted = true
 		return nil
 	}
@@ -142,9 +142,10 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 	var capturedRequest application.GenerateRequest
 	refreshCalled := false
 	generateCalled := false
+	updateCalled := false
 	programStarted := false
 	originalRunTUIProgram := runTUIProgram
-	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc) error {
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc) error {
 		programStarted = true
 		capturedPlan = plan
 		capturedRequest = request
@@ -164,6 +165,14 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 			t.Fatalf("expected generation result for output dir %s, got %#v", outputDir, result)
 		}
 		generateCalled = true
+		updateResult, err := update(request, application.SolutionSettings{SolutionName: "CatalogPlatform", SolutionDescription: "Catalog management.", TargetFramework: "net9.0"})
+		if err != nil {
+			t.Fatalf("expected settings update action to succeed: %v", err)
+		}
+		if !updateResult.Saved || updateResult.PlanError != nil || updateResult.Plan.Config.SolutionName != "CatalogPlatform" || updateResult.Plan.Config.TargetFramework != "net9.0" || updateResult.Plan.FileCount != 44 {
+			t.Fatalf("expected updated plan from settings callback, got %#v", updateResult)
+		}
+		updateCalled = true
 		return nil
 	}
 	t.Cleanup(func() { runTUIProgram = originalRunTUIProgram })
@@ -182,8 +191,8 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 	if capturedRequest.ConfigPath != configPath || capturedRequest.OutputDir != outputDir || !capturedRequest.Force {
 		t.Fatalf("expected generation request to be passed to TUI, got %#v", capturedRequest)
 	}
-	if !refreshCalled || !generateCalled {
-		t.Fatalf("expected refresh and generation actions to be passed to TUI, refresh=%t generate=%t", refreshCalled, generateCalled)
+	if !refreshCalled || !generateCalled || !updateCalled {
+		t.Fatalf("expected refresh, generation, and settings actions to be passed to TUI, refresh=%t generate=%t update=%t", refreshCalled, generateCalled, updateCalled)
 	}
 	if stdout.String() != "" || stderr.String() != "" {
 		t.Fatalf("expected no CLI output around TUI, got stdout %q stderr %q", stdout.String(), stderr.String())

@@ -13,6 +13,10 @@ type ConfigLoader interface {
 	LoadConfig(path string) (spec.Config, error)
 }
 
+type ConfigSaver interface {
+	SaveConfig(path string, cfg spec.Config) error
+}
+
 type ConfigValidator interface {
 	ValidateConfig(cfg spec.Config) error
 }
@@ -31,6 +35,7 @@ type OutputPlanner interface {
 
 type Ports struct {
 	ConfigLoader    ConfigLoader
+	ConfigSaver     ConfigSaver
 	ConfigValidator ConfigValidator
 	Generator       Generator
 	OutputWriter    OutputWriter
@@ -45,6 +50,19 @@ type GenerateRequest struct {
 	ConfigPath string
 	OutputDir  string
 	Force      bool
+}
+
+type SolutionSettings struct {
+	SolutionName        string
+	SolutionDescription string
+	TargetFramework     string
+}
+
+type UpdateSolutionSettingsResult struct {
+	Saved     bool
+	Config    ConfigSummary
+	Plan      GenerationPlan
+	PlanError error
 }
 
 type GenerationPlan struct {
@@ -122,6 +140,10 @@ func (s Service) LoadConfig(path string) (spec.Config, error) {
 	return s.ports.ConfigLoader.LoadConfig(path)
 }
 
+func (s Service) SaveConfig(path string, cfg spec.Config) error {
+	return s.ports.ConfigSaver.SaveConfig(path, cfg)
+}
+
 func (s Service) ValidateConfig(cfg spec.Config) error {
 	return s.ports.ConfigValidator.ValidateConfig(cfg)
 }
@@ -131,6 +153,32 @@ func (s Service) PlanGeneration(request GenerateRequest) (GenerationPlan, error)
 	if err != nil {
 		return GenerationPlan{}, err
 	}
+	return s.planGenerationFromConfig(request, cfg)
+}
+
+func (s Service) UpdateSolutionSettings(request GenerateRequest, settings SolutionSettings) (UpdateSolutionSettingsResult, error) {
+	cfg, err := s.LoadConfig(request.ConfigPath)
+	if err != nil {
+		return UpdateSolutionSettingsResult{}, err
+	}
+	cfg.Solution.Name = settings.SolutionName
+	cfg.Solution.Description = settings.SolutionDescription
+	cfg.Generation.TargetFramework = settings.TargetFramework
+	if cfg.SchemaVersion == 0 {
+		cfg.SchemaVersion = spec.ConfigSchemaVersion
+	}
+	if err := s.ValidateConfig(cfg); err != nil {
+		return UpdateSolutionSettingsResult{}, err
+	}
+	if err := s.SaveConfig(request.ConfigPath, cfg); err != nil {
+		return UpdateSolutionSettingsResult{}, err
+	}
+	config := summarizeConfig(cfg)
+	plan, err := s.planGenerationFromConfig(request, cfg)
+	return UpdateSolutionSettingsResult{Saved: true, Config: config, Plan: plan, PlanError: err}, nil
+}
+
+func (s Service) planGenerationFromConfig(request GenerateRequest, cfg spec.Config) (GenerationPlan, error) {
 	if err := s.ValidateConfig(cfg); err != nil {
 		return GenerationPlan{}, err
 	}
@@ -200,6 +248,9 @@ func (ports Ports) withDefaults() Ports {
 	if ports.ConfigLoader == nil {
 		ports.ConfigLoader = configLoaderFunc(configloader.LoadJSON)
 	}
+	if ports.ConfigSaver == nil {
+		ports.ConfigSaver = configSaverFunc(configloader.SaveJSON)
+	}
 	if ports.ConfigValidator == nil {
 		ports.ConfigValidator = specValidator{}
 	}
@@ -236,6 +287,12 @@ type configLoaderFunc func(path string) (spec.Config, error)
 
 func (loader configLoaderFunc) LoadConfig(path string) (spec.Config, error) {
 	return loader(path)
+}
+
+type configSaverFunc func(path string, cfg spec.Config) error
+
+func (saver configSaverFunc) SaveConfig(path string, cfg spec.Config) error {
+	return saver(path, cfg)
 }
 
 type specValidator struct{}

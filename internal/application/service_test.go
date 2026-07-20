@@ -167,6 +167,118 @@ func TestServicePlanGenerationStopsAtValidationError(t *testing.T) {
 	}
 }
 
+func TestServiceUpdateSolutionSettingsRejectsInvalidSettingsWithoutSaving(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings SolutionSettings
+		wantErr  string
+	}{
+		{
+			name:     "invalid solution name",
+			settings: SolutionSettings{SolutionName: "1Bad", SolutionDescription: "Updated", TargetFramework: "net9.0"},
+			wantErr:  "solution.name must be a valid C# identifier",
+		},
+		{
+			name:     "unsupported target framework",
+			settings: SolutionSettings{SolutionName: "CommercePlatform", SolutionDescription: "Updated", TargetFramework: "net10.0"},
+			wantErr:  "generation.targetFramework must be one of net8.0, net9.0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			saver := &fakeConfigSaver{}
+			gen := &fakeGenerator{}
+			service := NewService(Ports{
+				ConfigLoader:    &fakeConfigLoader{cfg: validPersistableConfig()},
+				ConfigSaver:     saver,
+				ConfigValidator: specValidator{},
+				Generator:       gen,
+				OutputPlanner:   fakeOutputPlanner{},
+			})
+
+			_, err := service.UpdateSolutionSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, tt.settings)
+
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+			if saver.called {
+				t.Fatal("expected invalid settings not to be saved")
+			}
+			if gen.called {
+				t.Fatal("expected invalid settings not to regenerate plan")
+			}
+		})
+	}
+}
+
+func TestServiceUpdateSolutionSettingsSavesValidSettingsAndReturnsPlan(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validPersistableConfig()},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       &fakeGenerator{files: []GeneratedFile{{Path: "README.md", Content: []byte("readme")}}},
+		OutputPlanner:   fakeOutputPlanner{plan: OutputPlan{OutputDir: "/planned/generated", Action: "create", Files: []OutputPlannedFile{{Path: "README.md", Action: "create"}}}},
+	})
+	settings := SolutionSettings{SolutionName: "CatalogPlatform", SolutionDescription: "Catalog management.", TargetFramework: "net9.0"}
+
+	result, err := service.UpdateSolutionSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated", Force: true}, settings)
+
+	if err != nil {
+		t.Fatalf("expected update success, got %v", err)
+	}
+	if !saver.called || saver.path != "microgen.json" {
+		t.Fatalf("expected config save at microgen.json, got called=%v path=%q", saver.called, saver.path)
+	}
+	if saver.cfg.Solution.Name != settings.SolutionName || saver.cfg.Solution.Description != settings.SolutionDescription || saver.cfg.Generation.TargetFramework != "net9.0" {
+		t.Fatalf("expected saved solution settings, got %#v", saver.cfg)
+	}
+	if len(saver.cfg.Services) != 1 || len(saver.cfg.Services[0].Entities) != 1 || len(saver.cfg.Services[0].ValueObjects) != 1 {
+		t.Fatalf("expected service/entity/value-object data to be preserved, got %#v", saver.cfg.Services)
+	}
+	if saver.cfg.SchemaVersion != spec.ConfigSchemaVersion {
+		t.Fatalf("expected schemaVersion %d, got %d", spec.ConfigSchemaVersion, saver.cfg.SchemaVersion)
+	}
+	if !result.Saved || result.PlanError != nil {
+		t.Fatalf("expected saved result without plan error, got %#v", result)
+	}
+	if result.Config.SolutionName != settings.SolutionName || result.Config.SolutionDescription != settings.SolutionDescription || result.Config.TargetFramework != "net9.0" {
+		t.Fatalf("expected saved config summary, got %#v", result.Config)
+	}
+	if result.Plan.Config.SolutionName != settings.SolutionName || result.Plan.Config.TargetFramework != "net9.0" || result.Plan.FileCount != 1 || result.Plan.OutputDir != "/planned/generated" {
+		t.Fatalf("expected refreshed plan from saved settings, got %#v", result.Plan)
+	}
+}
+
+func TestServiceUpdateSolutionSettingsReportsPostSavePlanError(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	planErr := errors.New("plan failed")
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validPersistableConfig()},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       &fakeGenerator{err: planErr},
+		OutputPlanner:   fakeOutputPlanner{},
+	})
+	settings := SolutionSettings{SolutionName: "CatalogPlatform", SolutionDescription: "Catalog management.", TargetFramework: "net9.0"}
+
+	result, err := service.UpdateSolutionSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, settings)
+
+	if err != nil {
+		t.Fatalf("expected save success with plan error result, got %v", err)
+	}
+	if !saver.called || !result.Saved || !errors.Is(result.PlanError, planErr) {
+		t.Fatalf("expected saved result with plan error, got saver.called=%v result=%#v", saver.called, result)
+	}
+	if result.Config.SolutionName != settings.SolutionName || result.Config.SolutionDescription != settings.SolutionDescription || result.Config.TargetFramework != "net9.0" {
+		t.Fatalf("expected saved config summary despite plan error, got %#v", result.Config)
+	}
+	if result.Config.ServiceCount != 1 || result.Config.EntityCount != 1 || result.Config.ValueObjectCount != 1 {
+		t.Fatalf("expected preserved config summary counts, got %#v", result.Config)
+	}
+}
+
 func TestDefaultServicePlanGenerationUsesRealPortsWithoutWriting(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "microgen.json")
 	if err := os.WriteFile(configPath, []byte(validJSONConfig), 0o644); err != nil {
@@ -235,6 +347,20 @@ type fakeConfigLoader struct {
 func (loader *fakeConfigLoader) LoadConfig(path string) (spec.Config, error) {
 	loader.path = path
 	return loader.cfg, loader.err
+}
+
+type fakeConfigSaver struct {
+	called bool
+	path   string
+	cfg    spec.Config
+	err    error
+}
+
+func (saver *fakeConfigSaver) SaveConfig(path string, cfg spec.Config) error {
+	saver.called = true
+	saver.path = path
+	saver.cfg = cfg
+	return saver.err
 }
 
 type fakeConfigValidator struct {
@@ -321,6 +447,31 @@ func validConfig() spec.Config {
 				Entities: []spec.Entity{
 					{Name: "Order"},
 					{Name: "OrderLine"},
+				},
+			},
+		},
+	}
+}
+
+func validPersistableConfig() spec.Config {
+	return spec.Config{
+		SchemaVersion: spec.ConfigSchemaVersion,
+		Generation:    spec.GenerationOptions{TargetFramework: "net8.0"},
+		Solution:      spec.Solution{Name: "CommercePlatform", Description: "Product management."},
+		Services: []spec.Service{
+			{
+				Name: "ProductService",
+				ValueObjects: []spec.ValueObject{
+					{Name: "ProductName", Type: "string"},
+				},
+				Entities: []spec.Entity{
+					{
+						Name: "Product",
+						Fields: []spec.Field{
+							{Name: "Id", Type: "Guid"},
+							{Name: "Name", Type: "ProductName"},
+						},
+					},
 				},
 			},
 		},

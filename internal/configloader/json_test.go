@@ -3,6 +3,7 @@ package configloader
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -231,6 +232,106 @@ func TestLoadJSONSchemaVersionCompatibility(t *testing.T) {
 	}
 }
 
+func TestSaveJSONLoadJSONRoundTripPreservesConfigData(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "microgen.json")
+	cfg := spec.Config{
+		SchemaVersion: spec.ConfigSchemaVersion,
+		Generation:    spec.GenerationOptions{TargetFramework: "net9.0"},
+		Solution:      spec.Solution{Name: "CommercePlatform", Description: "Product management."},
+		Services: []spec.Service{
+			{
+				Name: "ProductService",
+				ValueObjects: []spec.ValueObject{
+					{Name: "ProductName", Type: "string"},
+				},
+				Entities: []spec.Entity{
+					{
+						Name: "Product",
+						Fields: []spec.Field{
+							{Name: "Id", Type: "Guid"},
+							{Name: "Name", Type: "ProductName"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := SaveJSON(path, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if !strings.HasPrefix(string(content), "{\n  \"schemaVersion\": 1,") {
+		t.Fatalf("expected deterministic pretty JSON with schemaVersion first, got %q", string(content))
+	}
+	if !strings.Contains(string(content), "\"targetFramework\": \"net9.0\"") {
+		t.Fatalf("expected target framework to be saved, got %q", string(content))
+	}
+	loaded, err := LoadJSON(path)
+	if err != nil {
+		t.Fatalf("load saved config: %v", err)
+	}
+	if !reflect.DeepEqual(loaded, cfg) {
+		t.Fatalf("expected round trip to preserve config\nwant: %#v\n got: %#v", cfg, loaded)
+	}
+}
+
+func TestSaveJSONRejectsInvalidConfigWithoutReplacingExistingFile(t *testing.T) {
+	path := writeConfig(t, validConfigJSON)
+	invalid := spec.Config{SchemaVersion: spec.ConfigSchemaVersion, Solution: spec.Solution{Name: "1Bad"}}
+
+	err := SaveJSON(path, invalid)
+
+	if err == nil || !strings.Contains(err.Error(), "solution.name must be a valid C# identifier") {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+	content, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("read config after failed save: %v", readErr)
+	}
+	if string(content) != validConfigJSON {
+		t.Fatalf("expected failed save not to replace existing file, got %q", string(content))
+	}
+}
+
+func TestSaveJSONPreservesExistingFileMode(t *testing.T) {
+	path := writeConfig(t, validConfigJSON)
+	if err := os.Chmod(path, 0o640); err != nil {
+		t.Fatalf("chmod config: %v", err)
+	}
+
+	if err := SaveJSON(path, validConfig()); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat saved config: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o640 {
+		t.Fatalf("expected config mode 0640, got %04o", got)
+	}
+}
+
+func TestSaveJSONUsesDefaultModeForNewFiles(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "microgen.json")
+
+	if err := SaveJSON(path, validConfig()); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat saved config: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o644 {
+		t.Fatalf("expected new config mode 0644, got %04o", got)
+	}
+}
+
 func writeConfig(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "microgen.json")
@@ -238,6 +339,21 @@ func writeConfig(t *testing.T, content string) string {
 		t.Fatalf("write config: %v", err)
 	}
 	return path
+}
+
+func validConfig() spec.Config {
+	return spec.Config{
+		SchemaVersion: spec.ConfigSchemaVersion,
+		Generation:    spec.GenerationOptions{TargetFramework: "net9.0"},
+		Solution:      spec.Solution{Name: "CommercePlatform", Description: "Product management."},
+		Services: []spec.Service{{
+			Name: "ProductService",
+			Entities: []spec.Entity{{
+				Name:   "Product",
+				Fields: []spec.Field{{Name: "Id", Type: "Guid"}},
+			}},
+		}},
+	}
 }
 
 const validConfigJSON = `{

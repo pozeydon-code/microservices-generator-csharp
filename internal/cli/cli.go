@@ -84,7 +84,7 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return ExitError
 	}
-	if err := runTUIProgram(plan, request, service.PlanGeneration, service.Generate); err != nil {
+	if err := runTUIProgram(plan, request, service.PlanGeneration, service.Generate, service.UpdateSolutionSettings); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return ExitError
 	}

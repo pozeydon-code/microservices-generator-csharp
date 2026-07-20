@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/pozeydon-code/generator-microservices-go/internal/spec"
@@ -30,6 +31,62 @@ func LoadJSON(path string) (spec.Config, error) {
 	}
 
 	return loadJSONConfig(content)
+}
+
+func SaveJSON(path string, cfg spec.Config) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	if cfg.SchemaVersion == 0 {
+		cfg.SchemaVersion = spec.ConfigSchemaVersion
+	}
+
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("stat config: %w", err)
+	}
+	tmp, err := os.CreateTemp(dir, base+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temp config: %w", err)
+	}
+	tmpPath := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	encoder := json.NewEncoder(tmp)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(cfg); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temp config: %w", err)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("set temp config mode: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("sync temp config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp config: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("replace config: %w", err)
+	}
+	cleanup = false
+	if dirFile, err := os.Open(dir); err == nil {
+		_ = dirFile.Sync()
+		_ = dirFile.Close()
+	}
+	return nil
 }
 
 func loadJSONConfig(content []byte) (spec.Config, error) {
