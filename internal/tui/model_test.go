@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -47,12 +48,117 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	assertContains(t, view, "Output action: replace")
 	assertContains(t, view, "Force: required=yes, used=yes")
 	assertContains(t, view, "Files planned: 6")
-	assertContains(t, view, "- replace README.md")
-	assertContains(t, view, "Showing first 5 of 6 planned files.")
+	assertContains(t, view, "Files 1-5 of 6")
+	assertContains(t, view, "> replace README.md")
+	assertContains(t, view, "  create tests/ProductService/ProductService.Api.Tests/ProductEndpointsTests.cs")
 	assertContains(t, view, "Press g to generate files. This writes files to the output directory.")
+	assertContains(t, view, navigationHelp)
 	assertContains(t, view, "Press q, esc, or ctrl+c to quit.")
 	if strings.Contains(view, "tests/ProductService/ProductService.Domain.Tests/ProductTests.cs") {
 		t.Fatalf("expected file preview to be truncated, got view %q", view)
+	}
+}
+
+func TestModelViewShowsPlannedFileRangeAndCursor(t *testing.T) {
+	view := NewModel(plannedFilesPlan(6), application.GenerateRequest{}, nil).View()
+
+	assertContains(t, view, "Files 1-5 of 6")
+	assertContains(t, view, "> create file-01.txt")
+	assertContains(t, view, "  create file-05.txt")
+	assertNotContains(t, view, "file-06.txt")
+}
+
+func TestModelUpdateMovesPlannedFileCursorAndWindow(t *testing.T) {
+	model := NewModel(plannedFilesPlan(7), application.GenerateRequest{}, nil)
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	if cmd != nil {
+		t.Fatal("expected no command")
+	}
+	assertContains(t, model.View(), "Files 1-5 of 7")
+	assertContains(t, model.View(), "> create file-02.txt")
+
+	for range 4 {
+		updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		model = updated.(Model)
+		if cmd != nil {
+			t.Fatal("expected no command")
+		}
+	}
+	view := model.View()
+	assertContains(t, view, "Files 2-6 of 7")
+	assertContains(t, view, "> create file-06.txt")
+	assertNotContains(t, view, "file-01.txt")
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyUp})
+	model = updated.(Model)
+	if cmd != nil {
+		t.Fatal("expected no command")
+	}
+	view = model.View()
+	assertContains(t, view, "Files 2-6 of 7")
+	assertContains(t, view, "> create file-05.txt")
+}
+
+func TestModelUpdateClampsPlannedFileNavigationBounds(t *testing.T) {
+	model := NewModel(plannedFilesPlan(3), application.GenerateRequest{}, nil)
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyUp})
+	model = updated.(Model)
+	view := model.View()
+	assertContains(t, view, "Files 1-3 of 3")
+	assertContains(t, view, "> create file-01.txt")
+
+	for range 5 {
+		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model = updated.(Model)
+	}
+	view = model.View()
+	assertContains(t, view, "Files 1-3 of 3")
+	assertContains(t, view, "> create file-03.txt")
+}
+
+func TestModelUpdateSupportsPlannedFileHomeEndAndPageKeys(t *testing.T) {
+	model := NewModel(plannedFilesPlan(12), application.GenerateRequest{}, nil)
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	model = updated.(Model)
+	view := model.View()
+	assertContains(t, view, "Files 2-6 of 12")
+	assertContains(t, view, "> create file-06.txt")
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	model = updated.(Model)
+	view = model.View()
+	assertContains(t, view, "Files 1-5 of 12")
+	assertContains(t, view, "> create file-01.txt")
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	model = updated.(Model)
+	view = model.View()
+	assertContains(t, view, "Files 8-12 of 12")
+	assertContains(t, view, "> create file-12.txt")
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyHome})
+	model = updated.(Model)
+	view = model.View()
+	assertContains(t, view, "Files 1-5 of 12")
+	assertContains(t, view, "> create file-01.txt")
+}
+
+func TestModelUpdateIgnoresPlannedFileNavigationWhileGenerating(t *testing.T) {
+	model := NewModel(plannedFilesPlan(6), application.GenerateRequest{}, nil)
+	model.status = statusGenerating
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updatedModel := updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("expected no command")
+	}
+	if updatedModel.fileCursor != 0 || updatedModel.fileOffset != 0 {
+		t.Fatalf("expected navigation to be ignored while generating, got cursor=%d offset=%d", updatedModel.fileCursor, updatedModel.fileOffset)
 	}
 }
 
@@ -176,6 +282,7 @@ func TestModelUpdateStartsGenerationOnConfirmedKey(t *testing.T) {
 	view := updatedModel.View()
 	assertContains(t, view, "Generating files...")
 	assertContains(t, view, "Generation is in progress. Exit will be available after it finishes.")
+	assertNotContains(t, view, navigationHelp)
 	assertNotContains(t, view, "Press q, esc, or ctrl+c to quit.")
 }
 
@@ -214,6 +321,7 @@ func TestModelUpdateRecordsGenerationSuccess(t *testing.T) {
 	view := updatedModel.View()
 	assertContains(t, view, "Generated 3 files in /tmp/generated.")
 	assertContains(t, view, "Warning: existing warning")
+	assertContains(t, view, navigationHelp)
 }
 
 func TestModelUpdateRecordsGenerationFailureAndAllowsRetry(t *testing.T) {
@@ -236,6 +344,7 @@ func TestModelUpdateRecordsGenerationFailureAndAllowsRetry(t *testing.T) {
 	view := failedModel.View()
 	assertContains(t, view, "Generation failed: write failed")
 	assertContains(t, view, "Press g to retry generation. This writes files to the output directory.")
+	assertContains(t, view, navigationHelp)
 
 	retrying, retryCmd := failedModel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	if retrying.(Model).status != statusGenerating {
@@ -255,6 +364,14 @@ func assertContains(t *testing.T, value, expected string) {
 	if !strings.Contains(value, expected) {
 		t.Fatalf("expected %q to contain %q", value, expected)
 	}
+}
+
+func plannedFilesPlan(count int) application.GenerationPlan {
+	files := make([]application.PlannedFile, count)
+	for index := range files {
+		files[index] = application.PlannedFile{Path: fmt.Sprintf("file-%02d.txt", index+1), Action: "create"}
+	}
+	return application.GenerationPlan{FileCount: count, Files: files}
 }
 
 func assertNotContains(t *testing.T, value, unexpected string) {

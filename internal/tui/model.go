@@ -9,6 +9,7 @@ import (
 )
 
 const plannedFilePreviewLimit = 5
+const navigationHelp = "Navigate files: up/down, k/j, pgup/pgdown, home/end."
 
 type GenerateFunc func(application.GenerateRequest) (application.GenerateResult, error)
 
@@ -22,12 +23,14 @@ const (
 )
 
 type Model struct {
-	plan     application.GenerationPlan
-	request  application.GenerateRequest
-	generate GenerateFunc
-	status   modelStatus
-	result   application.GenerateResult
-	err      error
+	plan       application.GenerationPlan
+	request    application.GenerateRequest
+	generate   GenerateFunc
+	status     modelStatus
+	result     application.GenerateResult
+	err        error
+	fileCursor int
+	fileOffset int
 }
 
 func NewModel(plan application.GenerationPlan, request application.GenerateRequest, generate GenerateFunc) Model {
@@ -52,6 +55,44 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, tea.Quit
+		case "up", "k":
+			if m.status == statusGenerating {
+				return m, nil
+			}
+			m.moveFileCursor(-1)
+			return m, nil
+		case "down", "j":
+			if m.status == statusGenerating {
+				return m, nil
+			}
+			m.moveFileCursor(1)
+			return m, nil
+		case "home":
+			if m.status == statusGenerating {
+				return m, nil
+			}
+			m.fileCursor = 0
+			m.fileOffset = 0
+			return m, nil
+		case "end":
+			if m.status == statusGenerating {
+				return m, nil
+			}
+			m.fileCursor = len(m.plan.Files) - 1
+			m.clampFileCursor()
+			return m, nil
+		case "pgup":
+			if m.status == statusGenerating {
+				return m, nil
+			}
+			m.moveFileCursor(-plannedFilePreviewLimit)
+			return m, nil
+		case "pgdown":
+			if m.status == statusGenerating {
+				return m, nil
+			}
+			m.moveFileCursor(plannedFilePreviewLimit)
+			return m, nil
 		case "g":
 			if m.status != statusReady && m.status != statusFailed {
 				return m, nil
@@ -69,9 +110,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.result = msg.result
 		m.plan = msg.result.Plan
 		m.err = nil
+		m.clampFileCursor()
 		return m, nil
 	}
 	return m, nil
+}
+
+func (m *Model) moveFileCursor(delta int) {
+	m.fileCursor += delta
+	m.clampFileCursor()
+}
+
+func (m *Model) clampFileCursor() {
+	fileCount := len(m.plan.Files)
+	if fileCount == 0 {
+		m.fileCursor = 0
+		m.fileOffset = 0
+		return
+	}
+	if m.fileCursor < 0 {
+		m.fileCursor = 0
+	}
+	if m.fileCursor >= fileCount {
+		m.fileCursor = fileCount - 1
+	}
+	if m.fileOffset > m.fileCursor {
+		m.fileOffset = m.fileCursor
+	}
+	if m.fileCursor >= m.fileOffset+plannedFilePreviewLimit {
+		m.fileOffset = m.fileCursor - plannedFilePreviewLimit + 1
+	}
+	lastOffset := fileCount - plannedFilePreviewLimit
+	if lastOffset < 0 {
+		lastOffset = 0
+	}
+	if m.fileOffset > lastOffset {
+		m.fileOffset = lastOffset
+	}
+	if m.fileOffset < 0 {
+		m.fileOffset = 0
+	}
 }
 
 type generationFinishedMsg struct {
@@ -107,18 +185,23 @@ func (m Model) View() string {
 	fmt.Fprintln(&builder)
 	fmt.Fprintln(&builder, "Planned files:")
 
-	limit := len(m.plan.Files)
-	if limit > plannedFilePreviewLimit {
-		limit = plannedFilePreviewLimit
-	}
-	for _, file := range m.plan.Files[:limit] {
-		fmt.Fprintf(&builder, "- %s %s\n", file.Action, file.Path)
-	}
-	if len(m.plan.Files) > limit {
-		fmt.Fprintf(&builder, "Showing first %d of %d planned files.\n", limit, len(m.plan.Files))
-	}
-	if len(m.plan.Files) == 0 {
+	fileCount := len(m.plan.Files)
+	if fileCount == 0 {
 		fmt.Fprintln(&builder, "- No files planned")
+	} else {
+		start := m.fileOffset
+		end := start + plannedFilePreviewLimit
+		if end > fileCount {
+			end = fileCount
+		}
+		fmt.Fprintf(&builder, "Files %d-%d of %d\n", start+1, end, fileCount)
+		for index, file := range m.plan.Files[start:end] {
+			cursor := " "
+			if start+index == m.fileCursor {
+				cursor = ">"
+			}
+			fmt.Fprintf(&builder, "%s %s %s\n", cursor, file.Action, file.Path)
+		}
 	}
 
 	fmt.Fprintln(&builder)
@@ -139,6 +222,7 @@ func (m Model) View() string {
 	}
 	fmt.Fprintln(&builder)
 	if m.status != statusGenerating {
+		fmt.Fprintln(&builder, navigationHelp)
 		fmt.Fprintln(&builder, "Press q, esc, or ctrl+c to quit.")
 	}
 	return builder.String()
