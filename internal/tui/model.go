@@ -10,16 +10,32 @@ import (
 
 const plannedFilePreviewLimit = 5
 
+type GenerateFunc func(application.GenerateRequest) (application.GenerateResult, error)
+
+type modelStatus int
+
+const (
+	statusReady modelStatus = iota
+	statusGenerating
+	statusGenerated
+	statusFailed
+)
+
 type Model struct {
-	plan application.GenerationPlan
+	plan     application.GenerationPlan
+	request  application.GenerateRequest
+	generate GenerateFunc
+	status   modelStatus
+	result   application.GenerateResult
+	err      error
 }
 
-func NewModel(plan application.GenerationPlan) Model {
-	return Model{plan: plan}
+func NewModel(plan application.GenerationPlan, request application.GenerateRequest, generate GenerateFunc) Model {
+	return Model{plan: plan, request: request, generate: generate, status: statusReady}
 }
 
-func Run(plan application.GenerationPlan) error {
-	_, err := tea.NewProgram(NewModel(plan)).Run()
+func Run(plan application.GenerationPlan, request application.GenerateRequest, generate GenerateFunc) error {
+	_, err := tea.NewProgram(NewModel(plan, request, generate)).Run()
 	return err
 }
 
@@ -32,10 +48,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
+			if m.status == statusGenerating {
+				return m, nil
+			}
 			return m, tea.Quit
+		case "g":
+			if m.status != statusReady && m.status != statusFailed {
+				return m, nil
+			}
+			m.status = statusGenerating
+			return m, m.generateCmd()
 		}
+	case generationFinishedMsg:
+		if msg.err != nil {
+			m.status = statusFailed
+			m.err = msg.err
+			return m, nil
+		}
+		m.status = statusGenerated
+		m.result = msg.result
+		m.plan = msg.result.Plan
+		m.err = nil
+		return m, nil
 	}
 	return m, nil
+}
+
+type generationFinishedMsg struct {
+	result application.GenerateResult
+	err    error
+}
+
+func (m Model) generateCmd() tea.Cmd {
+	return func() tea.Msg {
+		result, err := m.generate(m.request)
+		return generationFinishedMsg{result: result, err: err}
+	}
 }
 
 func (m Model) View() string {
@@ -64,7 +112,25 @@ func (m Model) View() string {
 	}
 
 	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, "Press q, esc, or ctrl+c to quit.")
+	switch m.status {
+	case statusReady:
+		fmt.Fprintln(&builder, "Press g to generate files. This writes files to the output directory.")
+	case statusGenerating:
+		fmt.Fprintln(&builder, "Generating files...")
+		fmt.Fprintln(&builder, "Generation is in progress. Exit will be available after it finishes.")
+	case statusGenerated:
+		fmt.Fprintf(&builder, "Generated %d files in %s.\n", m.result.Plan.FileCount, m.result.OutputDir)
+		if m.result.Warning != "" {
+			fmt.Fprintf(&builder, "Warning: %s\n", m.result.Warning)
+		}
+	case statusFailed:
+		fmt.Fprintf(&builder, "Generation failed: %v\n", m.err)
+		fmt.Fprintln(&builder, "Press g to retry generation. This writes files to the output directory.")
+	}
+	fmt.Fprintln(&builder)
+	if m.status != statusGenerating {
+		fmt.Fprintln(&builder, "Press q, esc, or ctrl+c to quit.")
+	}
 	return builder.String()
 }
 

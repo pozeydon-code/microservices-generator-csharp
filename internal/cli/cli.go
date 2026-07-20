@@ -78,12 +78,13 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return ExitError
 	}
-	plan, err := service.PlanGeneration(application.GenerateRequest{ConfigPath: *configPath, OutputDir: *outputDir, Force: *force})
+	request := application.GenerateRequest{ConfigPath: *configPath, OutputDir: *outputDir, Force: *force}
+	plan, err := service.PlanGeneration(request)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return ExitError
 	}
-	if err := runTUIProgram(plan); err != nil {
+	if err := runTUIProgram(plan, request, service.Generate); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return ExitError
 	}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/pozeydon-code/generator-microservices-go/internal/application"
+	"github.com/pozeydon-code/generator-microservices-go/internal/tui"
 )
 
 func TestRunGenerateSucceeds(t *testing.T) {
@@ -109,7 +110,7 @@ func TestRunTUIReturnsNonZeroForInvalidConfigBeforeStartingProgram(t *testing.T)
 	var stderr bytes.Buffer
 	programStarted := false
 	originalRunTUIProgram := runTUIProgram
-	runTUIProgram = func(plan application.GenerationPlan) error {
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, generate tui.GenerateFunc) error {
 		programStarted = true
 		return nil
 	}
@@ -138,11 +139,22 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	var capturedPlan application.GenerationPlan
+	var capturedRequest application.GenerateRequest
+	generateCalled := false
 	programStarted := false
 	originalRunTUIProgram := runTUIProgram
-	runTUIProgram = func(plan application.GenerationPlan) error {
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, generate tui.GenerateFunc) error {
 		programStarted = true
 		capturedPlan = plan
+		capturedRequest = request
+		result, err := generate(request)
+		if err != nil {
+			t.Fatalf("expected generation action to succeed: %v", err)
+		}
+		if result.Plan.FileCount != 44 || result.OutputDir != outputDir {
+			t.Fatalf("expected generation result for output dir %s, got %#v", outputDir, result)
+		}
+		generateCalled = true
 		return nil
 	}
 	t.Cleanup(func() { runTUIProgram = originalRunTUIProgram })
@@ -158,8 +170,17 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 	if capturedPlan.OutputDir != outputDir || capturedPlan.FileCount != 44 || capturedPlan.OutputAction != "create" || capturedPlan.ForceUsed {
 		t.Fatalf("expected planned generation to be passed to TUI, got %#v", capturedPlan)
 	}
+	if capturedRequest.ConfigPath != configPath || capturedRequest.OutputDir != outputDir || !capturedRequest.Force {
+		t.Fatalf("expected generation request to be passed to TUI, got %#v", capturedRequest)
+	}
+	if !generateCalled {
+		t.Fatal("expected generation action to be passed to TUI")
+	}
 	if stdout.String() != "" || stderr.String() != "" {
 		t.Fatalf("expected no CLI output around TUI, got stdout %q stderr %q", stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "src", "ProductService", "ProductService.Domain", "Features", "Products", "Product.cs")); err != nil {
+		t.Fatalf("expected TUI generation action to write output: %v", err)
 	}
 }
 
