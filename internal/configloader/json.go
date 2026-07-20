@@ -29,6 +29,15 @@ func LoadJSON(path string) (spec.Config, error) {
 		return spec.Config{}, fmt.Errorf("config exceeds %d byte limit", MaxConfigBytes)
 	}
 
+	return loadJSONConfig(content)
+}
+
+func loadJSONConfig(content []byte) (spec.Config, error) {
+	schemaVersion, err := detectRootSchemaVersion(content)
+	if err != nil {
+		return spec.Config{}, fmt.Errorf("parse config JSON: %w", err)
+	}
+
 	if err := validateJSONKeys(content); err != nil {
 		return spec.Config{}, fmt.Errorf("parse config JSON: %w", err)
 	}
@@ -47,7 +56,12 @@ func LoadJSON(path string) (spec.Config, error) {
 		return spec.Config{}, err
 	}
 
-	return cfg, nil
+	return migrateConfig(cfg, schemaVersion)
+}
+
+type schemaVersion struct {
+	value  int
+	legacy bool
 }
 
 type objectSchema struct {
@@ -87,6 +101,87 @@ func validateJSONKeys(content []byte) error {
 		return fmt.Errorf("trailing data after top-level value near %v", token)
 	}
 	return nil
+}
+
+func detectRootSchemaVersion(content []byte) (schemaVersion, error) {
+	decoder := json.NewDecoder(bytes.NewReader(content))
+	decoder.UseNumber()
+	token, err := decoder.Token()
+	if err != nil {
+		return schemaVersion{}, err
+	}
+	delim, ok := token.(json.Delim)
+	if !ok || delim != '{' {
+		return schemaVersion{}, errors.New("top-level config must be a JSON object")
+	}
+
+	seenSchemaVersion := false
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return schemaVersion{}, err
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return schemaVersion{}, errors.New("expected object key in root")
+		}
+		if key != "schemaVersion" {
+			var ignored json.RawMessage
+			if err := decoder.Decode(&ignored); err != nil {
+				return schemaVersion{}, err
+			}
+			continue
+		}
+		if seenSchemaVersion {
+			return schemaVersion{}, errors.New("duplicate key \"schemaVersion\" in root object")
+		}
+		seenSchemaVersion = true
+
+		version, err := decodeSchemaVersionValue(decoder)
+		if err != nil {
+			return schemaVersion{}, err
+		}
+		if version <= 0 {
+			return schemaVersion{}, fmt.Errorf("schemaVersion must be %d when present", spec.ConfigSchemaVersion)
+		}
+		if version > spec.ConfigSchemaVersion {
+			return schemaVersion{}, fmt.Errorf("unsupported schemaVersion %d; current schemaVersion is %d", version, spec.ConfigSchemaVersion)
+		}
+		return schemaVersion{value: version}, nil
+	}
+	_, err = decoder.Token()
+	if err != nil {
+		return schemaVersion{}, err
+	}
+	return schemaVersion{value: spec.ConfigSchemaVersion, legacy: true}, nil
+}
+
+func decodeSchemaVersionValue(decoder *json.Decoder) (int, error) {
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return 0, err
+	}
+	version, ok := value.(json.Number)
+	if !ok {
+		return 0, errors.New("schemaVersion must be an integer")
+	}
+	parsed, err := version.Int64()
+	if err != nil {
+		return 0, errors.New("schemaVersion must be an integer")
+	}
+	return int(parsed), nil
+}
+
+func migrateConfig(cfg spec.Config, schemaVersion schemaVersion) (spec.Config, error) {
+	switch {
+	case schemaVersion.legacy:
+		cfg.SchemaVersion = spec.ConfigSchemaVersion
+		return cfg, nil
+	case schemaVersion.value == spec.ConfigSchemaVersion:
+		return cfg, nil
+	default:
+		return spec.Config{}, fmt.Errorf("unsupported schemaVersion %d; current schemaVersion is %d", schemaVersion.value, spec.ConfigSchemaVersion)
+	}
 }
 
 func readValue(decoder *json.Decoder, schema objectSchema) error {

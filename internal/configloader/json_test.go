@@ -160,27 +160,49 @@ func TestLoadJSONAcceptsSchemaVersionAndGenerationOptions(t *testing.T) {
 
 func TestLoadJSONSchemaVersionCompatibility(t *testing.T) {
 	tests := []struct {
-		name        string
-		content     string
-		expectedErr string
+		name                  string
+		content               string
+		expectedSchemaVersion int
+		expectedTarget        string
+		expectedErr           string
 	}{
 		{
-			name:    "missing schema version remains valid",
-			content: validConfigJSON,
+			name:                  "missing schema version migrates to current schema",
+			content:               validConfigJSON,
+			expectedSchemaVersion: spec.ConfigSchemaVersion,
+			expectedTarget:        spec.DefaultTargetFramework,
 		},
 		{
 			name:        "explicit zero schema version is rejected",
 			content:     strings.Replace(validConfigJSON, `{`, `{"schemaVersion":0,`, 1),
-			expectedErr: "schemaVersion must be 1",
+			expectedErr: "schemaVersion must be 1 when present",
 		},
 		{
-			name:    "current schema version is valid",
-			content: strings.Replace(validConfigJSON, `{`, `{"schemaVersion":1,`, 1),
+			name:                  "current schema version is valid",
+			content:               strings.Replace(validConfigJSON, `{`, `{"schemaVersion":1,`, 1),
+			expectedSchemaVersion: spec.ConfigSchemaVersion,
+			expectedTarget:        spec.DefaultTargetFramework,
 		},
 		{
-			name:        "unsupported schema version is rejected",
+			name:                  "legacy config keeps selected target framework",
+			content:               strings.Replace(validConfigJSON, `{`, `{"generation":{"targetFramework":"net9.0"},`, 1),
+			expectedSchemaVersion: spec.ConfigSchemaVersion,
+			expectedTarget:        "net9.0",
+		},
+		{
+			name:        "future schema version is rejected",
 			content:     strings.Replace(validConfigJSON, `{`, `{"schemaVersion":2,`, 1),
-			expectedErr: "schemaVersion must be 1",
+			expectedErr: "unsupported schemaVersion 2; current schemaVersion is 1",
+		},
+		{
+			name:        "non-integer schema version is rejected",
+			content:     strings.Replace(validConfigJSON, `{`, `{"schemaVersion":1.5,`, 1),
+			expectedErr: "schemaVersion must be an integer",
+		},
+		{
+			name:        "string schema version is rejected",
+			content:     strings.Replace(validConfigJSON, `{`, `{"schemaVersion":"1",`, 1),
+			expectedErr: "schemaVersion must be an integer",
 		},
 	}
 
@@ -191,8 +213,11 @@ func TestLoadJSONSchemaVersionCompatibility(t *testing.T) {
 				if err != nil {
 					t.Fatalf("expected config to load, got %v", err)
 				}
-				if cfg.TargetFramework() != spec.DefaultTargetFramework {
-					t.Fatalf("expected default target framework %q, got %q", spec.DefaultTargetFramework, cfg.TargetFramework())
+				if cfg.SchemaVersion != tt.expectedSchemaVersion {
+					t.Fatalf("expected schema version %d, got %d", tt.expectedSchemaVersion, cfg.SchemaVersion)
+				}
+				if cfg.TargetFramework() != tt.expectedTarget {
+					t.Fatalf("expected target framework %q, got %q", tt.expectedTarget, cfg.TargetFramework())
 				}
 				return
 			}

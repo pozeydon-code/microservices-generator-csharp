@@ -82,7 +82,7 @@ Configs may declare the current schema and generated .NET target framework:
 }
 ```
 
-`schemaVersion` defaults to the current schema when omitted for existing examples/configs. `generation.targetFramework` defaults to `net8.0`; supported values are `net8.0` and `net9.0`.
+Configs that omit `schemaVersion` are treated as legacy input and migrated to the current schema when loaded. Explicit schema versions must be valid integers for a supported schema; `schemaVersion: 0` and future versions are rejected. `generation.targetFramework` defaults to `net8.0`; supported values are `net8.0` and `net9.0`.
 
 Each entity must contain exactly one identity field:
 
