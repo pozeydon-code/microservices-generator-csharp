@@ -1,0 +1,56 @@
+{
+  "solution": {
+    "name": "CatalogPlatform",
+    "description": "Generated .NET 8 microservice workspace for catalog management."
+  },
+  "services": [
+    {
+      "name": "CatalogService",
+      "valueObjects": [
+        {
+          "name": "DisplayName",
+          "type": "string",
+          "validations": { "required": true, "minLength": 3, "maxLength": 120, "pattern": "^[A-Za-z0-9 .'-]+$", "validExample": "Catalog Item", "invalidExample": "***" }
+        },
+        {
+          "name": "SkuCode",
+          "type": "Guid",
+          "validations": { "notEmpty": true }
+        },
+        {
+          "name": "PublishDate",
+          "type": "DateTime",
+          "validations": { "notDefault": true }
+        },
+        {
+          "name": "MoneyAmount",
+          "type": "decimal",
+          "validations": { "minimum": 0, "maximum": 999999.99 }
+        }
+      ],
+      "entities": [
+        {
+          "name": "Category",
+          "fields": [
+            { "name": "Id", "type": "Guid" },
+            { "name": "Name", "type": "DisplayName" }
+          ]
+        },
+        {
+          "name": "Product",
+          "fields": [
+            { "name": "Id", "type": "Guid" },
+            { "name": "Name", "type": "DisplayName" },
+            { "name": "PublishedAt", "type": "PublishDate" },
+            { "name": "Price", "type": "MoneyAmount" },
+            { "name": "Rating", "type": "double" },
+            { "name": "ExternalId", "type": "SkuCode" },
+            { "name": "Quantity", "type": "int" },
+            { "name": "Inventory", "type": "long" },
+            { "name": "IsActive", "type": "bool" }
+          ]
+        }
+      ]
+    }
+  ]
+}

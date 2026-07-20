@@ -1,0 +1,284 @@
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using {{ .Name }}.Infrastructure;
+using {{ .Name }}.Application.Common;
+{{ range .Entities }}using {{ $.Name }}.Application.Features.{{ .FeatureName }};
+using {{ $.Name }}.Domain.Features.{{ .FeatureName }};
+using {{ $.Name }}.Infrastructure.Persistence.Features.{{ .FeatureName }};
+using Domain{{ .Name }} = {{ $.Name }}.Domain.Features.{{ .FeatureName }}.{{ .Name }};
+{{ end }}{{ if .HasValueObjects }}using {{ .Name }}.Domain.Shared.ValueObjects;
+{{ end }}
+using {{ .Name }}.Infrastructure.Persistence;
+using Xunit;
+
+namespace {{ .Name }}.Infrastructure.Tests;
+
+public sealed class {{ .Name }}InfrastructureTests
+{
+    [Fact]
+    public async Task ReadinessReportsSchemaHealthTransitions()
+    {
+        var databaseName = $"{{ .Name }}_readiness_{Guid.NewGuid():N}";
+        await using var database = new SqlTestDatabase(databaseName);
+
+        await using (var beforeContext = database.CreateContext())
+        {
+            var before = await new SqlReadinessProbe(beforeContext, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
+            Assert.Equal(ReadinessStatus.NotReady, before.Status);
+        }
+
+        await database.InitializeAsync();
+        await using (var healthyContext = database.CreateContext())
+        {
+            var healthy = await new SqlReadinessProbe(healthyContext, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
+            Assert.Equal(ReadinessStatus.Ready, healthy.Status);
+        }
+
+        await using (var incompatibleContext = database.CreateContext())
+        {
+            await incompatibleContext.Database.ExecuteSqlRawAsync("ALTER TABLE {{ (index .Entities 0).Name }}s DROP COLUMN {{ (index (index .Entities 0).NonIDFields 0).Name }}");
+            var incompatible = await new SqlReadinessProbe(incompatibleContext, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
+            Assert.Equal(ReadinessStatus.NotReady, incompatible.Status);
+        }
+    }
+
+{{ if .ReadinessLengthField }}    [Fact]
+    public async Task ReadinessRejectsIncorrectStringValueObjectMaxLengthNullabilityAndPreflightFindsViolations()
+    {
+        var databaseName = $"{{ .Name }}_readiness_length_{Guid.NewGuid():N}";
+        await using var database = new SqlTestDatabase(databaseName);
+        await database.InitializeAsync();
+
+        await using var context = database.CreateContext();
+        var healthy = await new SqlReadinessProbe(context, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
+        Assert.Equal(ReadinessStatus.Ready, healthy.Status);
+
+        await context.Database.ExecuteSqlRawAsync("ALTER TABLE {{ .ReadinessLengthEntity }}s ALTER COLUMN {{ .ReadinessLengthField }} nvarchar({{ .ReadinessLengthMaxPlusOne }}) NOT NULL");
+        var unhealthy = await new SqlReadinessProbe(context, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
+        Assert.Equal(ReadinessStatus.NotReady, unhealthy.Status);
+
+        await context.Database.ExecuteSqlRawAsync("INSERT INTO [{{ .ReadinessLengthEntity }}s] ([Id], [{{ .ReadinessLengthField }}]{{ range $entity := .Entities }}{{ if eq $entity.Name $.ReadinessLengthEntity }}{{ range $field := $entity.NonIDFields }}{{ if ne $field.Name $.ReadinessLengthField }}, [{{ $field.Name }}]{{ end }}{{ end }}{{ end }}{{ end }}) VALUES ({0}, REPLICATE(N'x', {{ .ReadinessLengthMaxPlusOne }}){{ range $entity := .Entities }}{{ if eq $entity.Name $.ReadinessLengthEntity }}{{ range $field := $entity.NonIDFields }}{{ if ne $field.Name $.ReadinessLengthField }}, {{ $field.SQLSampleLiteral }}{{ end }}{{ end }}{{ end }}{{ end }})", Guid.NewGuid());
+        var violatingRows = await context.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM [{{ .ReadinessLengthEntity }}s] WHERE LEN([{{ .ReadinessLengthField }}]) > {{ .ReadinessLengthMax }}").SingleAsync();
+        Assert.Equal(1, violatingRows);
+
+        await context.Database.ExecuteSqlRawAsync("DELETE FROM [{{ .ReadinessLengthEntity }}s] WHERE LEN([{{ .ReadinessLengthField }}]) > {{ .ReadinessLengthMax }}");
+        await context.Database.ExecuteSqlRawAsync("ALTER TABLE {{ .ReadinessLengthEntity }}s ALTER COLUMN {{ .ReadinessLengthField }} nvarchar({{ .ReadinessLengthMax }}) NULL");
+        var nullable = await new SqlReadinessProbe(context, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
+        Assert.Equal(ReadinessStatus.NotReady, nullable.Status);
+    }
+
+    [Fact]
+    public async Task ValueObjectPreflightDetectsRepairsAndClearsSqlSafeViolations()
+    {
+        var databaseName = $"{{ .Name }}_preflight_{Guid.NewGuid():N}";
+        await using var database = new SqlTestDatabase(databaseName);
+        await database.InitializeAsync();
+
+        await using var context = database.CreateContext();
+        Assert.Empty(await RunPreflightAsync(context));
+
+{{ if not .ReadinessLengthRequired }}        var emptyId = Guid.NewGuid();
+        await context.Database.ExecuteSqlRawAsync("INSERT INTO [{{ .ReadinessLengthEntity }}s] ([Id], [{{ .ReadinessLengthField }}]{{ range $entity := .Entities }}{{ if eq $entity.Name $.ReadinessLengthEntity }}{{ range $field := $entity.NonIDFields }}{{ if ne $field.Name $.ReadinessLengthField }}, [{{ $field.Name }}]{{ end }}{{ end }}{{ end }}{{ end }}) VALUES ({0}, N''{{ range $entity := .Entities }}{{ if eq $entity.Name $.ReadinessLengthEntity }}{{ range $field := $entity.NonIDFields }}{{ if ne $field.Name $.ReadinessLengthField }}, {{ $field.SQLSampleLiteral }}{{ end }}{{ end }}{{ end }}{{ end }})", emptyId);
+        Assert.Empty(await RunPreflightAsync(context));
+        await context.Database.ExecuteSqlRawAsync("DELETE FROM [{{ .ReadinessLengthEntity }}s] WHERE [Id] = {0}", emptyId);
+
+{{ end }}
+        var id = Guid.NewGuid();
+        await context.Database.ExecuteSqlRawAsync("ALTER TABLE {{ .ReadinessLengthEntity }}s ALTER COLUMN {{ .ReadinessLengthField }} nvarchar({{ .ReadinessLengthMaxPlusOne }}) NOT NULL");
+        await context.Database.ExecuteSqlRawAsync("INSERT INTO [{{ .ReadinessLengthEntity }}s] ([Id], [{{ .ReadinessLengthField }}]{{ range $entity := .Entities }}{{ if eq $entity.Name $.ReadinessLengthEntity }}{{ range $field := $entity.NonIDFields }}{{ if ne $field.Name $.ReadinessLengthField }}, [{{ $field.Name }}]{{ end }}{{ end }}{{ end }}{{ end }}) VALUES ({0}, REPLICATE(N'x', {{ .ReadinessLengthMaxPlusOne }}){{ range $entity := .Entities }}{{ if eq $entity.Name $.ReadinessLengthEntity }}{{ range $field := $entity.NonIDFields }}{{ if ne $field.Name $.ReadinessLengthField }}, {{ $field.SQLSampleLiteral }}{{ end }}{{ end }}{{ end }}{{ end }})", id);
+
+        var violations = await RunPreflightAsync(context);
+        var violation = Assert.Single(violations);
+        Assert.Equal("{{ .ReadinessLengthEntity }}s", violation.TableName);
+        Assert.Equal("{{ .ReadinessLengthField }}", violation.ColumnName);
+        Assert.Equal(id, violation.RecordId);
+
+        await using var transaction = await context.Database.BeginTransactionAsync();
+        await context.Database.ExecuteSqlRawAsync("UPDATE [{{ .ReadinessLengthEntity }}s] SET [{{ .ReadinessLengthField }}] = {0} WHERE [Id] = {1}", "Repaired Value", id);
+        await transaction.CommitAsync();
+
+        await context.Database.ExecuteSqlRawAsync("ALTER TABLE {{ .ReadinessLengthEntity }}s ALTER COLUMN {{ .ReadinessLengthField }} nvarchar({{ .ReadinessLengthMax }}) NOT NULL");
+
+        Assert.Empty(await RunPreflightAsync(context));
+        var healthy = await new SqlReadinessProbe(context, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
+        Assert.Equal(ReadinessStatus.Ready, healthy.Status);
+    }
+
+{{ end }}
+
+{{ range .Entities }}    [Fact]
+    public async Task {{ .Name }}RepositoryPersistsReloadsConcurrencyAndConflicts()
+    {
+        var databaseName = $"{{ $.Name }}_{{ .Name }}_{Guid.NewGuid():N}";
+        await using var database = new SqlTestDatabase(databaseName);
+        await database.InitializeAsync();
+
+        await using var createContext = database.CreateContext();
+        var repository = new {{ .Name }}Repository(createContext, NullLogger<{{ .Name }}Repository>.Instance);
+        var created = await repository.AddAsync(Domain{{ .Name }}.Create(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} }), CancellationToken.None);
+        Assert.False(string.IsNullOrWhiteSpace(created.ConcurrencyToken));
+{{ range .NonIDFields }}        Assert.True(EqualityComparer<{{ .ContractType }}>.Default.Equals({{ .SampleValue }}, created.Entity.{{ .ValueAccess }}));
+{{ end }}
+        await using var reloadContext = database.CreateContext();
+        var reloadRepository = new {{ .Name }}Repository(reloadContext, NullLogger<{{ .Name }}Repository>.Instance);
+        var reloaded = await reloadRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None);
+        Assert.NotNull(reloaded);
+{{ range .NonIDFields }}        Assert.True(EqualityComparer<{{ .ContractType }}>.Default.Equals({{ .SampleValue }}, reloaded.Entity.{{ .ValueAccess }}));
+{{ end }}
+        Assert.Equal(created.ConcurrencyToken, reloaded.ConcurrencyToken);
+
+        reloaded.Entity.Update(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainUpdatedValue }}, {{ end }} });
+        Assert.Equal(SaveResultStatus.Saved, await reloadRepository.UpdateAsync(reloaded.Entity, reloaded.ConcurrencyToken, CancellationToken.None));
+        var updated = await reloadRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None);
+        Assert.NotNull(updated);
+        Assert.NotEqual(reloaded.ConcurrencyToken, updated.ConcurrencyToken);
+{{ range .NonIDFields }}        Assert.True(EqualityComparer<{{ .ContractType }}>.Default.Equals({{ .UpdatedValue }}, updated.Entity.{{ .ValueAccess }}));
+{{ end }}
+        updated.Entity.Update(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
+        Assert.Equal(SaveResultStatus.Conflict, await reloadRepository.UpdateAsync(updated.Entity, reloaded.ConcurrencyToken, CancellationToken.None));
+        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, "not-base64", CancellationToken.None));
+        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String([]), CancellationToken.None));
+        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String([1]), CancellationToken.None));
+        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String(new byte[7]), CancellationToken.None));
+        Assert.Equal(SaveResultStatus.Conflict, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String(new byte[8]), CancellationToken.None));
+        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String(new byte[9]), CancellationToken.None));
+
+        Assert.Equal(SaveResultStatus.Conflict, await reloadRepository.DeleteAsync(updated.Entity, reloaded.ConcurrencyToken, CancellationToken.None));
+        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, "not-base64", CancellationToken.None));
+        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String([]), CancellationToken.None));
+        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String([1]), CancellationToken.None));
+        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String(new byte[7]), CancellationToken.None));
+        Assert.Equal(SaveResultStatus.Conflict, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String(new byte[8]), CancellationToken.None));
+        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String(new byte[9]), CancellationToken.None));
+        Assert.Equal(SaveResultStatus.Saved, await reloadRepository.DeleteAsync(updated.Entity, updated.ConcurrencyToken, CancellationToken.None));
+        Assert.Null(await reloadRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task {{ .Name }}RepositoryMapsTwoContextConcurrencyRaceToConflict()
+    {
+        var databaseName = $"{{ $.Name }}_{{ .Name }}_race_{Guid.NewGuid():N}";
+        await using var database = new SqlTestDatabase(databaseName);
+        await database.InitializeAsync();
+
+        await using var seedContext = database.CreateContext();
+        var seedRepository = new {{ .Name }}Repository(seedContext, NullLogger<{{ .Name }}Repository>.Instance);
+        var created = await seedRepository.AddAsync(Domain{{ .Name }}.Create(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} }), CancellationToken.None);
+
+        await using var firstContext = database.CreateContext();
+        await using var secondContext = database.CreateContext();
+        var firstRepository = new {{ .Name }}Repository(firstContext, NullLogger<{{ .Name }}Repository>.Instance);
+        var secondRepository = new {{ .Name }}Repository(secondContext, NullLogger<{{ .Name }}Repository>.Instance);
+        var first = await firstRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None);
+        var second = await secondRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None);
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+
+        second.Entity.Update(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainUpdatedValue }}, {{ end }} });
+        Assert.Equal(SaveResultStatus.Saved, await secondRepository.UpdateAsync(second.Entity, second.ConcurrencyToken, CancellationToken.None));
+        first.Entity.Update(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
+        Assert.Equal(SaveResultStatus.Conflict, await firstRepository.UpdateAsync(first.Entity, first.ConcurrencyToken, CancellationToken.None));
+    }
+
+{{ $entity := . }}{{ range $corrupt := .NonIDFields }}{{ if $corrupt.IsValueObject }}    [Fact]
+    public async Task {{ $entity.Name }}RepositoryRejectsCorruptPersisted{{ $corrupt.Name }}Value()
+    {
+        var databaseName = $"{{ $.Name }}_{{ $entity.Name }}_corrupt_{{ $corrupt.Name }}_{Guid.NewGuid():N}";
+        await using var database = new SqlTestDatabase(databaseName);
+        await database.InitializeAsync();
+
+        var id = Guid.NewGuid();
+        await using (var corruptContext = database.CreateContext())
+        {
+{{ if and (eq $corrupt.ContractType "string") $corrupt.ColumnMaxLength }}            await corruptContext.Database.ExecuteSqlRawAsync("ALTER TABLE {{ $entity.Name }}s ALTER COLUMN {{ $corrupt.Name }} nvarchar(max) NOT NULL");
+{{ end }}
+            await corruptContext.Database.ExecuteSqlRawAsync("INSERT INTO [{{ $entity.Name }}s] ([Id]{{ range $entity.NonIDFields }}, [{{ .Name }}]{{ end }}) VALUES ({0}{{ range $field := $entity.NonIDFields }}, {{ if eq $field.Name $corrupt.Name }}{{ $field.SQLInvalidLiteral }}{{ else }}{{ $field.SQLSampleLiteral }}{{ end }}{{ end }})", id);
+        }
+
+        await using var reloadContext = database.CreateContext();
+        var logger = new CaptureLogger<{{ $entity.Name }}Repository>();
+        var repository = new {{ $entity.Name }}Repository(reloadContext, logger);
+        var exception = await Assert.ThrowsAsync<{{ $.Name }}.Domain.Shared.DomainReconstitutionException>(() => repository.GetByIdAsync(id, CancellationToken.None));
+        Assert.Equal("{{ $corrupt.DomainType }}", exception.ValueObjectType);
+        Assert.Contains("{{ $corrupt.InvalidCode }}", exception.InvariantCodes);
+        Assert.Contains("{{ $entity.Name }}", logger.LastMessage);
+        Assert.Contains("{{ $corrupt.Name }}", logger.LastMessage);
+        Assert.Contains("{{ $corrupt.InvalidCode }}", logger.LastMessage);
+        Assert.Contains(id.ToString(), logger.LastMessage);
+    }
+
+{{ end }}{{ end }}
+{{ end }}    private static async Task<IReadOnlyList<PreflightViolation>> RunPreflightAsync({{ .Name }}DbContext context)
+    {
+        var infrastructureDirectory = Path.GetDirectoryName(typeof({{ .Name }}DbContext).Assembly.Location)!;
+        var scriptPath = Path.Combine(infrastructureDirectory, "ValueObjectPreflight.sql");
+        if (!File.Exists(scriptPath))
+        {
+            scriptPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../../src/{{ .Name }}/{{ .Name }}.Infrastructure/Persistence/ValueObjectPreflight.sql"));
+        }
+        var script = await File.ReadAllTextAsync(scriptPath);
+        var connection = (SqlConnection)context.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+        {
+            await connection.OpenAsync();
+        }
+        await using var command = connection.CreateCommand();
+        command.CommandText = script;
+        command.CommandTimeout = 5;
+        await using var reader = await command.ExecuteReaderAsync();
+        var violations = new List<PreflightViolation>();
+        while (await reader.ReadAsync())
+        {
+            violations.Add(new PreflightViolation(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetGuid(3)));
+        }
+        return violations;
+    }
+
+    private sealed record PreflightViolation(string TableName, string ColumnName, string RuleCode, Guid RecordId);
+
+    private sealed class CaptureLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
+    {
+        public string LastMessage { get; private set; } = string.Empty;
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) => LastMessage = formatter(state, exception);
+    }
+
+    private sealed class SqlTestDatabase(string databaseName) : IAsyncDisposable
+    {
+        private readonly string connectionString = BuildConnectionString(databaseName);
+
+        public async Task InitializeAsync()
+        {
+            await using var context = CreateContext();
+            await context.Database.EnsureDeletedAsync();
+            await context.Database.EnsureCreatedAsync();
+        }
+
+        public {{ .Name }}DbContext CreateContext()
+        {
+            var options = new DbContextOptionsBuilder<{{ .Name }}DbContext>()
+                .UseSqlServer(connectionString, sql => sql.CommandTimeout(5))
+                .Options;
+            return new {{ .Name }}DbContext(options);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await using var context = CreateContext();
+            await context.Database.EnsureDeletedAsync();
+        }
+
+        private static string BuildConnectionString(string databaseName)
+        {
+            var server = Environment.GetEnvironmentVariable("MICROGEN_TEST_SQLSERVER");
+            if (string.IsNullOrWhiteSpace(server))
+            {
+                throw new InvalidOperationException("Set MICROGEN_TEST_SQLSERVER to run generated Infrastructure SQL tests.");
+            }
+            var builder = new SqlConnectionStringBuilder(server) { InitialCatalog = databaseName, ConnectTimeout = 5, TrustServerCertificate = true };
+            return builder.ConnectionString;
+        }
+    }
+}

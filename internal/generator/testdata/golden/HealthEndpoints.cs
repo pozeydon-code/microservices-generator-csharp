@@ -1,0 +1,22 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using ProductService.Application.Common;
+
+namespace ProductService.Api.Health;
+
+public static class HealthEndpoints
+{
+    public static IEndpointRouteBuilder MapHealthEndpoints(this IEndpointRouteBuilder app)
+    {
+        app.MapGet("/health/live", () => Results.Ok(new { status = "ok" })).AllowAnonymous().WithName("Liveness");
+        app.MapGet("/health/ready", async (IReadinessProbe readiness, CancellationToken cancellationToken) =>
+        {
+            var result = await readiness.CheckAsync(cancellationToken);
+            return result.Status == ReadinessStatus.Ready
+                ? Results.Ok(new { status = "ready" })
+                : Results.Problem("Service is not ready.", statusCode: StatusCodes.Status503ServiceUnavailable);
+        }).AllowAnonymous().WithName("Readiness");
+        return app;
+    }
+}

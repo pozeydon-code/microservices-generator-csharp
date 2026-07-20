@@ -1,0 +1,23 @@
+-- Generated Value Object preflight for {{ .Name }}.
+-- Run before rule-tightening migrations and after repairs.
+-- Regex rules are intentionally not translated to SQL; audit those with application/domain validation because Go/.NET/SQL regex semantics are not safely portable.
+SET NOCOUNT ON;
+
+DECLARE @Violations TABLE (
+    TableName sysname NOT NULL,
+    ColumnName sysname NOT NULL,
+    RuleCode nvarchar(256) NOT NULL,
+    RecordId uniqueidentifier NOT NULL
+);
+
+{{ range .Entities }}{{ $entity := . }}{{ range .NonIDFields }}{{ if .IsValueObject }}{{ if eq .ContractType "string" }}{{ if .ColumnMaxLength }}INSERT INTO @Violations SELECT N'{{ $entity.Name }}s', N'{{ .Name }}', N'{{ .DomainType }}.MaxLength', [Id] FROM [dbo].[{{ $entity.Name }}s] WHERE [{{ .Name }}] IS NOT NULL AND LEN([{{ .Name }}]) > {{ .ColumnMaxLength }};
+{{ end }}{{ if .HasRequired }}INSERT INTO @Violations SELECT N'{{ $entity.Name }}s', N'{{ .Name }}', N'{{ .DomainType }}.Required', [Id] FROM [dbo].[{{ $entity.Name }}s] WHERE [{{ .Name }}] IS NULL OR LTRIM(RTRIM([{{ .Name }}])) = N'';
+{{ end }}
+{{ else if or (eq .ContractType "decimal") (eq .ContractType "double") (eq .ContractType "int") (eq .ContractType "long") }}{{ if .Minimum }}INSERT INTO @Violations SELECT N'{{ $entity.Name }}s', N'{{ .Name }}', N'{{ .DomainType }}.Minimum', [Id] FROM [dbo].[{{ $entity.Name }}s] WHERE [{{ .Name }}] < {{ .Minimum }};
+{{ end }}{{ if .Maximum }}INSERT INTO @Violations SELECT N'{{ $entity.Name }}s', N'{{ .Name }}', N'{{ .DomainType }}.Maximum', [Id] FROM [dbo].[{{ $entity.Name }}s] WHERE [{{ .Name }}] > {{ .Maximum }};
+{{ end }}{{ else if eq .ContractType "Guid" }}INSERT INTO @Violations SELECT N'{{ $entity.Name }}s', N'{{ .Name }}', N'{{ .DomainType }}.NotEmpty', [Id] FROM [dbo].[{{ $entity.Name }}s] WHERE [{{ .Name }}] = '00000000-0000-0000-0000-000000000000';
+{{ else if eq .ContractType "DateTime" }}INSERT INTO @Violations SELECT N'{{ $entity.Name }}s', N'{{ .Name }}', N'{{ .DomainType }}.NotDefault', [Id] FROM [dbo].[{{ $entity.Name }}s] WHERE [{{ .Name }}] = '0001-01-01T00:00:00';
+{{ end }}{{ end }}{{ end }}{{ end }}
+SELECT TableName, ColumnName, RuleCode, RecordId
+FROM @Violations
+ORDER BY TableName, ColumnName, RuleCode, RecordId;

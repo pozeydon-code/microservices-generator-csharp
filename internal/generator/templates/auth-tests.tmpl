@@ -1,0 +1,157 @@
+using System.Net;
+using System.Net.Http.Json;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using {{ .Name }}.Application.Common;
+using {{ .Name }}.Application.Features.{{ (index .Entities 0).FeatureName }};
+using Xunit;
+
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
+namespace {{ .Name }}.Api.Tests;
+
+public sealed class AuthenticationTests
+{
+    [Fact]
+    public async Task ValidBearerGetsExpectedSuccessfulCrudBody()
+    {
+        await using var factory = new TestApiFactory(builder => builder.ConfigureTestServices(services =>
+            services.AddScoped<I{{ (index .Entities 0).Name }}UseCases, Auth{{ (index .Entities 0).Name }}UseCases>()));
+        using var client = factory.CreateAuthenticatedClient();
+        var response = await client.GetAsync("/{{ (index .Entities 0).Route }}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<PagedResult<{{ (index .Entities 0).Name }}Dto>>();
+        Assert.NotNull(body);
+        Assert.Equal(1, body.Page);
+        Assert.Equal(20, body.PageSize);
+        Assert.Equal(1, body.TotalCount);
+        var item = Assert.Single(body.Items);
+        Assert.Equal(Guid.Parse("11111111-1111-1111-1111-111111111111"), item.Id);
+{{ range (index .Entities 0).NonIDFields }}        Assert.True(EqualityComparer<{{ .ContractType }}>.Default.Equals({{ .SampleValue }}, item.{{ .Name }}));
+{{ end }}        Assert.Equal("token-v1", item.ConcurrencyToken);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("expired")]
+    [InlineData("malformed")]
+    [InlineData("wrong-signature")]
+    [InlineData("wrong-issuer")]
+    [InlineData("wrong-audience")]
+    public async Task InvalidOrMissingBearerCannotReachCrudRoute(string? tokenKind)
+    {
+        await using var factory = new TestApiFactory();
+        using var client = tokenKind switch
+        {
+            null => factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") }),
+            "expired" => factory.CreateBearerClient(TestJwtTokens.ExpiredToken()),
+            "malformed" => factory.CreateBearerClient("not-a-jwt"),
+            "wrong-signature" => factory.CreateBearerClient(TestJwtTokens.WrongSignatureToken()),
+            "wrong-issuer" => factory.CreateBearerClient(TestJwtTokens.WrongIssuerToken()),
+            "wrong-audience" => factory.CreateBearerClient(TestJwtTokens.WrongAudienceToken()),
+            _ => throw new InvalidOperationException("Unknown token kind.")
+        };
+        var response = await client.GetAsync("/{{ (index .Entities 0).Route }}");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PlainHttpRedirectsToHttps()
+    {
+        await using var factory = new TestApiFactory();
+        using var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("http://localhost"),
+            AllowAutoRedirect = false
+        });
+        var response = await client.GetAsync("/health/live");
+        Assert.Equal(HttpStatusCode.TemporaryRedirect, response.StatusCode);
+        Assert.NotNull(response.Headers.Location);
+        Assert.Equal("https://localhost/health/live", response.Headers.Location!.ToString());
+    }
+
+    [Fact]
+    public async Task ProductionHttpsResponsesIncludeHsts()
+    {
+        await using var factory = TestApiFactory.Production();
+        using var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+        var response = await client.GetAsync("/health/live");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(response.Headers.Contains("Strict-Transport-Security"));
+    }
+
+    [Fact]
+    public async Task SlowUseCaseTriggersRequestTimeoutAndCancellation()
+    {
+        Slow{{ (index .Entities 0).Name }}UseCases.CancellationObserved = false;
+        await using var factory = new TestApiFactory(builder => builder.ConfigureTestServices(services =>
+            services.AddScoped<I{{ (index .Entities 0).Name }}UseCases, Slow{{ (index .Entities 0).Name }}UseCases>()));
+        using var client = factory.CreateAuthenticatedClient();
+        var started = DateTimeOffset.UtcNow;
+        var response = await client.GetAsync("/{{ (index .Entities 0).Route }}");
+        var elapsed = DateTimeOffset.UtcNow - started;
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.True(elapsed < TimeSpan.FromSeconds(20));
+        Assert.True(Slow{{ (index .Entities 0).Name }}UseCases.CancellationObserved);
+        var problem = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>();
+        Assert.NotNull(problem);
+        Assert.True(problem.ContainsKey("status"));
+    }
+
+    [Fact]
+    public async Task RequestTimeoutBudgetValidationHasExactBoundary()
+    {
+        await using var rejectedFactory = new TestApiFactory(requestTimeoutSeconds: 9);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            using var client = rejectedFactory.CreateClient();
+            await client.GetAsync("/health/live");
+        });
+        Assert.Contains("at least 10 seconds", ex.ToString());
+
+        await using var acceptedBoundaryFactory = new TestApiFactory(requestTimeoutSeconds: 10);
+        using var acceptedBoundaryClient = acceptedBoundaryFactory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+        var boundaryResponse = await acceptedBoundaryClient.GetAsync("/health/live");
+        Assert.Equal(HttpStatusCode.OK, boundaryResponse.StatusCode);
+
+        await using var defaultFactory = new TestApiFactory();
+        using var defaultClient = defaultFactory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+        var defaultResponse = await defaultClient.GetAsync("/health/live");
+        Assert.Equal(HttpStatusCode.OK, defaultResponse.StatusCode);
+    }
+
+    private sealed class Auth{{ (index .Entities 0).Name }}UseCases : I{{ (index .Entities 0).Name }}UseCases
+    {
+        private static readonly {{ (index .Entities 0).Name }}Dto Item = new(
+{{ range (index .Entities 0).Fields }}            {{ .Name }}: {{ if eq .Name "Id" }}Guid.Parse("11111111-1111-1111-1111-111111111111"){{ else }}{{ .SampleValue }}{{ end }},
+{{ end }}            ConcurrencyToken: "token-v1");
+        public Task<PagedResult<{{ (index .Entities 0).Name }}Dto>> ListAsync(PageRequest request, CancellationToken cancellationToken) => Task.FromResult(new PagedResult<{{ (index .Entities 0).Name }}Dto>([Item], 1, 20, 1));
+        public Task<{{ (index .Entities 0).Name }}Dto?> GetByIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult<{{ (index .Entities 0).Name }}Dto?>(Item);
+        public Task<MutationValidationResult<{{ (index .Entities 0).Name }}Dto>> CreateAsync(Create{{ (index .Entities 0).Name }}Request request, CancellationToken cancellationToken) => Task.FromResult(new MutationValidationResult<{{ (index .Entities 0).Name }}Dto>(MutationResultStatus.Created, Item));
+        public Task<MutationValidationResult<{{ (index .Entities 0).Name }}Dto>> UpdateAsync(Guid id, Update{{ (index .Entities 0).Name }}Request request, CancellationToken cancellationToken) => Task.FromResult(new MutationValidationResult<{{ (index .Entities 0).Name }}Dto>(MutationResultStatus.Updated, Item));
+        public Task<MutationResult<bool>> DeleteAsync(Guid id, string concurrencyToken, CancellationToken cancellationToken) => Task.FromResult(new MutationResult<bool>(MutationResultStatus.Deleted, true));
+    }
+
+    private sealed class Slow{{ (index .Entities 0).Name }}UseCases : I{{ (index .Entities 0).Name }}UseCases
+    {
+        public static bool CancellationObserved { get; set; }
+        public async Task<PagedResult<{{ (index .Entities 0).Name }}Dto>> ListAsync(PageRequest request, CancellationToken cancellationToken)
+        {
+            using var registration = cancellationToken.UnsafeRegister(_ => CancellationObserved = true, null);
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                CancellationObserved = true;
+                throw;
+            }
+            throw new InvalidOperationException("Timeout test should cancel before completion.");
+        }
+        public Task<{{ (index .Entities 0).Name }}Dto?> GetByIdAsync(Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<MutationValidationResult<{{ (index .Entities 0).Name }}Dto>> CreateAsync(Create{{ (index .Entities 0).Name }}Request request, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<MutationValidationResult<{{ (index .Entities 0).Name }}Dto>> UpdateAsync(Guid id, Update{{ (index .Entities 0).Name }}Request request, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<MutationResult<bool>> DeleteAsync(Guid id, string concurrencyToken, CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+}

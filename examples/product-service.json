@@ -1,0 +1,41 @@
+{
+  "solution": {
+    "name": "CommercePlatform",
+    "description": "Minimal generated .NET 8 microservice workspace for product management."
+  },
+  "services": [
+    {
+      "name": "ProductService",
+      "valueObjects": [
+        {
+          "name": "ProductName",
+          "type": "string",
+          "validations": {
+            "required": true,
+            "minLength": 3,
+            "maxLength": 100,
+            "pattern": "^[A-Za-z0-9 .'-]+$",
+            "validExample": "Product Prime",
+            "invalidExample": "***"
+          }
+        },
+        {
+          "name": "ProductPrice",
+          "type": "decimal",
+          "validations": { "minimum": 0, "maximum": 999999.99 }
+        }
+      ],
+      "entities": [
+        {
+          "name": "Product",
+          "fields": [
+            { "name": "Id", "type": "Guid" },
+            { "name": "Name", "type": "ProductName" },
+            { "name": "Price", "type": "ProductPrice" },
+            { "name": "IsActive", "type": "bool" }
+          ]
+        }
+      ]
+    }
+  ]
+}

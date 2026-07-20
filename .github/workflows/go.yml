@@ -1,0 +1,135 @@
+name: Go
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.12'
+          cache: true
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+
+      - name: Run tests
+        run: go test -race -timeout 2m ./...
+
+      - name: Run vet
+        run: go vet ./...
+
+  generated-dotnet-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container: mcr.microsoft.com/dotnet/sdk:8.0.412
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server@sha256:e07b9699a2b749969f19d86563ceeea22bd3a69f7f1db85a8d1ac4bdaf0c6f56
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: ${{ format('Microgen_{0}_Passw0rd!', github.run_id) }}
+        options: >-
+          --health-cmd "bash -c '</dev/tcp/localhost/1433' || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 24
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.12'
+          cache: true
+
+      - name: Generate single-entity example output
+        run: go run ./cmd/microgen generate --config examples/product-service.json --output ./generated-example
+
+      - name: Generate two-entity example output
+        run: go run ./cmd/microgen generate --config examples/catalog-service.json --output ./generated-catalog-example
+
+      - name: Generate Record collision regression outputs
+        run: |
+          go run ./cmd/microgen generate --config examples/record-zero-vo-service.json --output ./generated-record-zero-vo-example
+          go run ./cmd/microgen generate --config examples/record-vo-service.json --output ./generated-record-vo-example
+          go run ./cmd/microgen generate --config examples/hundred-field-service.json --output ./generated-hundred-field-example
+
+      - name: Build generated single-entity projects
+        run: |
+          test -f ./generated-example/CommercePlatform.sln
+          dotnet build ./generated-example/CommercePlatform.sln --nologo -warnaserror
+
+      - name: Build generated two-entity projects
+        run: |
+          test -f ./generated-catalog-example/CatalogPlatform.sln
+          dotnet build ./generated-catalog-example/CatalogPlatform.sln --nologo -warnaserror
+
+      - name: Build generated Record collision projects
+        run: |
+          test -f ./generated-record-zero-vo-example/RecordZeroVoPlatform.sln
+          dotnet build ./generated-record-zero-vo-example/RecordZeroVoPlatform.sln --nologo -warnaserror
+          test -f ./generated-record-vo-example/RecordVoPlatform.sln
+          dotnet build ./generated-record-vo-example/RecordVoPlatform.sln --nologo -warnaserror
+          test -f ./generated-hundred-field-example/HundredFieldPlatform.sln
+          dotnet build ./generated-hundred-field-example/HundredFieldPlatform.sln --nologo -warnaserror
+
+      - name: Test generated projects with TRX evidence
+        shell: bash
+        env:
+          MICROGEN_TEST_SQLSERVER: Server=sqlserver,1433;User Id=sa;Password=${{ format('Microgen_{0}_Passw0rd!', github.run_id) }};Encrypt=True;TrustServerCertificate=True
+        run: |
+          set -euo pipefail
+          for attempt in {1..24}; do
+            if timeout 2 bash -c '</dev/tcp/sqlserver/1433'; then
+              break
+            fi
+            sleep 5
+          done
+          test_project() {
+            project="$1"
+            trx="$2"
+            expected="$3"
+            dotnet test "$project" --nologo -warnaserror --blame-hang --blame-hang-timeout 90s --logger "trx;LogFileName=$trx"
+            trx_path="$(dirname "$project")/TestResults/$trx"
+            test -f "$trx_path"
+            grep -Eq "total=\"$expected\"" "$trx_path"
+          }
+          test_project ./generated-example/tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj ProductService.Domain.Tests.trx 16
+          test_project ./generated-example/tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj ProductService.Application.Tests.trx 10
+          test_project ./generated-example/tests/ProductService/ProductService.Api.Tests/ProductService.Api.Tests.csproj ProductService.Api.Tests.trx 37
+          test_project ./generated-example/tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj ProductService.Architecture.Tests.trx 3
+          test_project ./generated-example/tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj ProductService.Infrastructure.Tests.trx 7
+          test_project ./generated-catalog-example/tests/CatalogService/CatalogService.Domain.Tests/CatalogService.Domain.Tests.csproj CatalogService.Domain.Tests.trx 22
+          test_project ./generated-catalog-example/tests/CatalogService/CatalogService.Application.Tests/CatalogService.Application.Tests.csproj CatalogService.Application.Tests.trx 20
+          test_project ./generated-catalog-example/tests/CatalogService/CatalogService.Api.Tests/CatalogService.Api.Tests.csproj CatalogService.Api.Tests.trx 61
+          test_project ./generated-catalog-example/tests/CatalogService/CatalogService.Architecture.Tests/CatalogService.Architecture.Tests.csproj CatalogService.Architecture.Tests.trx 3
+          test_project ./generated-catalog-example/tests/CatalogService/CatalogService.Infrastructure.Tests/CatalogService.Infrastructure.Tests.csproj CatalogService.Infrastructure.Tests.trx 12
+          test_project ./generated-record-zero-vo-example/tests/RecordService/RecordService.Domain.Tests/RecordService.Domain.Tests.csproj RecordService.Domain.Tests.trx 1
+          test_project ./generated-record-zero-vo-example/tests/RecordService/RecordService.Application.Tests/RecordService.Application.Tests.csproj RecordService.Application.Tests.trx 8
+          test_project ./generated-record-zero-vo-example/tests/RecordService/RecordService.Api.Tests/RecordService.Api.Tests.csproj RecordService.Api.Tests.trx 35
+          test_project ./generated-record-zero-vo-example/tests/RecordService/RecordService.Architecture.Tests/RecordService.Architecture.Tests.csproj RecordService.Architecture.Tests.trx 3
+          test_project ./generated-record-zero-vo-example/tests/RecordService/RecordService.Infrastructure.Tests/RecordService.Infrastructure.Tests.csproj RecordService.Infrastructure.Tests.trx 3
+          test_project ./generated-record-vo-example/tests/RecordService/RecordService.Domain.Tests/RecordService.Domain.Tests.csproj RecordService.Domain.Tests.trx 8
+          test_project ./generated-record-vo-example/tests/RecordService/RecordService.Application.Tests/RecordService.Application.Tests.csproj RecordService.Application.Tests.trx 10
+          test_project ./generated-record-vo-example/tests/RecordService/RecordService.Api.Tests/RecordService.Api.Tests.csproj RecordService.Api.Tests.trx 37
+          test_project ./generated-record-vo-example/tests/RecordService/RecordService.Architecture.Tests/RecordService.Architecture.Tests.csproj RecordService.Architecture.Tests.trx 3
+          test_project ./generated-record-vo-example/tests/RecordService/RecordService.Infrastructure.Tests/RecordService.Infrastructure.Tests.csproj RecordService.Infrastructure.Tests.trx 6
+          test_project ./generated-hundred-field-example/tests/HundredFieldService/HundredFieldService.Domain.Tests/HundredFieldService.Domain.Tests.csproj HundredFieldService.Domain.Tests.trx 1
+          test_project ./generated-hundred-field-example/tests/HundredFieldService/HundredFieldService.Application.Tests/HundredFieldService.Application.Tests.csproj HundredFieldService.Application.Tests.trx 8
+          test_project ./generated-hundred-field-example/tests/HundredFieldService/HundredFieldService.Api.Tests/HundredFieldService.Api.Tests.csproj HundredFieldService.Api.Tests.trx 35
+          test_project ./generated-hundred-field-example/tests/HundredFieldService/HundredFieldService.Architecture.Tests/HundredFieldService.Architecture.Tests.csproj HundredFieldService.Architecture.Tests.trx 3
+          test_project ./generated-hundred-field-example/tests/HundredFieldService/HundredFieldService.Infrastructure.Tests/HundredFieldService.Infrastructure.Tests.csproj HundredFieldService.Infrastructure.Tests.trx 3

@@ -1,0 +1,21 @@
+{
+  "solution": {
+    "name": "RecordZeroVoPlatform",
+    "description": "Generated .NET 8 microservice workspace used to verify that a valid domain entity named Record does not collide with xUnit test helpers."
+  },
+  "services": [
+    {
+      "name": "RecordService",
+      "entities": [
+        {
+          "name": "Record",
+          "fields": [
+            { "name": "Id", "type": "Guid" },
+            { "name": "Title", "type": "string" },
+            { "name": "Enabled", "type": "bool" }
+          ]
+        }
+      ]
+    }
+  ]
+}

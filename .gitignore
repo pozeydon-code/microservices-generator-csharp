@@ -1,0 +1,17 @@
+.DS_Store
+.idea/
+.vscode/
+
+# Go build outputs
+bin/
+dist/
+*.test
+coverage.out
+
+# Generated local output
+out/
+tmp/
+.cache/
+.codegraph/
+
+PLAN.md

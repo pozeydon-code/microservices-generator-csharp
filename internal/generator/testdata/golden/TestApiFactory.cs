@@ -1,0 +1,79 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+
+namespace ProductService.Api.Tests;
+
+public sealed class TestApiFactory(Action<IWebHostBuilder>? configure = null, string environment = "Testing", int? requestTimeoutSeconds = null) : WebApplicationFactory<Program>
+{
+    public TestApiFactory() : this(null) { }
+    public static TestApiFactory Production() => new(null, "Production");
+
+    public HttpClient CreateAuthenticatedClient() => CreateBearerClient(TestJwtTokens.ValidToken());
+
+    public HttpClient CreateBearerClient(string token)
+    {
+        var client = CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+        client.DefaultRequestHeaders.Authorization = new("Bearer", token);
+        return client;
+    }
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseEnvironment(environment);
+        builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:DefaultConnection"] = "Server=127.0.0.1,1;Database=test;Integrated Security=True;Encrypt=True;TrustServerCertificate=False;Connect Timeout=1",
+            ["Authentication:Authority"] = TestJwtTokens.Issuer,
+            ["Authentication:Audience"] = TestJwtTokens.Audience,
+            ["https_port"] = "443",
+            ["Service:Version"] = "test-version",
+            ["Deployment:Environment"] = "Testing",
+            ["Resilience:RequestTimeoutSeconds"] = requestTimeoutSeconds?.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        }));
+        builder.ConfigureTestServices(services =>
+        {
+            services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+            {
+                options.RequireHttpsMetadata = false;
+                options.Configuration = new OpenIdConnectConfiguration { Issuer = TestJwtTokens.Issuer };
+                options.Configuration.SigningKeys.Add(TestJwtTokens.SecurityKey);
+                options.TokenValidationParameters.ValidIssuer = TestJwtTokens.Issuer;
+                options.TokenValidationParameters.ValidAudience = TestJwtTokens.Audience;
+                options.TokenValidationParameters.IssuerSigningKey = TestJwtTokens.SecurityKey;
+                options.TokenValidationParameters.ClockSkew = TimeSpan.Zero;
+                options.TokenValidationParameters.LifetimeValidator = (notBefore, expires, _, _) =>
+                    (notBefore is null || notBefore <= TestJwtTokens.FixedUtcNow) &&
+                    (expires is not null && expires > TestJwtTokens.FixedUtcNow);
+            });
+        });
+        configure?.Invoke(builder);
+    }
+
+    protected override IHost CreateHost(IHostBuilder builder)
+    {
+        Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "Server=127.0.0.1,1;Database=test;Integrated Security=True;TrustServerCertificate=False;Connect Timeout=1");
+        Environment.SetEnvironmentVariable("Authentication__Authority", TestJwtTokens.Issuer);
+        Environment.SetEnvironmentVariable("Authentication__Audience", TestJwtTokens.Audience);
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", environment);
+        Environment.SetEnvironmentVariable("ASPNETCORE_HTTPS_PORT", "443");
+        if (requestTimeoutSeconds is not null)
+        {
+            Environment.SetEnvironmentVariable("Resilience__RequestTimeoutSeconds", requestTimeoutSeconds.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        else
+        {
+            Environment.SetEnvironmentVariable("Resilience__RequestTimeoutSeconds", null);
+        }
+        Environment.SetEnvironmentVariable("OTEL_SDK_DISABLED", "true");
+        Environment.SetEnvironmentVariable("OTEL_TRACES_EXPORTER", "none");
+        Environment.SetEnvironmentVariable("OTEL_METRICS_EXPORTER", "none");
+        return base.CreateHost(builder);
+    }
+}

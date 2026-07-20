@@ -1,0 +1,13 @@
+using {{ .Service.Name }}.Application.Common;
+using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
+
+namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+
+public interface I{{ .Entity.Name }}Repository
+{
+    Task<(IReadOnlyList<EntitySnapshot<{{ .Entity.Name }}>> Items, int TotalCount)> ListAsync(int skip, int take, CancellationToken cancellationToken);
+    Task<EntitySnapshot<{{ .Entity.Name }}>?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
+    Task<EntitySnapshot<{{ .Entity.Name }}>> AddAsync({{ .Entity.Name }} entity, CancellationToken cancellationToken);
+    Task<SaveResultStatus> UpdateAsync({{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken);
+    Task<SaveResultStatus> DeleteAsync({{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken);
+}

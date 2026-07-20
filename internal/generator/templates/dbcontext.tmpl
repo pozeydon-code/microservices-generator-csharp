@@ -1,0 +1,27 @@
+using Microsoft.EntityFrameworkCore;
+{{ range .Entities }}using {{ $.Name }}.Domain.Features.{{ .FeatureName }};
+{{ end }}{{ if .HasValueObjects }}using {{ .Name }}.Domain.Shared.ValueObjects;
+{{ end }}
+
+namespace {{ .Name }}.Infrastructure.Persistence;
+
+public sealed class {{ .Name }}DbContext(DbContextOptions<{{ .Name }}DbContext> options) : DbContext(options)
+{
+{{ range .Entities }}    public DbSet<{{ .Name }}> {{ .Name }}s => Set<{{ .Name }}>();
+{{ end }}
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+{{ range .Entities }}        modelBuilder.Entity<{{ .Name }}>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property<byte[]>("RowVersion").IsRowVersion();
+{{ range .NonIDFields }}{{ if not .IsValueObject }}            entity.Property(item => item.{{ .Name }}).IsRequired();
+{{ end }}{{ end }}
+{{ range .NonIDFields }}{{ if .IsValueObject }}            entity.Property(item => item.{{ .Name }})
+                .HasConversion(value => value.Value, value => {{ .DomainType }}.Rehydrate(value)){{ if .ColumnMaxLength }}
+                .HasMaxLength({{ .ColumnMaxLength }}){{ end }}
+                .IsRequired();
+{{ end }}{{ end }}
+        });
+{{ end }}    }
+}

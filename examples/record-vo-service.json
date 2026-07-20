@@ -1,0 +1,34 @@
+{
+  "solution": {
+    "name": "RecordVoPlatform",
+    "description": "Generated .NET 8 microservice workspace used to verify that a valid VO-backed domain entity named Record does not collide with xUnit test helpers."
+  },
+  "services": [
+    {
+      "name": "RecordService",
+      "valueObjects": [
+        {
+          "name": "RecordTitle",
+          "type": "string",
+          "validations": {
+            "required": true,
+            "minLength": 3,
+            "maxLength": 80,
+            "validExample": "Valid Record",
+            "invalidExample": ""
+          }
+        }
+      ],
+      "entities": [
+        {
+          "name": "Record",
+          "fields": [
+            { "name": "Id", "type": "Guid" },
+            { "name": "Title", "type": "RecordTitle" },
+            { "name": "Enabled", "type": "bool" }
+          ]
+        }
+      ]
+    }
+  ]
+}

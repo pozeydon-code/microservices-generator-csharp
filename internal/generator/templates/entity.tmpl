@@ -1,0 +1,27 @@
+namespace {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
+
+{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Shared.ValueObjects;
+{{ end }}
+
+public sealed class {{ .Entity.Name }}State
+{
+{{ range .Entity.NonIDFields }}    public required {{ .DomainType }} {{ .Name }} { get; init; }
+{{ end }}}
+
+public sealed class {{ .Entity.Name }}
+{
+    private {{ .Entity.Name }}() { }
+
+{{ range .Entity.Fields }}    public {{ .DomainType }} {{ .Name }} { get; private set; }{{ .Initializer }}
+{{ end }}
+    public static {{ .Entity.Name }} Create({{ .Entity.Name }}State state) => new()
+    {
+        Id = Guid.NewGuid(),
+{{ range .Entity.NonIDFields }}        {{ .Name }} = state.{{ .Name }},
+{{ end }}    };
+
+    public void Update({{ .Entity.Name }}State state)
+    {
+{{ range .Entity.NonIDFields }}        {{ .Name }} = state.{{ .Name }};
+{{ end }}    }
+}

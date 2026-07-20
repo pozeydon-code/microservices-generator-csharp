@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\{{ .Name }}\{{ .HostProject.Directory }}\{{ .HostProject.FileName }}" />
+    <ProjectReference Include="..\..\..\src\{{ .Name }}\{{ .ApplicationProject.Directory }}\{{ .ApplicationProject.FileName }}" />
+    <ProjectReference Include="..\..\..\src\{{ .Name }}\{{ .DomainProject.Directory }}\{{ .DomainProject.FileName }}" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+</Project>

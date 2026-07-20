@@ -1,0 +1,110 @@
+using {{ .Service.Name }}.Application.Common;
+using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
+{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Shared.ValueObjects;
+{{ end }}
+
+namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+
+public sealed class {{ .Entity.Name }}UseCases(I{{ .Entity.Name }}Repository repository) : I{{ .Entity.Name }}UseCases
+{
+    public async Task<PagedResult<{{ .Entity.Name }}Dto>> ListAsync(PageRequest request, CancellationToken cancellationToken)
+    {
+        var normalized = PaginationPolicy.Normalize(request.Page, request.PageSize);
+        var result = await repository.ListAsync(normalized.Offset, normalized.PageSize, cancellationToken);
+        return new PagedResult<{{ .Entity.Name }}Dto>(result.Items.Select(ToDto).ToList(), normalized.Page, normalized.PageSize, result.TotalCount);
+    }
+
+    public async Task<{{ .Entity.Name }}Dto?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var snapshot = await repository.GetByIdAsync(id, cancellationToken);
+        return snapshot is null ? null : ToDto(snapshot);
+    }
+
+    public async Task<MutationValidationResult<{{ .Entity.Name }}Dto>> CreateAsync(Create{{ .Entity.Name }}Request request, CancellationToken cancellationToken)
+    {
+        var state = CreateState(request);
+        if (state.Validation.Issues.Count > 0)
+        {
+            return MutationValidationResult<{{ .Entity.Name }}Dto>.ValidationFailed(state.Validation);
+        }
+        var entity = {{ .Entity.Name }}.Create(state.State!);
+        var snapshot = await repository.AddAsync(entity, cancellationToken);
+        return MutationValidationResult<{{ .Entity.Name }}Dto>.Created(ToDto(snapshot));
+    }
+
+    public async Task<MutationValidationResult<{{ .Entity.Name }}Dto>> UpdateAsync(Guid id, Update{{ .Entity.Name }}Request request, CancellationToken cancellationToken)
+    {
+        var state = CreateState(request);
+        if (state.Validation.Issues.Count > 0)
+        {
+            return MutationValidationResult<{{ .Entity.Name }}Dto>.ValidationFailed(state.Validation);
+        }
+        if (string.IsNullOrWhiteSpace(request.ConcurrencyToken))
+        {
+            return MutationValidationResult<{{ .Entity.Name }}Dto>.InvalidToken();
+        }
+        var snapshot = await repository.GetByIdAsync(id, cancellationToken);
+        if (snapshot is null)
+        {
+            return MutationValidationResult<{{ .Entity.Name }}Dto>.NotFound();
+        }
+        snapshot.Entity.Update(state.State!);
+        var status = await repository.UpdateAsync(snapshot.Entity, request.ConcurrencyToken, cancellationToken);
+        if (status == SaveResultStatus.Conflict)
+        {
+            return MutationValidationResult<{{ .Entity.Name }}Dto>.Conflict();
+        }
+        if (status == SaveResultStatus.InvalidToken)
+        {
+            return MutationValidationResult<{{ .Entity.Name }}Dto>.InvalidToken();
+        }
+        var updated = await repository.GetByIdAsync(id, cancellationToken);
+        return MutationValidationResult<{{ .Entity.Name }}Dto>.Updated(ToDto(updated ?? snapshot));
+    }
+
+    public async Task<MutationResult<bool>> DeleteAsync(Guid id, string concurrencyToken, CancellationToken cancellationToken)
+    {
+        var snapshot = await repository.GetByIdAsync(id, cancellationToken);
+        if (snapshot is null)
+        {
+            return new MutationResult<bool>(MutationResultStatus.NotFound);
+        }
+        if (string.IsNullOrWhiteSpace(concurrencyToken))
+        {
+            return new MutationResult<bool>(MutationResultStatus.InvalidToken);
+        }
+        var status = await repository.DeleteAsync(snapshot.Entity, concurrencyToken, cancellationToken);
+        if (status == SaveResultStatus.Conflict)
+        {
+            return new MutationResult<bool>(MutationResultStatus.Conflict);
+        }
+        if (status == SaveResultStatus.InvalidToken)
+        {
+            return new MutationResult<bool>(MutationResultStatus.InvalidToken);
+        }
+        return new MutationResult<bool>(MutationResultStatus.Deleted, true);
+    }
+
+    private static {{ .Entity.Name }}Dto ToDto(EntitySnapshot<{{ .Entity.Name }}> snapshot) => new(
+{{ range $index, $field := .Entity.Fields }}{{ if $index }},
+{{ end }}        snapshot.Entity.{{ $field.ValueAccess }}{{ end }},
+        snapshot.ConcurrencyToken);
+
+    private static ({{ .Entity.Name }}State? State, ValidationOutcome Validation) CreateState(Create{{ .Entity.Name }}Request request) => CreateStateCore({{ .Entity.Name }}PrimitiveInput.From(request));
+    private static ({{ .Entity.Name }}State? State, ValidationOutcome Validation) CreateState(Update{{ .Entity.Name }}Request request) => CreateStateCore({{ .Entity.Name }}PrimitiveInput.From(request));
+
+    private static ({{ .Entity.Name }}State? State, ValidationOutcome Validation) CreateStateCore({{ .Entity.Name }}PrimitiveInput input)
+    {
+        List<ValidationIssue> issues = [];
+{{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        var {{ .CamelName }}Result = {{ .DomainType }}.Create(input.{{ .Name }}, "{{ .CamelName }}");
+        issues.AddRange({{ .CamelName }}Result.Errors.Select(error => new ValidationIssue(error.Field ?? "{{ .CamelName }}", error.Code, error.Message)));
+{{ end }}{{ end }}        if (issues.Count > 0)
+        {
+            return (null, new ValidationOutcome(issues.OrderBy(issue => issue.Field, StringComparer.Ordinal).ThenBy(issue => issue.Code, StringComparer.Ordinal).ToArray()));
+        }
+        return (new {{ .Entity.Name }}State
+        {
+{{ range .Entity.NonIDFields }}            {{ .Name }} = {{ if .IsValueObject }}{{ .CamelName }}Result.Value!{{ else }}input.{{ .Name }}{{ end }},
+{{ end }}        }, new ValidationOutcome([]));
+    }
+}

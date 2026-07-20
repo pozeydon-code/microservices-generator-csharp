@@ -1,0 +1,32 @@
+namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+
+public sealed record {{ .Entity.Name }}Dto(
+{{ range $index, $field := .Entity.Fields }}{{ if $index }},
+{{ end }}    {{ $field.ContractType }} {{ $field.Name }}{{ end }},
+    string ConcurrencyToken);
+
+public sealed record Create{{ .Entity.Name }}Request
+{
+{{ range .Entity.NonIDFields }}    public {{ .ContractType }} {{ .Name }} { get; init; }{{ if eq .ContractType "string" }} = string.Empty;{{ end }}
+{{ end }}}
+
+public sealed record Update{{ .Entity.Name }}Request
+{
+{{ range .Entity.NonIDFields }}    public {{ .ContractType }} {{ .Name }} { get; init; }{{ if eq .ContractType "string" }} = string.Empty;{{ end }}
+{{ end }}    public string ConcurrencyToken { get; init; } = string.Empty;
+}
+
+public sealed class {{ .Entity.Name }}PrimitiveInput
+{
+{{ range .Entity.NonIDFields }}    public {{ .ContractType }} {{ .Name }} { get; init; }{{ if eq .ContractType "string" }} = string.Empty;{{ end }}
+{{ end }}
+    public static {{ .Entity.Name }}PrimitiveInput From(Create{{ .Entity.Name }}Request request) => new()
+    {
+{{ range .Entity.NonIDFields }}        {{ .Name }} = request.{{ .Name }},
+{{ end }}    };
+
+    public static {{ .Entity.Name }}PrimitiveInput From(Update{{ .Entity.Name }}Request request) => new()
+    {
+{{ range .Entity.NonIDFields }}        {{ .Name }} = request.{{ .Name }},
+{{ end }}    };
+}

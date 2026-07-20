@@ -1,0 +1,12 @@
+using {{ .Service.Name }}.Application.Common;
+
+namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+
+public interface I{{ .Entity.Name }}UseCases
+{
+    Task<PagedResult<{{ .Entity.Name }}Dto>> ListAsync(PageRequest request, CancellationToken cancellationToken);
+    Task<{{ .Entity.Name }}Dto?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
+    Task<MutationValidationResult<{{ .Entity.Name }}Dto>> CreateAsync(Create{{ .Entity.Name }}Request request, CancellationToken cancellationToken);
+    Task<MutationValidationResult<{{ .Entity.Name }}Dto>> UpdateAsync(Guid id, Update{{ .Entity.Name }}Request request, CancellationToken cancellationToken);
+    Task<MutationResult<bool>> DeleteAsync(Guid id, string concurrencyToken, CancellationToken cancellationToken);
+}

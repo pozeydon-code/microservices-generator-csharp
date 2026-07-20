@@ -1,0 +1,110 @@
+{{ if .HasValueObjects }}using {{ .Name }}.Domain.Shared;
+using {{ .Name }}.Domain.Shared.ValueObjects;
+{{ end }}
+using Xunit;
+
+namespace {{ .Name }}.Domain.Tests;
+
+public sealed class {{ .Name }}DomainTests
+{
+{{ if not .HasValueObjects }}    [Fact]
+    public void DomainProjectBuildsWithoutValueObjects()
+    {
+        Assert.True(true);
+    }
+
+{{ end }}{{ range .ValueObjects }}{{ $vo := . }}    [Fact]
+    public void {{ .Name }}AcceptsValidValuesAndSupportsEqualityAndRehydration()
+    {
+        var first = {{ .Name }}.Create({{ .SampleValue }}).Value!;
+        var second = {{ .Name }}.Create({{ .SampleValue }}).Value!;
+        var rehydrated = {{ .Name }}.Rehydrate({{ .SampleValue }});
+
+        Assert.Equal(first, second);
+        Assert.Equal(first, rehydrated);
+        Assert.Equal(first.GetHashCode(), second.GetHashCode());
+        Assert.NotNull(first);
+        Assert.Equal({{ .SampleValue }}, first.Value);
+    }
+
+{{ if .UnequalValue }}    [Fact]
+    public void {{ .Name }}UsesValueForUnequalEqualityAndHashSemantics()
+    {
+        var first = {{ .Name }}.Create({{ .SampleValue }}).Value!;
+        var different = {{ .Name }}.Create({{ .UnequalValue }}).Value!;
+
+        Assert.NotEqual(first, different);
+        Assert.NotEqual(first.GetHashCode(), different.GetHashCode());
+    }
+
+{{ end }}
+
+{{ if eq .Type "string" }}    [Fact]
+    public void {{ .Name }}RejectsNull()
+    {
+        var result = {{ .Name }}.Create(null, "Field");
+
+        Assert.False(result.IsSuccess);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("{{ .Name }}.Null", error.Code);
+        Assert.Equal("Field", error.Field);
+    }
+
+{{ if .MinLength }}    [Fact]
+    public void {{ .Name }}AcceptsExactMinimumLengthBoundary()
+    {
+        var value = new string('x', {{ .MinLength }});
+        var result = {{ .Name }}.Create(value);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(value, result.Value!.Value);
+    }
+
+{{ end }}{{ if .MaxLength }}    [Fact]
+    public void {{ .Name }}AcceptsExactMaximumLengthBoundary()
+    {
+        var value = new string('x', {{ .MaxLength }});
+        var result = {{ .Name }}.Create(value);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(value, result.Value!.Value);
+    }
+
+{{ end }}
+{{ end }}{{ if .Minimum }}    [Fact]
+    public void {{ .Name }}AcceptsMinimumBoundary()
+    {
+        var result = {{ .Name }}.Create({{ .Minimum }});
+        Assert.True(result.IsSuccess);
+        Assert.Equal({{ .Minimum }}, result.Value!.Value);
+    }
+
+{{ end }}{{ if .Maximum }}    [Fact]
+    public void {{ .Name }}AcceptsMaximumBoundary()
+    {
+        var result = {{ .Name }}.Create({{ .Maximum }});
+        Assert.True(result.IsSuccess);
+        Assert.Equal({{ .Maximum }}, result.Value!.Value);
+    }
+
+{{ end }}{{ if .Pattern }}    [Fact]
+    public void {{ .Name }}AcceptsValidPatternExampleAndRejectsInvalidPatternExample()
+    {
+        Assert.True({{ .Name }}.Create({{ .SampleValue }}).IsSuccess);
+        Assert.Equal("{{ .Name }}.Pattern", Assert.Single({{ .Name }}.Create({{ .PatternInvalidValue }}).Errors).Code);
+    }
+
+{{ end }}
+{{ range .InvalidSamples }}    [Fact]
+    public void {{ $vo.Name }}Rejects{{ .TestName }}()
+    {
+        var result = {{ $vo.Name }}.Create({{ .FieldValue }}, "Field");
+
+        Assert.False(result.IsSuccess);
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("{{ .Code }}", error.Code);
+        Assert.Equal("Field", error.Field);
+        var exception = Assert.Throws<DomainReconstitutionException>(() => {{ $vo.Name }}.Rehydrate({{ .FieldValue }}));
+        Assert.Equal("{{ $vo.Name }}", exception.ValueObjectType);
+        Assert.Contains("{{ .Code }}", exception.InvariantCodes);
+    }
+
+{{ end }}{{ end }}}

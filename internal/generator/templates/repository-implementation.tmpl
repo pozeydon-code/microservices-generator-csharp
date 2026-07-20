@@ -1,0 +1,162 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using {{ .Service.Name }}.Application.Common;
+using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
+using {{ .Service.Name }}.Domain.Shared;
+using {{ .Service.Name }}.Infrastructure.Persistence;
+
+namespace {{ .Service.Name }}.Infrastructure.Persistence.Features.{{ .Entity.FeatureName }};
+
+public sealed class {{ .Entity.Name }}Repository({{ .Service.Name }}DbContext dbContext, ILogger<{{ .Entity.Name }}Repository> logger) : I{{ .Entity.Name }}Repository
+{
+    public async Task<(IReadOnlyList<EntitySnapshot<{{ .Entity.Name }}>> Items, int TotalCount)> ListAsync(int skip, int take, CancellationToken cancellationToken)
+    {
+        using var activity = {{ .Service.Name }}.Infrastructure.DependencyInjection.ActivitySource.StartActivity("{{ .Entity.Name }}.list");
+        var query = dbContext.{{ .Entity.Name }}s.OrderBy(entity => entity.Id);
+        var totalCount = await query.CountAsync(cancellationToken);
+        try
+        {
+            var entities = await query.Skip(skip).Take(take).ToListAsync(cancellationToken);
+            var items = entities.Select(ToSnapshot).ToList();
+            return (items, totalCount);
+        }
+        catch (DomainReconstitutionException ex)
+        {
+            var diagnostics = await FindReconstitutionDiagnosticsAsync(ex, null, cancellationToken);
+            RecordReconstitutionFailure(activity, ex, "list", diagnostics.Field, diagnostics.RecordIds);
+            throw;
+        }
+    }
+
+    public async Task<EntitySnapshot<{{ .Entity.Name }}>?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
+    {
+        using var activity = {{ .Service.Name }}.Infrastructure.DependencyInjection.ActivitySource.StartActivity("{{ .Entity.Name }}.get");
+        try
+        {
+            var entity = await dbContext.{{ .Entity.Name }}s.FindAsync([id], cancellationToken);
+            return entity is null ? null : ToSnapshot(entity);
+        }
+        catch (DomainReconstitutionException ex)
+        {
+            var diagnostics = await FindReconstitutionDiagnosticsAsync(ex, id, cancellationToken);
+            RecordReconstitutionFailure(activity, ex, "get", diagnostics.Field, diagnostics.RecordIds);
+            throw;
+        }
+    }
+
+    public async Task<EntitySnapshot<{{ .Entity.Name }}>> AddAsync({{ .Entity.Name }} entity, CancellationToken cancellationToken)
+    {
+        using var activity = {{ .Service.Name }}.Infrastructure.DependencyInjection.ActivitySource.StartActivity("{{ .Entity.Name }}.add");
+        await dbContext.{{ .Entity.Name }}s.AddAsync(entity, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToSnapshot(entity);
+    }
+
+    public async Task<SaveResultStatus> UpdateAsync({{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
+    {
+        using var activity = {{ .Service.Name }}.Infrastructure.DependencyInjection.ActivitySource.StartActivity("{{ .Entity.Name }}.update");
+        try
+        {
+            if (!TryDecodeToken(concurrencyToken, out var rowVersion))
+            {
+                return SaveResultStatus.InvalidToken;
+            }
+            dbContext.{{ .Entity.Name }}s.Update(entity);
+            dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return SaveResultStatus.Saved;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            activity?.AddEvent(new("sql.concurrency_conflict"));
+            return SaveResultStatus.Conflict;
+        }
+    }
+
+    public async Task<SaveResultStatus> DeleteAsync({{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
+    {
+        using var activity = {{ .Service.Name }}.Infrastructure.DependencyInjection.ActivitySource.StartActivity("{{ .Entity.Name }}.delete");
+        try
+        {
+            if (!TryDecodeToken(concurrencyToken, out var rowVersion))
+            {
+                return SaveResultStatus.InvalidToken;
+            }
+            dbContext.{{ .Entity.Name }}s.Remove(entity);
+            dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return SaveResultStatus.Saved;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            activity?.AddEvent(new("sql.concurrency_conflict"));
+            return SaveResultStatus.Conflict;
+        }
+    }
+
+    private EntitySnapshot<{{ .Entity.Name }}> ToSnapshot({{ .Entity.Name }} entity) =>
+        new(entity, Convert.ToBase64String((byte[])dbContext.Entry(entity).Property("RowVersion").CurrentValue!));
+
+    private async Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync(DomainReconstitutionException exception, Guid? id, CancellationToken cancellationToken)
+    {
+        await Task.CompletedTask;
+        var code = exception.InvariantCodes.FirstOrDefault() ?? string.Empty;
+{{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        if (exception.ValueObjectType == "{{ .DomainType }}")
+        {
+            var predicate = code switch
+            {
+{{ if eq .ContractType "string" }}                "{{ .DomainType }}.Required" => "([{{ .Name }}] IS NULL OR LTRIM(RTRIM([{{ .Name }}])) = N'')",
+{{ if .ColumnMaxLength }}                "{{ .DomainType }}.MaxLength" => "([{{ .Name }}] IS NOT NULL AND LEN([{{ .Name }}]) > {{ .ColumnMaxLength }})",
+{{ end }}{{ if .Minimum }}                "{{ .DomainType }}.Minimum" => "LEN([{{ .Name }}]) < {{ .Minimum }}",
+{{ end }}{{ else if or (eq .ContractType "decimal") (eq .ContractType "double") (eq .ContractType "int") (eq .ContractType "long") }}{{ if .Minimum }}                "{{ .DomainType }}.Minimum" => "[{{ .Name }}] < {{ .Minimum }}",
+{{ end }}{{ if .Maximum }}                "{{ .DomainType }}.Maximum" => "[{{ .Name }}] > {{ .Maximum }}",
+{{ end }}{{ else if eq .ContractType "Guid" }}                "{{ .DomainType }}.NotEmpty" => "[{{ .Name }}] = '00000000-0000-0000-0000-000000000000'",
+{{ else if eq .ContractType "DateTime" }}                "{{ .DomainType }}.NotDefault" => "[{{ .Name }}] = '0001-01-01T00:00:00'",
+{{ end }}                _ => string.Empty
+            };
+            if (predicate.Length == 0)
+            {
+                return ("{{ .Name }}", []);
+            }
+            var sql = id.HasValue
+                ? "SELECT TOP(5) [Id] AS [Value] FROM [{{ $.Entity.Name }}s] WHERE [Id] = {0} AND " + predicate + " ORDER BY [Id]"
+                : "SELECT TOP(5) [Id] AS [Value] FROM [{{ $.Entity.Name }}s] WHERE " + predicate + " ORDER BY [Id]";
+            var ids = id.HasValue
+                ? await dbContext.Database.SqlQueryRaw<Guid>(sql, id.Value).ToListAsync(cancellationToken)
+                : await dbContext.Database.SqlQueryRaw<Guid>(sql).ToListAsync(cancellationToken);
+            return ("{{ .Name }}", ids);
+        }
+{{ end }}{{ end }}        return (string.Empty, []);
+    }
+
+    private void RecordReconstitutionFailure(System.Diagnostics.Activity? activity, DomainReconstitutionException exception, string operation, string field, IReadOnlyList<Guid> recordIds)
+    {
+        var recordIdsText = string.Join(",", recordIds);
+        activity?.AddEvent(new("domain.reconstitution_failed", tags: new System.Diagnostics.ActivityTagsCollection
+        {
+            ["service"] = "{{ .Service.Name }}",
+            ["entity"] = "{{ .Entity.Name }}",
+            ["field"] = field,
+            ["operation"] = operation,
+            ["value_object"] = exception.ValueObjectType,
+            ["invariant_codes"] = string.Join(",", exception.InvariantCodes),
+            ["record_ids"] = recordIdsText
+        }));
+        logger.LogError(exception, "Invalid persisted value while materializing {Service}/{Entity}.{Field} during {Operation}. RecordIds={RecordIds}; ValueObject={ValueObject}; InvariantCodes={InvariantCodes}", "{{ .Service.Name }}", "{{ .Entity.Name }}", field, operation, recordIdsText, exception.ValueObjectType, string.Join(",", exception.InvariantCodes));
+    }
+
+    private static bool TryDecodeToken(string concurrencyToken, out byte[] rowVersion)
+    {
+        try
+        {
+            rowVersion = Convert.FromBase64String(concurrencyToken);
+            return rowVersion.Length == 8;
+        }
+        catch (FormatException)
+        {
+            rowVersion = [];
+            return false;
+        }
+    }
+}

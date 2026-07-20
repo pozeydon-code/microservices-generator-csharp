@@ -1,0 +1,104 @@
+# CommercePlatform
+
+Minimal generated .NET 8 microservice workspace for product management.
+
+## Services
+
+- `ProductService` Domain, Application, Api, Infrastructure, Host, and test projects.
+
+## Architecture
+
+Generated services use a five-project Clean Architecture model:
+
+| Project | Responsibility |
+|---|---|
+| `{Service}.Domain` | Entities with private setters and explicit create/update behavior. No framework, EF, persistence token, or rowversion dependency. |
+| `{Service}.Application` | Use cases, ports, DTOs, pagination contracts, and opaque concurrency tokens. References Domain only. |
+| `{Service}.Api` | HTTP endpoint adapter and health HTTP mapping. References Application only. |
+| `{Service}.Infrastructure` | EF Core SQL Server adapter, shadow rowversion conversion, repository implementations, bounded retries/timeouts, and SQL/schema readiness adapter registration. |
+| `{Service}.Host` | Executable composition root for auth, HTTPS/HSTS, request timeout budget, OpenTelemetry, ProblemDetails, middleware, endpoint mapping, Infrastructure composition, and startup guards. |
+
+```text
+Domain <- Application <- Api
+Domain <- Application <- Infrastructure
+Application + Api + Infrastructure <- Host
+```
+
+`{Service}.Architecture.Tests` inspects generated assembly references, project references, and source text to enforce these boundaries. Value Objects live in Domain; Application constructs them and API only maps validation outcomes to HTTP.
+
+## Value Objects
+
+Service-level Value Objects wrap supported scalar primitives and keep business validation in Domain. Create/update request contracts use primitive JSON values. Application constructs Value Objects, aggregates field-addressable validation issues, and does not call repositories when validation fails. API maps validation failures to RFC-compatible 400 validation ProblemDetails. Persisted Value Object data is reconstituted through Domain factories; invalid stored values raise a typed Domain signal that Infrastructure logs with service/entity/operation/value-object context without logging the sensitive value.
+
+Supported rules: strings use `required`, `minLength`, `maxLength`, and `pattern`; numeric types use `minimum` and `maximum`; `Guid` uses `notEmpty`; `DateTime` uses `notDefault`; `bool` has no rules yet. Nested/composed Value Objects are intentionally out of scope for this slice.
+
+## Safety
+
+This output is generated as source files only. It does not run dotnet, NuGet, migrations, shell commands, or database commands.
+
+## Configuration
+
+- Set `ConnectionStrings__DefaultConnection` to a SQL Server connection string. Host configuration passes it to Infrastructure; production strings should validate certificates, and `TrustServerCertificate=True` is a local-development exception only.
+- Set `Authentication__Authority` and `Authentication__Audience` for JWT Bearer authentication. No signing secrets are generated.
+- CRUD endpoints require authorization. `/health/live` is anonymous and process-only. `/health/ready` checks SQL connectivity and verifies generated table, column type, nullability, max-length, and rowversion expectations. External readiness failures use a generic response; detailed failure reasons are written to logs only.
+- Hosts redirect HTTP to HTTPS and enable HSTS outside Development/Testing. Production traffic must use HTTPS all the way to the Host, including private backend TLS from a trusted reverse proxy, unless operators explicitly implement and audit trusted forwarded-header configuration.
+- Configure OpenTelemetry OTLP export with `OTEL_EXPORTER_OTLP_ENDPOINT` and standard `OTEL_EXPORTER_OTLP_*` variables, or explicitly set `OTEL_SDK_DISABLED=true` to opt out. Generated code does not provision vendor alerts; start with deployment-specific HTTP 5xx and p95 latency alerts.
+
+## Build and test
+
+```bash
+dotnet restore ./CommercePlatform.sln
+dotnet build ./CommercePlatform.sln --nologo -warnaserror
+MICROGEN_TEST_SQLSERVER='Server=localhost,1433;User Id=sa;Password=<password>;Encrypt=True;TrustServerCertificate=True' \
+  dotnet test ./CommercePlatform.sln --nologo -warnaserror --blame-hang --blame-hang-timeout 90s --logger "trx;LogFileName=generated-tests.trx"
+```
+
+## Manual migrations
+
+Create and apply EF migrations manually after review, backup, staging validation, and deployment approval. The generator never runs migrations or opens a database connection.
+
+Run the same sequence for each generated service:
+
+### ProductService
+
+1. Build and test the generated solution.
+2. Resolve and confirm one explicit target server/database from runtime configuration.
+3. Create or update the reviewed migration source.
+4. Generate an idempotent SQL artifact and review it before deployment.
+5. Validate against staging before production.
+6. Back up the target database and verify the backup.
+7. Apply the reviewed SQL artifact in the approved deployment window.
+8. Smoke test the API and readiness endpoint after the application version is deployed.
+9. If readiness or reconstitution logs identify bad persisted values, repair data only with a reviewed SQL script against the confirmed target database, re-run readiness, and preserve the repair script with the deployment artifact.
+
+```bash
+mkdir -p ./artifacts
+dotnet test ./CommercePlatform.sln --nologo -warnaserror --logger "trx;LogFileName=ProductService-tests.trx"
+TARGET_DATABASE='<confirmed-database-name>'
+TARGET_SERVER='<confirmed-server-name-or-host,port>'
+test -n "$TARGET_DATABASE"
+test -n "$TARGET_SERVER"
+dotnet ef migrations add InitialCreate --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Host
+dotnet ef migrations script --idempotent --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Host --output ./artifacts/ProductService-migration.sql
+# Review ./artifacts/ProductService-migration.sql before continuing.
+sqlcmd -S "$TARGET_SERVER" -d master -Q "IF DB_ID('$TARGET_DATABASE') IS NULL THROW 50000, 'Target database not found.', 1; SELECT @@SERVERNAME AS server_name, DB_NAME(DB_ID('$TARGET_DATABASE')) AS database_name"
+sqlcmd -S "$TARGET_SERVER" -d master -Q "BACKUP DATABASE [$TARGET_DATABASE] TO DISK = N'/var/opt/mssql/backups/$TARGET_DATABASE-predeploy.bak' WITH COPY_ONLY, CHECKSUM"
+sqlcmd -S "$TARGET_SERVER" -d master -Q "RESTORE VERIFYONLY FROM DISK = N'/var/opt/mssql/backups/$TARGET_DATABASE-predeploy.bak' WITH CHECKSUM"
+sqlcmd -S "$TARGET_SERVER" -d "$TARGET_DATABASE" -b -i ./artifacts/ProductService-migration.sql
+sqlcmd -S "$TARGET_SERVER" -d "$TARGET_DATABASE" -Q "SELECT 1 AS smoke_test"
+```
+
+Before tightening Value Object rules, run `./src/ProductService/ProductService.Infrastructure/Persistence/ValueObjectPreflight.sql` against the confirmed target database. The script covers SQL-safe rules only: null/required, min/max length, numeric min/max, Guid empty, and DateTime default. Regex rules require application/manual audit because regex semantics are not safely portable to SQL. Quarantine and back up identified rows, repair only in an explicit transaction with business-approved values, rerun preflight, and only then deploy the migration. Never invent replacement business data.
+
+Rollback limitations: database rollback is not automatically reversible after schema changes. If rollback-to-target is required, create and review a target-specific SQL script from a verified backup/restore plan; otherwise prefer fix-forward.
+
+Fix-forward flow:
+
+```bash
+dotnet ef migrations add FixForwardDescription --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Host
+dotnet ef migrations script --idempotent --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Host --output ./artifacts/ProductService-fix-forward.sql
+# Review and validate ./artifacts/ProductService-fix-forward.sql in staging.
+sqlcmd -S "$TARGET_SERVER" -d "$TARGET_DATABASE" -b -i ./artifacts/ProductService-fix-forward.sql
+```
+
+Prefer expand/contract changes for releases. Never auto-run generated migration commands from the generator or CI unless your delivery process explicitly owns that database deployment step.

@@ -1,0 +1,106 @@
+package cli
+
+import (
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"strings"
+
+	"github.com/pozeydon-code/generator-microservices-go/internal/configloader"
+	"github.com/pozeydon-code/generator-microservices-go/internal/generator"
+	"github.com/pozeydon-code/generator-microservices-go/internal/output"
+)
+
+const (
+	ExitOK    = 0
+	ExitError = 1
+	ExitUsage = 2
+)
+
+func Run(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		printUsage(stderr)
+		return ExitUsage
+	}
+
+	switch args[0] {
+	case "generate":
+		return runGenerate(args[1:], stdout, stderr)
+	case "-h", "--help", "help":
+		printUsage(stdout)
+		return ExitOK
+	default:
+		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
+		printUsage(stderr)
+		return ExitUsage
+	}
+}
+
+func runGenerate(args []string, stdout, stderr io.Writer) int {
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" {
+			printUsage(stdout)
+			return ExitOK
+		}
+	}
+	flags := flag.NewFlagSet("generate", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	configPath := flags.String("config", "", "Path to the microgen JSON configuration file")
+	outputDir := flags.String("output", "", "Directory where generated files will be written")
+	force := flags.Bool("force", false, "Replace a verified microgen-owned generated directory")
+	flags.Usage = func() { printUsage(flags.Output()) }
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			printUsage(stdout)
+			return ExitOK
+		}
+		return ExitUsage
+	}
+	if flags.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected arguments: %s\n", strings.Join(flags.Args(), " "))
+		return ExitUsage
+	}
+	if strings.TrimSpace(*configPath) == "" {
+		fmt.Fprintln(stderr, "missing required --config path")
+		return ExitUsage
+	}
+	if strings.TrimSpace(*outputDir) == "" {
+		fmt.Fprintln(stderr, "missing required --output directory")
+		return ExitUsage
+	}
+
+	cfg, err := configloader.LoadJSON(*configPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return ExitError
+	}
+
+	gen, err := generator.New()
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return ExitError
+	}
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return ExitError
+	}
+
+	result, err := output.NewFilesystemWriter().WriteDetailed(*outputDir, files, *force)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return ExitError
+	}
+	if result.Warning != "" {
+		fmt.Fprintf(stderr, "Warning: %s\n", result.Warning)
+	}
+
+	fmt.Fprintf(stdout, "Generated %d files in %s\n", len(files), result.OutputDir)
+	return ExitOK
+}
+
+func printUsage(writer io.Writer) {
+	fmt.Fprintln(writer, "Usage: microgen generate --config <path> --output <dir> [--force]")
+	fmt.Fprintln(writer, "  --force replaces only a verified microgen-owned generated directory.")
+}

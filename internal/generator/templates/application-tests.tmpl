@@ -1,0 +1,239 @@
+using {{ .Service.Name }}.Application.Common;
+using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
+using Domain{{ .Entity.Name }} = {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }}.{{ .Entity.Name }};
+{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Shared.ValueObjects;
+{{ end }}
+using Xunit;
+
+namespace {{ .Service.Name }}.Application.Tests.Features.{{ .Entity.FeatureName }};
+
+public sealed class {{ .Entity.Name }}UseCasesTests
+{
+    [Fact]
+    public async Task CreateAssignsIdentityAndPreservesRequestValues()
+    {
+        var repository = new Fake{{ .Entity.Name }}Repository();
+        var useCases = new {{ .Entity.Name }}UseCases(repository);
+
+        var result = await useCases.CreateAsync(new() { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .SampleValue }}, {{ end }} }, CancellationToken.None);
+        var created = result.Value!;
+
+        Assert.Equal(MutationResultStatus.Created, result.Status);
+        Assert.NotEqual(Guid.Empty, created.Id);
+{{ range .Entity.NonIDFields }}        {{ .Assertion }}
+{{ end }}
+        Assert.NotNull(created.ConcurrencyToken);
+    }
+
+    [Fact]
+    public async Task ListAppliesPaginationMetadata()
+    {
+        var repository = new Fake{{ .Entity.Name }}Repository();
+        repository.Items.Add(Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} }));
+        var useCases = new {{ .Entity.Name }}UseCases(repository);
+
+        var page = await useCases.ListAsync(new PageRequest(1, 20), CancellationToken.None);
+
+        Assert.Single(page.Items);
+        Assert.Equal(1, page.Page);
+        Assert.Equal(20, page.PageSize);
+        Assert.Equal(1, page.TotalCount);
+    }
+
+{{ if .Entity.HasValueObjectFields }}    [Fact]
+    public async Task CreateAggregatesValidationErrorsAndDoesNotCallRepository()
+    {
+        var repository = new Fake{{ .Entity.Name }}Repository();
+        var useCases = new {{ .Entity.Name }}UseCases(repository);
+
+        var result = await useCases.CreateAsync(new() { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ if .IsValueObject }}{{ .InvalidValue }}{{ else }}{{ .SampleValue }}{{ end }}, {{ end }} }, CancellationToken.None);
+
+        Assert.Equal(MutationResultStatus.ValidationFailed, result.Status);
+        Assert.Null(result.Value);
+        Assert.Equal(0, repository.AddCalls);
+        Assert.Collection(result.Validation!.Issues{{ range .Entity.NonIDFields }}{{ if .IsValueObject }},
+            issue =>
+            {
+                Assert.Equal("{{ .CamelName }}", issue.Field);
+                Assert.Equal("{{ .InvalidCode }}", issue.Code);
+                Assert.Equal("{{ .InvalidMessage }}", issue.Message);
+            }{{ end }}{{ end }});
+    }
+
+    [Fact]
+    public async Task UpdateAggregatesValidationErrorsAndDoesNotCallRepository()
+    {
+        var repository = new Fake{{ .Entity.Name }}Repository();
+        var entity = Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
+        repository.Items.Add(entity);
+        var useCases = new {{ .Entity.Name }}UseCases(repository);
+
+        var result = await useCases.UpdateAsync(entity.Id, new() { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ if .IsValueObject }}{{ .InvalidValue }}{{ else }}{{ .SampleValue }}{{ end }}, {{ end }}ConcurrencyToken = "token-v1" }, CancellationToken.None);
+
+        Assert.Equal(MutationResultStatus.ValidationFailed, result.Status);
+        Assert.Null(result.Value);
+        Assert.Equal(0, repository.GetCalls + repository.AddCalls + repository.UpdateCalls + repository.DeleteCalls);
+        Assert.Collection(result.Validation!.Issues{{ range .Entity.NonIDFields }}{{ if .IsValueObject }},
+            issue =>
+            {
+                Assert.Equal("{{ .CamelName }}", issue.Field);
+                Assert.Equal("{{ .InvalidCode }}", issue.Code);
+                Assert.Equal("{{ .InvalidMessage }}", issue.Message);
+            }{{ end }}{{ end }});
+    }
+
+{{ end }}    [Fact]
+    public async Task ListAcceptsMinimumPaginationAndUsesZeroOffset()
+    {
+        var repository = new Fake{{ .Entity.Name }}Repository();
+        repository.Items.Add(Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} }));
+        var useCases = new {{ .Entity.Name }}UseCases(repository);
+
+        var page = await useCases.ListAsync(new PageRequest(1, 1), CancellationToken.None);
+
+        Assert.Single(page.Items);
+        Assert.Equal(0, repository.LastSkip);
+        Assert.Equal(1, repository.LastTake);
+    }
+
+    [Fact]
+    public void PaginationAcceptsMinimumMaximumSafeAndIntMaxValueWhenOffsetIsSupported()
+    {
+        Assert.Equal((1, 1, 0), PaginationPolicy.Normalize(1, 1));
+        Assert.Equal((21474837, 100, 2147483600), PaginationPolicy.Normalize(21474837, 100));
+        Assert.Equal((int.MaxValue, 1, int.MaxValue - 1), PaginationPolicy.Normalize(int.MaxValue, 1));
+    }
+
+    [Fact]
+    public void PaginationRejectsInvalidBoundsAndFirstUnsupportedOffset()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => PaginationPolicy.Normalize(0, 20));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PaginationPolicy.Normalize(1, 101));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PaginationPolicy.Normalize(21474838, 100));
+        Assert.Throws<ArgumentOutOfRangeException>(() => PaginationPolicy.Normalize(int.MaxValue, 100));
+    }
+
+    [Fact]
+    public async Task GetReturnsNullForMissingEntity()
+    {
+        var useCases = new {{ .Entity.Name }}UseCases(new Fake{{ .Entity.Name }}Repository());
+
+        var found = await useCases.GetByIdAsync(Guid.NewGuid(), CancellationToken.None);
+
+        Assert.Null(found);
+    }
+
+    [Fact]
+    public async Task UpdateProtectsIdentityAndDetectsConcurrencyConflict()
+    {
+        var repository = new Fake{{ .Entity.Name }}Repository();
+        var entity = Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
+        repository.Items.Add(entity);
+        var useCases = new {{ .Entity.Name }}UseCases(repository);
+
+        var staleToken = "stale-token";
+        var validToken = "token-v1";
+        var refreshedToken = "token-v2";
+        var conflict = await useCases.UpdateAsync(entity.Id, new() { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }}ConcurrencyToken = staleToken }, CancellationToken.None);
+        var invalid = await useCases.UpdateAsync(entity.Id, new() { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }}ConcurrencyToken = "unknown-token" }, CancellationToken.None);
+        var empty = await useCases.UpdateAsync(entity.Id, new() { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }}ConcurrencyToken = "" }, CancellationToken.None);
+        var updated = await useCases.UpdateAsync(entity.Id, new() { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }}ConcurrencyToken = validToken }, CancellationToken.None);
+
+        Assert.Equal(MutationResultStatus.Conflict, conflict.Status);
+        Assert.Equal(MutationResultStatus.InvalidToken, invalid.Status);
+        Assert.Equal(MutationResultStatus.InvalidToken, empty.Status);
+        Assert.Equal(MutationResultStatus.Updated, updated.Status);
+        Assert.Equal(entity.Id, updated.Value!.Id);
+{{ range .Entity.NonIDFields }}        Assert.True(EqualityComparer<{{ .ContractType }}>.Default.Equals({{ .UpdatedValue }}, updated.Value.{{ .Name }}));
+{{ end }}        Assert.Equal(refreshedToken, updated.Value.ConcurrencyToken);
+    }
+
+    [Fact]
+    public async Task DeleteReturnsNotFoundAndConflictPredictably()
+    {
+        var repository = new Fake{{ .Entity.Name }}Repository();
+        var entity = Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
+        repository.Items.Add(entity);
+        var useCases = new {{ .Entity.Name }}UseCases(repository);
+
+        var validToken = "token-v1";
+        var staleToken = "stale-token";
+        var missing = await useCases.DeleteAsync(Guid.NewGuid(), validToken, CancellationToken.None);
+        var conflict = await useCases.DeleteAsync(entity.Id, staleToken, CancellationToken.None);
+        var invalid = await useCases.DeleteAsync(entity.Id, "unknown-token", CancellationToken.None);
+        var empty = await useCases.DeleteAsync(entity.Id, "", CancellationToken.None);
+        var deleted = await useCases.DeleteAsync(entity.Id, validToken, CancellationToken.None);
+
+        Assert.Equal(MutationResultStatus.NotFound, missing.Status);
+        Assert.Equal(MutationResultStatus.Conflict, conflict.Status);
+        Assert.Equal(MutationResultStatus.InvalidToken, invalid.Status);
+        Assert.Equal(MutationResultStatus.InvalidToken, empty.Status);
+        Assert.Equal(MutationResultStatus.Deleted, deleted.Status);
+    }
+
+    private sealed class Fake{{ .Entity.Name }}Repository : I{{ .Entity.Name }}Repository
+    {
+        public List<Domain{{ .Entity.Name }}> Items { get; } = [];
+        public int LastSkip { get; private set; }
+        public int LastTake { get; private set; }
+        public int GetCalls { get; private set; }
+        public int AddCalls { get; private set; }
+        public int UpdateCalls { get; private set; }
+        public int DeleteCalls { get; private set; }
+
+        public Task<(IReadOnlyList<EntitySnapshot<Domain{{ .Entity.Name }}>> Items, int TotalCount)> ListAsync(int skip, int take, CancellationToken cancellationToken)
+        {
+            LastSkip = skip;
+            LastTake = take;
+            return Task.FromResult(((IReadOnlyList<EntitySnapshot<Domain{{ .Entity.Name }}>>)Items.Skip(skip).Take(take).Select(ToSnapshot).ToList(), Items.Count));
+        }
+
+        public Task<EntitySnapshot<Domain{{ .Entity.Name }}>?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
+        {
+            GetCalls++;
+            var entity = Items.SingleOrDefault(item => item.Id == id);
+            return Task.FromResult(entity is null ? null : ToSnapshot(entity));
+        }
+
+        public Task<EntitySnapshot<Domain{{ .Entity.Name }}>> AddAsync(Domain{{ .Entity.Name }} entity, CancellationToken cancellationToken)
+        {
+            AddCalls++;
+            Items.Add(entity);
+            return Task.FromResult(ToSnapshot(entity));
+        }
+
+        public Task<SaveResultStatus> UpdateAsync(Domain{{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
+        {
+            UpdateCalls++;
+            if (concurrencyToken == "stale-token")
+            {
+                return Task.FromResult(SaveResultStatus.Conflict);
+            }
+            if (concurrencyToken != CurrentToken)
+            {
+                return Task.FromResult(SaveResultStatus.InvalidToken);
+            }
+            CurrentToken = "token-v2";
+            return Task.FromResult(SaveResultStatus.Saved);
+        }
+
+        public Task<SaveResultStatus> DeleteAsync(Domain{{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
+        {
+            DeleteCalls++;
+            if (concurrencyToken == "stale-token")
+            {
+                return Task.FromResult(SaveResultStatus.Conflict);
+            }
+            if (concurrencyToken != CurrentToken)
+            {
+                return Task.FromResult(SaveResultStatus.InvalidToken);
+            }
+            Items.Remove(entity);
+            return Task.FromResult(SaveResultStatus.Saved);
+        }
+
+        private string CurrentToken { get; set; } = "token-v1";
+        private EntitySnapshot<Domain{{ .Entity.Name }}> ToSnapshot(Domain{{ .Entity.Name }} entity) => new(entity, CurrentToken);
+    }
+}

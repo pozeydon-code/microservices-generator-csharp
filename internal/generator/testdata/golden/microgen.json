@@ -1,0 +1,6 @@
+{
+  "generator": "microgen",
+  "targetFramework": "net8.0",
+  "solution": "CommercePlatform",
+  "services": ["ProductService"]
+}

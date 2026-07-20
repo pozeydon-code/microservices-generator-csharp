@@ -1,0 +1,33 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using Microsoft.IdentityModel.Tokens;
+
+namespace ProductService.Api.Tests;
+
+internal static class TestJwtTokens
+{
+    public const string Issuer = "https://issuer.example.test";
+    public const string Audience = "ProductService";
+    public static readonly DateTime FixedUtcNow = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+    public static readonly SymmetricSecurityKey SecurityKey = new(RandomNumberGenerator.GetBytes(32));
+
+    public static string ValidToken() => CreateToken(Issuer, Audience, SecurityKey, FixedUtcNow.AddMinutes(15), FixedUtcNow.AddMinutes(-1));
+    public static string ExpiredToken() => CreateToken(Issuer, Audience, SecurityKey, FixedUtcNow.AddMinutes(-5), FixedUtcNow.AddMinutes(-30));
+    public static string WrongIssuerToken() => CreateToken("https://wrong-issuer.example.test", Audience, SecurityKey, FixedUtcNow.AddMinutes(15), FixedUtcNow.AddMinutes(-1));
+    public static string WrongAudienceToken() => CreateToken(Issuer, "wrong-audience", SecurityKey, FixedUtcNow.AddMinutes(15), FixedUtcNow.AddMinutes(-1));
+    public static string WrongSignatureToken() => CreateToken(Issuer, Audience, new SymmetricSecurityKey(RandomNumberGenerator.GetBytes(32)), FixedUtcNow.AddMinutes(15), FixedUtcNow.AddMinutes(-1));
+
+    private static string CreateToken(string issuer, string audience, SecurityKey key, DateTime expires, DateTime? notBefore = null)
+    {
+        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var token = new JwtSecurityToken(
+            issuer: issuer,
+            audience: audience,
+            claims: [new Claim(ClaimTypes.NameIdentifier, "test-user")],
+            notBefore: notBefore ?? FixedUtcNow.AddMinutes(-1),
+            expires: expires,
+            signingCredentials: credentials);
+        return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+}
