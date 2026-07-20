@@ -21,14 +21,23 @@ func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T)
 	}}
 	writer := &fakeOutputWriter{}
 	service := NewService(Ports{
-		ConfigLoader:            loader,
-		ConfigValidator:         validator,
-		Generator:               gen,
-		OutputWriter:            writer,
-		OutputDirectoryResolver: fakeOutputResolver{outputDir: "/abs/generated"},
+		ConfigLoader:    loader,
+		ConfigValidator: validator,
+		Generator:       gen,
+		OutputWriter:    writer,
+		OutputPlanner: fakeOutputPlanner{plan: OutputPlan{
+			OutputDir:     "/abs/generated",
+			Action:        "replace",
+			ForceRequired: true,
+			ForceUsed:     true,
+			Files: []OutputPlannedFile{
+				{Path: "README.md", Action: "replace"},
+				{Path: "src/ProductService/Product.cs", Action: "replace"},
+			},
+		}},
 	})
 
-	plan, err := service.PlanGeneration(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"})
+	plan, err := service.PlanGeneration(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated", Force: true})
 
 	if err != nil {
 		t.Fatalf("expected plan, got %v", err)
@@ -48,10 +57,13 @@ func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T)
 	if plan.OutputDir != "/abs/generated" {
 		t.Fatalf("expected resolved output dir, got %q", plan.OutputDir)
 	}
+	if plan.OutputAction != "replace" || !plan.ForceRequired || !plan.ForceUsed {
+		t.Fatalf("expected mapped output status, got %#v", plan)
+	}
 	if plan.FileCount != 2 {
 		t.Fatalf("expected file count 2, got %d", plan.FileCount)
 	}
-	expectedFiles := []PlannedFile{{Path: "README.md"}, {Path: "src/ProductService/Product.cs"}}
+	expectedFiles := []PlannedFile{{Path: "README.md", Action: "replace"}, {Path: "src/ProductService/Product.cs", Action: "replace"}}
 	if !reflect.DeepEqual(plan.Files, expectedFiles) {
 		t.Fatalf("expected planned files %#v, got %#v", expectedFiles, plan.Files)
 	}
@@ -59,13 +71,13 @@ func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T)
 
 func TestServiceGenerateWritesGeneratedFilesThroughOutputPort(t *testing.T) {
 	files := []GeneratedFile{{Path: "README.md", Content: []byte("readme")}}
-	writer := &fakeOutputWriter{result: WriteResult{OutputDir: "/published/generated", Warning: "cleanup warning"}}
+	writer := &fakeOutputWriter{result: WriteResult{OutputDir: "/published/generated", OutputAction: "create", Warning: "cleanup warning"}}
 	service := NewService(Ports{
-		ConfigLoader:            &fakeConfigLoader{cfg: validConfig()},
-		ConfigValidator:         &fakeConfigValidator{},
-		Generator:               &fakeGenerator{files: files},
-		OutputWriter:            writer,
-		OutputDirectoryResolver: fakeOutputResolver{outputDir: "/planned/generated"},
+		ConfigLoader:    &fakeConfigLoader{cfg: validConfig()},
+		ConfigValidator: &fakeConfigValidator{},
+		Generator:       &fakeGenerator{files: files},
+		OutputWriter:    writer,
+		OutputPlanner:   fakeOutputPlanner{plan: OutputPlan{OutputDir: "/planned/generated", Action: "create", Files: []OutputPlannedFile{{Path: "README.md", Action: "create"}}}},
 	})
 
 	result, err := service.Generate(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated", Force: true})
@@ -82,8 +94,44 @@ func TestServiceGenerateWritesGeneratedFilesThroughOutputPort(t *testing.T) {
 	if result.OutputDir != "/published/generated" || result.Warning != "cleanup warning" {
 		t.Fatalf("unexpected write result: %#v", result)
 	}
-	if result.Plan.FileCount != 1 || result.Plan.OutputDir != "/planned/generated" {
+	if result.Plan.FileCount != 1 || result.Plan.OutputDir != "/published/generated" || result.Plan.OutputAction != "create" {
 		t.Fatalf("unexpected plan in generate result: %#v", result.Plan)
+	}
+}
+
+func TestServiceGenerateReturnsPublishTimeOutputStatus(t *testing.T) {
+	files := []GeneratedFile{{Path: "README.md", Content: []byte("readme")}}
+	writer := &fakeOutputWriter{result: WriteResult{
+		OutputDir:     "/published/generated",
+		OutputAction:  "replace",
+		ForceRequired: true,
+		ForceUsed:     true,
+	}}
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validConfig()},
+		ConfigValidator: &fakeConfigValidator{},
+		Generator:       &fakeGenerator{files: files},
+		OutputWriter:    writer,
+		OutputPlanner: fakeOutputPlanner{plan: OutputPlan{
+			OutputDir:     "/planned/generated",
+			Action:        "create",
+			ForceRequired: false,
+			ForceUsed:     false,
+			Files:         []OutputPlannedFile{{Path: "README.md", Action: "create"}},
+		}},
+	})
+
+	result, err := service.Generate(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated", Force: true})
+
+	if err != nil {
+		t.Fatalf("expected generate success, got %v", err)
+	}
+	if result.Plan.OutputDir != "/published/generated" || result.Plan.OutputAction != "replace" || !result.Plan.ForceRequired || !result.Plan.ForceUsed {
+		t.Fatalf("expected publish-time output status, got %#v", result.Plan)
+	}
+	expectedFiles := []PlannedFile{{Path: "README.md", Action: "create"}}
+	if result.Plan.FileCount != 1 || !reflect.DeepEqual(result.Plan.Files, expectedFiles) {
+		t.Fatalf("expected preflight file plan to be preserved, got %#v", result.Plan)
 	}
 }
 
@@ -217,13 +265,19 @@ func (writer *fakeOutputWriter) WriteGeneration(outputDir string, files []Genera
 	return writer.result, writer.err
 }
 
-type fakeOutputResolver struct {
+type fakeOutputPlanner struct {
 	outputDir string
+	files     []GeneratedFile
+	force     bool
+	plan      OutputPlan
 	err       error
 }
 
-func (resolver fakeOutputResolver) ResolveOutputDir(string) (string, error) {
-	return resolver.outputDir, resolver.err
+func (planner fakeOutputPlanner) PlanOutput(outputDir string, files []GeneratedFile, force bool) (OutputPlan, error) {
+	planner.outputDir = outputDir
+	planner.files = files
+	planner.force = force
+	return planner.plan, planner.err
 }
 
 func validConfig() spec.Config {

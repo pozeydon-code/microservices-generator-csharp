@@ -41,8 +41,31 @@ type ManifestFile struct {
 }
 
 type WriteResult struct {
-	OutputDir string
-	Warning   string
+	OutputDir     string
+	Action        PlanAction
+	ForceRequired bool
+	ForceUsed     bool
+	Warning       string
+}
+
+type PlanAction string
+
+const (
+	PlanActionCreate  PlanAction = "create"
+	PlanActionReplace PlanAction = "replace"
+)
+
+type Plan struct {
+	OutputDir     string
+	Action        PlanAction
+	ForceRequired bool
+	ForceUsed     bool
+	Files         []PlannedFile
+}
+
+type PlannedFile struct {
+	Path   string
+	Action PlanAction
 }
 
 type FilesystemWriter struct {
@@ -53,6 +76,49 @@ type FilesystemWriter struct {
 
 func NewFilesystemWriter() FilesystemWriter {
 	return FilesystemWriter{rename: os.Rename, removeAll: os.RemoveAll, remove: os.Remove}
+}
+
+func PlanOutput(outputDir string, files []generator.GeneratedFile, force bool) (Plan, error) {
+	root, err := CanonicalPublishPath(outputDir)
+	if err != nil {
+		return Plan{}, err
+	}
+	state, err := inspectRoot(root)
+	if err != nil {
+		return Plan{OutputDir: root}, err
+	}
+	if state.exists {
+		if !state.isDir {
+			return Plan{OutputDir: root}, validatePublicationState(root, state, force)
+		}
+		if err := validatePublicationState(root, state, true); err != nil {
+			return Plan{OutputDir: root}, err
+		}
+	} else if err := validatePublicationState(root, state, force); err != nil {
+		return Plan{OutputDir: root}, err
+	}
+
+	action := PlanActionCreate
+	if state.exists {
+		action = PlanActionReplace
+	}
+	plannedFiles := make([]PlannedFile, 0, len(files))
+	for _, file := range files {
+		cleanPath, err := cleanGeneratedPath(file.Path)
+		if err != nil {
+			return Plan{OutputDir: root}, err
+		}
+		plannedFiles = append(plannedFiles, PlannedFile{Path: cleanPath, Action: action})
+	}
+	sort.Slice(plannedFiles, func(i, j int) bool { return plannedFiles[i].Path < plannedFiles[j].Path })
+
+	return Plan{
+		OutputDir:     root,
+		Action:        action,
+		ForceRequired: state.exists,
+		ForceUsed:     state.exists && force,
+		Files:         plannedFiles,
+	}, nil
 }
 
 func (w FilesystemWriter) Write(outputDir string, files []generator.GeneratedFile, force bool) error {
@@ -97,6 +163,12 @@ func (w FilesystemWriter) WriteDetailed(outputDir string, files []generator.Gene
 	if err := validatePublicationState(root, state, force); err != nil {
 		return result, err
 	}
+	result.Action = PlanActionCreate
+	if state.exists {
+		result.Action = PlanActionReplace
+	}
+	result.ForceRequired = state.exists
+	result.ForceUsed = state.exists && force
 
 	staging, err := os.MkdirTemp(parent, "."+filepath.Base(root)+".microgen-staging-*")
 	if err != nil {

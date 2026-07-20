@@ -5,12 +5,99 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/pozeydon-code/generator-microservices-go/internal/generator"
 )
+
+func TestPlanOutputPlansNewDirectoryCreationWithoutWriting(t *testing.T) {
+	outputDir := filepath.Join(t.TempDir(), "generated")
+	plan, err := PlanOutput(outputDir, []generator.GeneratedFile{
+		{Path: "src/Service.cs", Content: []byte("service")},
+		{Path: "README.md", Content: []byte("readme")},
+	}, false)
+
+	if err != nil {
+		t.Fatalf("expected plan, got %v", err)
+	}
+	if plan.OutputDir != outputDir || plan.Action != PlanActionCreate || plan.ForceRequired || plan.ForceUsed {
+		t.Fatalf("unexpected plan metadata: %#v", plan)
+	}
+	expectedFiles := []PlannedFile{{Path: "README.md", Action: PlanActionCreate}, {Path: "src/Service.cs", Action: PlanActionCreate}}
+	if !reflect.DeepEqual(plan.Files, expectedFiles) {
+		t.Fatalf("expected deterministic files %#v, got %#v", expectedFiles, plan.Files)
+	}
+	if _, err := os.Stat(outputDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected planning not to create output dir, stat err=%v", err)
+	}
+}
+
+func TestPlanOutputReportsForceRequiredForOwnedOutput(t *testing.T) {
+	outputDir := writeInitialOutput(t)
+
+	plan, err := PlanOutput(outputDir, []generator.GeneratedFile{{Path: "README.md", Content: []byte("replacement\n")}}, false)
+
+	if err != nil {
+		t.Fatalf("expected plan, got %v", err)
+	}
+	if plan.Action != PlanActionReplace || !plan.ForceRequired || plan.ForceUsed {
+		t.Fatalf("expected force-required replacement plan, got %#v", plan)
+	}
+	expectedFiles := []PlannedFile{{Path: "README.md", Action: PlanActionReplace}}
+	if !reflect.DeepEqual(plan.Files, expectedFiles) {
+		t.Fatalf("expected replacement file plan %#v, got %#v", expectedFiles, plan.Files)
+	}
+}
+
+func TestPlanOutputReportsForceUsedForOwnedOutput(t *testing.T) {
+	outputDir := writeInitialOutput(t)
+
+	plan, err := PlanOutput(outputDir, []generator.GeneratedFile{{Path: "README.md", Content: []byte("replacement\n")}}, true)
+
+	if err != nil {
+		t.Fatalf("expected plan, got %v", err)
+	}
+	if plan.Action != PlanActionReplace || !plan.ForceRequired || !plan.ForceUsed {
+		t.Fatalf("expected force-used replacement plan, got %#v", plan)
+	}
+}
+
+func TestPlanOutputRejectsUnknownExistingDirectory(t *testing.T) {
+	outputDir := t.TempDir()
+
+	_, err := PlanOutput(outputDir, []generator.GeneratedFile{{Path: "README.md", Content: []byte("content\n")}}, true)
+
+	if err == nil {
+		t.Fatal("expected unknown directory error")
+	}
+	if !strings.Contains(err.Error(), "not owned by microgen") {
+		t.Fatalf("expected ownership error, got %v", err)
+	}
+}
+
+func TestPlanOutputRejectsSymlinkExistingAncestor(t *testing.T) {
+	base := t.TempDir()
+	realParent := filepath.Join(base, "real-parent")
+	linkParent := filepath.Join(base, "link-parent")
+	if err := os.Mkdir(realParent, 0o755); err != nil {
+		t.Fatalf("create real parent: %v", err)
+	}
+	if err := os.Symlink(realParent, linkParent); err != nil {
+		t.Fatalf("create parent symlink: %v", err)
+	}
+
+	_, err := PlanOutput(filepath.Join(linkParent, "generated"), []generator.GeneratedFile{{Path: "README.md", Content: []byte("bad")}}, false)
+
+	if err == nil {
+		t.Fatal("expected ancestor symlink rejection")
+	}
+	if !strings.Contains(err.Error(), "existing ancestor") || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected ancestor symlink message, got %v", err)
+	}
+}
 
 func TestFilesystemWriterRefusesExistingDirectoryUnlessForcedAndOwned(t *testing.T) {
 	outputDir := t.TempDir()
@@ -34,14 +121,22 @@ func TestFilesystemWriterForceReplacesOwnedOutput(t *testing.T) {
 	outputDir := filepath.Join(base, "generated")
 	writer := NewFilesystemWriter()
 
-	if err := writer.Write(outputDir, []generator.GeneratedFile{{Path: "README.md", Content: []byte("first\n")}}, false); err != nil {
+	result, err := writer.WriteDetailed(outputDir, []generator.GeneratedFile{{Path: "README.md", Content: []byte("first\n")}}, false)
+	if err != nil {
 		t.Fatalf("initial write: %v", err)
+	}
+	if result.OutputDir != outputDir || result.Action != PlanActionCreate || result.ForceRequired || result.ForceUsed {
+		t.Fatalf("expected create write result, got %#v", result)
 	}
 	if err := writer.Write(outputDir, []generator.GeneratedFile{{Path: "README.md", Content: []byte("second\n")}}, false); err == nil {
 		t.Fatal("expected non-force replacement error")
 	}
-	if err := writer.Write(outputDir, []generator.GeneratedFile{{Path: "README.md", Content: []byte("second\n")}}, true); err != nil {
+	result, err = writer.WriteDetailed(outputDir, []generator.GeneratedFile{{Path: "README.md", Content: []byte("second\n")}}, true)
+	if err != nil {
 		t.Fatalf("forced owned replacement: %v", err)
+	}
+	if result.OutputDir != outputDir || result.Action != PlanActionReplace || !result.ForceRequired || !result.ForceUsed {
+		t.Fatalf("expected replace write result with force used, got %#v", result)
 	}
 
 	content, err := os.ReadFile(filepath.Join(outputDir, "README.md"))

@@ -25,16 +25,16 @@ type OutputWriter interface {
 	WriteGeneration(outputDir string, files []GeneratedFile, force bool) (WriteResult, error)
 }
 
-type OutputDirectoryResolver interface {
-	ResolveOutputDir(outputDir string) (string, error)
+type OutputPlanner interface {
+	PlanOutput(outputDir string, files []GeneratedFile, force bool) (OutputPlan, error)
 }
 
 type Ports struct {
-	ConfigLoader            ConfigLoader
-	ConfigValidator         ConfigValidator
-	Generator               Generator
-	OutputWriter            OutputWriter
-	OutputDirectoryResolver OutputDirectoryResolver
+	ConfigLoader    ConfigLoader
+	ConfigValidator ConfigValidator
+	Generator       Generator
+	OutputWriter    OutputWriter
+	OutputPlanner   OutputPlanner
 }
 
 type Service struct {
@@ -48,15 +48,19 @@ type GenerateRequest struct {
 }
 
 type GenerationPlan struct {
-	OutputDir string
-	FileCount int
-	Files     []PlannedFile
+	OutputDir     string
+	OutputAction  string
+	ForceRequired bool
+	ForceUsed     bool
+	FileCount     int
+	Files         []PlannedFile
 
 	generatedFiles []GeneratedFile
 }
 
 type PlannedFile struct {
-	Path string
+	Path   string
+	Action string
 }
 
 type GeneratedFile struct {
@@ -65,8 +69,24 @@ type GeneratedFile struct {
 }
 
 type WriteResult struct {
-	OutputDir string
-	Warning   string
+	OutputDir     string
+	OutputAction  string
+	ForceRequired bool
+	ForceUsed     bool
+	Warning       string
+}
+
+type OutputPlan struct {
+	OutputDir     string
+	Action        string
+	ForceRequired bool
+	ForceUsed     bool
+	Files         []OutputPlannedFile
+}
+
+type OutputPlannedFile struct {
+	Path   string
+	Action string
 }
 
 type GenerateResult struct {
@@ -111,19 +131,22 @@ func (s Service) PlanGeneration(request GenerateRequest) (GenerationPlan, error)
 	if err != nil {
 		return GenerationPlan{}, err
 	}
-	resolvedOutputDir, err := s.ports.OutputDirectoryResolver.ResolveOutputDir(request.OutputDir)
+	outputPlan, err := s.ports.OutputPlanner.PlanOutput(request.OutputDir, files, request.Force)
 	if err != nil {
 		return GenerationPlan{}, err
 	}
 
 	plan := GenerationPlan{
-		OutputDir:      resolvedOutputDir,
+		OutputDir:      outputPlan.OutputDir,
+		OutputAction:   outputPlan.Action,
+		ForceRequired:  outputPlan.ForceRequired,
+		ForceUsed:      outputPlan.ForceUsed,
 		FileCount:      len(files),
-		Files:          make([]PlannedFile, len(files)),
+		Files:          make([]PlannedFile, len(outputPlan.Files)),
 		generatedFiles: files,
 	}
-	for index, file := range files {
-		plan.Files[index] = PlannedFile{Path: file.Path}
+	for index, file := range outputPlan.Files {
+		plan.Files[index] = PlannedFile{Path: file.Path, Action: file.Action}
 	}
 	return plan, nil
 }
@@ -138,6 +161,10 @@ func (s Service) Generate(request GenerateRequest) (GenerateResult, error) {
 	if err != nil {
 		return GenerateResult{}, err
 	}
+	plan.OutputDir = result.OutputDir
+	plan.OutputAction = result.OutputAction
+	plan.ForceRequired = result.ForceRequired
+	plan.ForceUsed = result.ForceUsed
 	return GenerateResult{Plan: plan, OutputDir: result.OutputDir, Warning: result.Warning}, nil
 }
 
@@ -151,8 +178,8 @@ func (ports Ports) withDefaults() Ports {
 	if ports.OutputWriter == nil {
 		ports.OutputWriter = filesystemWriter{writer: output.NewFilesystemWriter()}
 	}
-	if ports.OutputDirectoryResolver == nil {
-		ports.OutputDirectoryResolver = filesystemOutputResolver{}
+	if ports.OutputPlanner == nil {
+		ports.OutputPlanner = filesystemOutputPlanner{}
 	}
 	return ports
 }
@@ -202,11 +229,35 @@ func (writer filesystemWriter) WriteGeneration(outputDir string, files []Generat
 	if err != nil {
 		return WriteResult{}, err
 	}
-	return WriteResult{OutputDir: result.OutputDir, Warning: result.Warning}, nil
+	return WriteResult{
+		OutputDir:     result.OutputDir,
+		OutputAction:  string(result.Action),
+		ForceRequired: result.ForceRequired,
+		ForceUsed:     result.ForceUsed,
+		Warning:       result.Warning,
+	}, nil
 }
 
-type filesystemOutputResolver struct{}
+type filesystemOutputPlanner struct{}
 
-func (filesystemOutputResolver) ResolveOutputDir(outputDir string) (string, error) {
-	return output.CanonicalPublishPath(outputDir)
+func (filesystemOutputPlanner) PlanOutput(outputDir string, files []GeneratedFile, force bool) (OutputPlan, error) {
+	generatedFiles := make([]generator.GeneratedFile, len(files))
+	for index, file := range files {
+		generatedFiles[index] = generator.GeneratedFile{Path: file.Path, Content: file.Content}
+	}
+	plan, err := output.PlanOutput(outputDir, generatedFiles, force)
+	if err != nil {
+		return OutputPlan{}, err
+	}
+	plannedFiles := make([]OutputPlannedFile, len(plan.Files))
+	for index, file := range plan.Files {
+		plannedFiles[index] = OutputPlannedFile{Path: file.Path, Action: string(file.Action)}
+	}
+	return OutputPlan{
+		OutputDir:     plan.OutputDir,
+		Action:        string(plan.Action),
+		ForceRequired: plan.ForceRequired,
+		ForceUsed:     plan.ForceUsed,
+		Files:         plannedFiles,
+	}, nil
 }
