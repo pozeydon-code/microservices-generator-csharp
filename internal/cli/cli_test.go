@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pozeydon-code/generator-microservices-go/internal/application"
 )
 
 func TestRunGenerateSucceeds(t *testing.T) {
@@ -83,6 +85,84 @@ func TestRunGenerateReturnsUsageErrorForMissingFlags(t *testing.T) {
 	}
 }
 
+func TestRunTUIReturnsUsageErrorForMissingFlags(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"tui", "--config", "config.json"}, &stdout, &stderr)
+
+	if code != ExitUsage {
+		t.Fatalf("expected usage exit code, got %d", code)
+	}
+	if stdout.String() != "" {
+		t.Fatalf("expected empty stdout, got %q", stdout.String())
+	}
+	if stderr.String() != "missing required --output directory\n" {
+		t.Fatalf("expected missing output message, got %q", stderr.String())
+	}
+}
+
+func TestRunTUIReturnsNonZeroForInvalidConfigBeforeStartingProgram(t *testing.T) {
+	configPath := writeTempConfig(t, `{"solution":{"name":"1Bad"},"services":[]}`)
+	outputDir := filepath.Join(t.TempDir(), "generated")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	programStarted := false
+	originalRunTUIProgram := runTUIProgram
+	runTUIProgram = func(plan application.GenerationPlan) error {
+		programStarted = true
+		return nil
+	}
+	t.Cleanup(func() { runTUIProgram = originalRunTUIProgram })
+
+	code := Run([]string{"tui", "--config", configPath, "--output", outputDir}, &stdout, &stderr)
+
+	if code != ExitError {
+		t.Fatalf("expected domain error exit code %d, got %d", ExitError, code)
+	}
+	if programStarted {
+		t.Fatal("expected invalid config to stop before starting TUI program")
+	}
+	if stdout.String() != "" {
+		t.Fatalf("expected empty stdout, got %q", stdout.String())
+	}
+	expectedStderr := "invalid config:\n- solution.name must be a valid C# identifier\n- services must contain at least 1 item\n"
+	if stderr.String() != expectedStderr {
+		t.Fatalf("expected stderr %q, got %q", expectedStderr, stderr.String())
+	}
+}
+
+func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
+	configPath := writeTempConfig(t, validJSONConfig)
+	outputDir := filepath.Join(t.TempDir(), "generated")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	var capturedPlan application.GenerationPlan
+	programStarted := false
+	originalRunTUIProgram := runTUIProgram
+	runTUIProgram = func(plan application.GenerationPlan) error {
+		programStarted = true
+		capturedPlan = plan
+		return nil
+	}
+	t.Cleanup(func() { runTUIProgram = originalRunTUIProgram })
+
+	code := Run([]string{"tui", "--config", configPath, "--output", outputDir, "--force"}, &stdout, &stderr)
+
+	if code != ExitOK {
+		t.Fatalf("expected success, got code %d stderr %q", code, stderr.String())
+	}
+	if !programStarted {
+		t.Fatal("expected TUI program to start")
+	}
+	if capturedPlan.OutputDir != outputDir || capturedPlan.FileCount != 44 || capturedPlan.OutputAction != "create" || capturedPlan.ForceUsed {
+		t.Fatalf("expected planned generation to be passed to TUI, got %#v", capturedPlan)
+	}
+	if stdout.String() != "" || stderr.String() != "" {
+		t.Fatalf("expected no CLI output around TUI, got stdout %q stderr %q", stdout.String(), stderr.String())
+	}
+}
+
 func TestRunReturnsUsageErrorForUnknownCommand(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -95,7 +175,7 @@ func TestRunReturnsUsageErrorForUnknownCommand(t *testing.T) {
 	if stdout.String() != "" {
 		t.Fatalf("expected empty stdout, got %q", stdout.String())
 	}
-	expectedStderr := "unknown command \"unknown\"\nUsage: microgen generate --config <path> --output <dir> [--force]\n  --force replaces only a verified microgen-owned generated directory.\n"
+	expectedStderr := "unknown command \"unknown\"\nUsage: microgen generate --config <path> --output <dir> [--force]\n       microgen tui --config <path> --output <dir> [--force]\n  --force replaces only a verified microgen-owned generated directory.\n"
 	if stderr.String() != expectedStderr {
 		t.Fatalf("expected stderr %q, got %q", expectedStderr, stderr.String())
 	}
@@ -108,6 +188,7 @@ func TestRunGenerateHelpExitsOK(t *testing.T) {
 	}{
 		{name: "root help", args: []string{"--help"}},
 		{name: "generate help", args: []string{"generate", "--help"}},
+		{name: "tui help", args: []string{"tui", "--help"}},
 	}
 
 	for _, tt := range tests {
@@ -120,7 +201,7 @@ func TestRunGenerateHelpExitsOK(t *testing.T) {
 			if code != ExitOK {
 				t.Fatalf("expected OK exit code, got %d stderr %q", code, stderr.String())
 			}
-			expectedStdout := "Usage: microgen generate --config <path> --output <dir> [--force]\n  --force replaces only a verified microgen-owned generated directory.\n"
+			expectedStdout := "Usage: microgen generate --config <path> --output <dir> [--force]\n       microgen tui --config <path> --output <dir> [--force]\n  --force replaces only a verified microgen-owned generated directory.\n"
 			if stdout.String() != expectedStdout {
 				t.Fatalf("expected stdout %q, got %q", expectedStdout, stdout.String())
 			}

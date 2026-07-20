@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/pozeydon-code/generator-microservices-go/internal/application"
+	"github.com/pozeydon-code/generator-microservices-go/internal/tui"
 )
 
 const (
@@ -15,6 +16,8 @@ const (
 	ExitError = 1
 	ExitUsage = 2
 )
+
+var runTUIProgram = tui.Run
 
 func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
@@ -25,6 +28,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "generate":
 		return runGenerate(args[1:], stdout, stderr)
+	case "tui":
+		return runTUI(args[1:], stdout, stderr)
 	case "-h", "--help", "help":
 		printUsage(stdout)
 		return ExitOK
@@ -33,6 +38,56 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		printUsage(stderr)
 		return ExitUsage
 	}
+}
+
+func runTUI(args []string, stdout, stderr io.Writer) int {
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" {
+			printUsage(stdout)
+			return ExitOK
+		}
+	}
+	flags := flag.NewFlagSet("tui", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	configPath := flags.String("config", "", "Path to the microgen JSON configuration file")
+	outputDir := flags.String("output", "", "Directory where generated files will be planned")
+	force := flags.Bool("force", false, "Plan replacement of a verified microgen-owned generated directory")
+	flags.Usage = func() { printUsage(flags.Output()) }
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			printUsage(stdout)
+			return ExitOK
+		}
+		return ExitUsage
+	}
+	if flags.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected arguments: %s\n", strings.Join(flags.Args(), " "))
+		return ExitUsage
+	}
+	if strings.TrimSpace(*configPath) == "" {
+		fmt.Fprintln(stderr, "missing required --config path")
+		return ExitUsage
+	}
+	if strings.TrimSpace(*outputDir) == "" {
+		fmt.Fprintln(stderr, "missing required --output directory")
+		return ExitUsage
+	}
+
+	service, err := application.DefaultService()
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return ExitError
+	}
+	plan, err := service.PlanGeneration(application.GenerateRequest{ConfigPath: *configPath, OutputDir: *outputDir, Force: *force})
+	if err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return ExitError
+	}
+	if err := runTUIProgram(plan); err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return ExitError
+	}
+	return ExitOK
 }
 
 func runGenerate(args []string, stdout, stderr io.Writer) int {
@@ -88,5 +143,6 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 
 func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "Usage: microgen generate --config <path> --output <dir> [--force]")
+	fmt.Fprintln(writer, "       microgen tui --config <path> --output <dir> [--force]")
 	fmt.Fprintln(writer, "  --force replaces only a verified microgen-owned generated directory.")
 }
