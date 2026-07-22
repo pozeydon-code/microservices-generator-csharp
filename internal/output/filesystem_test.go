@@ -65,6 +65,62 @@ func TestPlanOutputReportsForceUsedForOwnedOutput(t *testing.T) {
 	}
 }
 
+func TestPlanOutputReportsPerFileActionsForOwnedOutput(t *testing.T) {
+	outputDir := writeInitialOutput(t)
+
+	plan, err := PlanOutput(outputDir, []generator.GeneratedFile{
+		{Path: "README.md", Content: []byte("original\n")},
+		{Path: "src/Service.cs", Content: []byte("new service\n")},
+		{Path: "docs/Guide.md", Content: []byte("new guide\n")},
+	}, true)
+
+	if err != nil {
+		t.Fatalf("expected plan, got %v", err)
+	}
+	if plan.Action != PlanActionReplace || !plan.ForceRequired || !plan.ForceUsed {
+		t.Fatalf("expected replacement root plan, got %#v", plan)
+	}
+	expectedFiles := []PlannedFile{
+		{Path: "README.md", Action: PlanActionUnchanged},
+		{Path: "docs/Guide.md", Action: PlanActionCreate},
+		{Path: "src/Service.cs", Action: PlanActionCreate},
+	}
+	if !reflect.DeepEqual(plan.Files, expectedFiles) {
+		t.Fatalf("expected content-aware file plan %#v, got %#v", expectedFiles, plan.Files)
+	}
+
+	if err := os.MkdirAll(filepath.Join(outputDir, "src"), 0o755); err != nil {
+		t.Fatalf("create existing generated directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outputDir, "src", "Service.cs"), []byte("old service\n"), 0o644); err != nil {
+		t.Fatalf("write existing generated file: %v", err)
+	}
+	if err := writeManifest(outputDir, []generator.GeneratedFile{
+		{Path: "README.md", Content: []byte("original\n")},
+		{Path: "src/Service.cs", Content: []byte("old service\n")},
+	}); err != nil {
+		t.Fatalf("update manifest: %v", err)
+	}
+
+	plan, err = PlanOutput(outputDir, []generator.GeneratedFile{
+		{Path: "README.md", Content: []byte("original\n")},
+		{Path: "src/Service.cs", Content: []byte("new service\n")},
+		{Path: "docs/Guide.md", Content: []byte("new guide\n")},
+	}, true)
+
+	if err != nil {
+		t.Fatalf("expected plan after existing file change, got %v", err)
+	}
+	expectedFiles = []PlannedFile{
+		{Path: "README.md", Action: PlanActionUnchanged},
+		{Path: "docs/Guide.md", Action: PlanActionCreate},
+		{Path: "src/Service.cs", Action: PlanActionReplace},
+	}
+	if !reflect.DeepEqual(plan.Files, expectedFiles) {
+		t.Fatalf("expected content-aware file plan %#v, got %#v", expectedFiles, plan.Files)
+	}
+}
+
 func TestPlanOutputRejectsUnknownExistingDirectory(t *testing.T) {
 	outputDir := t.TempDir()
 

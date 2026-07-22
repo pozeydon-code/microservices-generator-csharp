@@ -1,6 +1,7 @@
 package output
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -51,8 +52,9 @@ type WriteResult struct {
 type PlanAction string
 
 const (
-	PlanActionCreate  PlanAction = "create"
-	PlanActionReplace PlanAction = "replace"
+	PlanActionCreate    PlanAction = "create"
+	PlanActionReplace   PlanAction = "replace"
+	PlanActionUnchanged PlanAction = "unchanged"
 )
 
 type Plan struct {
@@ -108,7 +110,14 @@ func PlanOutput(outputDir string, files []generator.GeneratedFile, force bool) (
 		if err != nil {
 			return Plan{OutputDir: root}, err
 		}
-		plannedFiles = append(plannedFiles, PlannedFile{Path: cleanPath, Action: action})
+		fileAction := action
+		if state.exists {
+			fileAction, err = planExistingFileAction(root, cleanPath, file.Content)
+			if err != nil {
+				return Plan{OutputDir: root}, err
+			}
+		}
+		plannedFiles = append(plannedFiles, PlannedFile{Path: cleanPath, Action: fileAction})
 	}
 	sort.Slice(plannedFiles, func(i, j int) bool { return plannedFiles[i].Path < plannedFiles[j].Path })
 
@@ -119,6 +128,21 @@ func PlanOutput(outputDir string, files []generator.GeneratedFile, force bool) (
 		ForceUsed:     state.exists && force,
 		Files:         plannedFiles,
 	}, nil
+}
+
+func planExistingFileAction(root, cleanPath string, content []byte) (PlanAction, error) {
+	target := filepath.Join(root, filepath.FromSlash(cleanPath))
+	existing, err := os.ReadFile(target)
+	if errors.Is(err, os.ErrNotExist) {
+		return PlanActionCreate, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("inspect generated file %s: %w", cleanPath, err)
+	}
+	if bytes.Equal(existing, content) {
+		return PlanActionUnchanged, nil
+	}
+	return PlanActionReplace, nil
 }
 
 func (w FilesystemWriter) Write(outputDir string, files []generator.GeneratedFile, force bool) error {

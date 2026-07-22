@@ -212,7 +212,7 @@ func TestModelViewShowsImpactSummaryInDeterministicActionOrder(t *testing.T) {
 		Files: []application.PlannedFile{
 			{Path: "replace-1.txt", Action: "replace"},
 			{Path: "create-1.txt", Action: "create"},
-			{Path: "skip-1.txt", Action: "skip"},
+			{Path: "unchanged-1.txt", Action: "unchanged"},
 			{Path: "create-2.txt", Action: "create"},
 			{Path: "replace-2.txt", Action: "replace"},
 		},
@@ -221,7 +221,7 @@ func TestModelViewShowsImpactSummaryInDeterministicActionOrder(t *testing.T) {
 	view := NewModel(plan, application.GenerateRequest{}, nil, nil, nil).View()
 
 	assertContains(t, view, "Files planned: 5")
-	assertContains(t, view, "Impact: create=2, replace=2, skip=1 (mixed actions)")
+	assertContains(t, view, "Impact: create=2, replace=2, unchanged=1 (mixed actions)")
 }
 
 func TestModelUpdateCyclesActionFilterAndNavigatesFilteredFiles(t *testing.T) {
@@ -232,7 +232,7 @@ func TestModelUpdateCyclesActionFilterAndNavigatesFilteredFiles(t *testing.T) {
 			{Path: "create-1.txt", Action: "create"},
 			{Path: "replace-2.txt", Action: "replace"},
 			{Path: "create-2.txt", Action: "create"},
-			{Path: "skip-1.txt", Action: "skip"},
+			{Path: "unchanged-1.txt", Action: "unchanged"},
 		},
 	}
 	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
@@ -263,8 +263,8 @@ func TestModelUpdateCyclesActionFilterAndNavigatesFilteredFiles(t *testing.T) {
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	model = updated.(Model)
 	view = model.View()
-	assertContains(t, view, "Files 1-1 of 1 (filter: skip)")
-	assertContains(t, view, "Selected: 1/1 skip skip-1.txt")
+	assertContains(t, view, "Files 1-1 of 1 (filter: unchanged)")
+	assertContains(t, view, "Selected: 1/1 unchanged unchanged-1.txt")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	model = updated.(Model)

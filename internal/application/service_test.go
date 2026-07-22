@@ -32,7 +32,7 @@ func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T)
 			ForceUsed:     true,
 			Files: []OutputPlannedFile{
 				{Path: "README.md", Action: "replace"},
-				{Path: "src/ProductService/Product.cs", Action: "replace"},
+				{Path: "src/ProductService/Product.cs", Action: "unchanged"},
 			},
 		}},
 	})
@@ -76,7 +76,7 @@ func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T)
 	if !reflect.DeepEqual(plan.Config, expectedSummary) {
 		t.Fatalf("expected config summary %#v, got %#v", expectedSummary, plan.Config)
 	}
-	expectedFiles := []PlannedFile{{Path: "README.md", Action: "replace"}, {Path: "src/ProductService/Product.cs", Action: "replace"}}
+	expectedFiles := []PlannedFile{{Path: "README.md", Action: "replace"}, {Path: "src/ProductService/Product.cs", Action: "unchanged"}}
 	if !reflect.DeepEqual(plan.Files, expectedFiles) {
 		t.Fatalf("expected planned files %#v, got %#v", expectedFiles, plan.Files)
 	}
