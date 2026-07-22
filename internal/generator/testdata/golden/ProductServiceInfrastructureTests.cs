@@ -7,7 +7,7 @@ using ProductService.Application.Features.Products;
 using ProductService.Domain.Features.Products;
 using ProductService.Infrastructure.Persistence.Features.Products;
 using DomainProduct = ProductService.Domain.Features.Products.Product;
-using ProductService.Domain.Shared.ValueObjects;
+using ProductService.Domain.Common.ValueObjects;
 
 using ProductService.Infrastructure.Persistence;
 using Xunit;
@@ -206,7 +206,7 @@ public sealed class ProductServiceInfrastructureTests
         await using var reloadContext = database.CreateContext();
         var logger = new CaptureLogger<ProductRepository>();
         var repository = new ProductRepository(reloadContext, logger);
-        var exception = await Assert.ThrowsAsync<ProductService.Domain.Shared.DomainReconstitutionException>(() => repository.GetByIdAsync(id, CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<ProductService.Domain.Common.DomainReconstitutionException>(() => repository.GetByIdAsync(id, CancellationToken.None));
         Assert.Equal("ProductName", exception.ValueObjectType);
         Assert.Contains("ProductName.Required", exception.InvariantCodes);
         Assert.Contains("Product", logger.LastMessage);
@@ -233,7 +233,7 @@ public sealed class ProductServiceInfrastructureTests
         await using var reloadContext = database.CreateContext();
         var logger = new CaptureLogger<ProductRepository>();
         var repository = new ProductRepository(reloadContext, logger);
-        var exception = await Assert.ThrowsAsync<ProductService.Domain.Shared.DomainReconstitutionException>(() => repository.GetByIdAsync(id, CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<ProductService.Domain.Common.DomainReconstitutionException>(() => repository.GetByIdAsync(id, CancellationToken.None));
         Assert.Equal("ProductPrice", exception.ValueObjectType);
         Assert.Contains("ProductPrice.Minimum", exception.InvariantCodes);
         Assert.Contains("Product", logger.LastMessage);

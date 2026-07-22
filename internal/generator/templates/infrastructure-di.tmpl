@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -48,6 +49,11 @@ internal static class ResiliencePolicy
 
 public sealed class SqlReadinessProbe({{ .Name }}DbContext dbContext, ILogger<SqlReadinessProbe> logger) : IReadinessProbe
 {
+    private static readonly Action<ILogger, Exception?> ReadinessCheckFailed = LoggerMessage.Define(
+        LogLevel.Warning,
+        new EventId(1, nameof(ReadinessCheckFailed)),
+        "Readiness check failed while validating SQL Server connectivity or generated schema.");
+
     public async Task<ReadinessResult> CheckAsync(CancellationToken cancellationToken)
     {
         using var readinessCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -61,7 +67,7 @@ public sealed class SqlReadinessProbe({{ .Name }}DbContext dbContext, ILogger<Sq
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            logger.LogWarning(ex, "Readiness check failed while validating SQL Server connectivity or generated schema.");
+            ReadinessCheckFailed(logger, ex);
             return new ReadinessResult(ReadinessStatus.NotReady);
         }
     }
@@ -96,6 +102,6 @@ LEFT JOIN sys.columns syscolumns ON syscolumns.object_id = tables.object_id AND 
 WHERE expected.is_rowversion = 0 OR syscolumns.system_type_id = 189";
         command.CommandTimeout = ResiliencePolicy.SqlCommandTimeoutSeconds;
         var result = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt32(result) == {{ .ExpectedSchemaItems }};
+        return Convert.ToInt32(result, CultureInfo.InvariantCulture) == {{ .ExpectedSchemaItems }};
     }
 }

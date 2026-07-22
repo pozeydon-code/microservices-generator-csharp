@@ -3,13 +3,18 @@ using Microsoft.Extensions.Logging;
 using {{ .Service.Name }}.Application.Common;
 using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
 using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
-using {{ .Service.Name }}.Domain.Shared;
+using {{ .Service.Name }}.Domain.Common;
 using {{ .Service.Name }}.Infrastructure.Persistence;
 
 namespace {{ .Service.Name }}.Infrastructure.Persistence.Features.{{ .Entity.FeatureName }};
 
 public sealed class {{ .Entity.Name }}Repository({{ .Service.Name }}DbContext dbContext, ILogger<{{ .Entity.Name }}Repository> logger) : I{{ .Entity.Name }}Repository
 {
+    private static readonly Action<ILogger, string, string, string, string, string, Exception?> InvalidPersistedValue = LoggerMessage.Define<string, string, string, string, string>(
+        LogLevel.Error,
+        new EventId(1, nameof(InvalidPersistedValue)),
+        "Invalid persisted value while materializing {{ .Service.Name }}/{{ .Entity.Name }}.{Field} during {Operation}. RecordIds={RecordIds}; ValueObject={ValueObject}; InvariantCodes={InvariantCodes}");
+
     public async Task<(IReadOnlyList<EntitySnapshot<{{ .Entity.Name }}>> Items, int TotalCount)> ListAsync(int skip, int take, CancellationToken cancellationToken)
     {
         using var activity = {{ .Service.Name }}.Infrastructure.DependencyInjection.ActivitySource.StartActivity("{{ .Entity.Name }}.list");
@@ -101,7 +106,7 @@ public sealed class {{ .Entity.Name }}Repository({{ .Service.Name }}DbContext db
     private async Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync(DomainReconstitutionException exception, Guid? id, CancellationToken cancellationToken)
     {
         await Task.CompletedTask;
-        var code = exception.InvariantCodes.FirstOrDefault() ?? string.Empty;
+        var code = exception.InvariantCodes.Count > 0 ? exception.InvariantCodes[0] : string.Empty;
 {{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        if (exception.ValueObjectType == "{{ .DomainType }}")
         {
             var predicate = code switch
@@ -143,7 +148,7 @@ public sealed class {{ .Entity.Name }}Repository({{ .Service.Name }}DbContext db
             ["invariant_codes"] = string.Join(",", exception.InvariantCodes),
             ["record_ids"] = recordIdsText
         }));
-        logger.LogError(exception, "Invalid persisted value while materializing {Service}/{Entity}.{Field} during {Operation}. RecordIds={RecordIds}; ValueObject={ValueObject}; InvariantCodes={InvariantCodes}", "{{ .Service.Name }}", "{{ .Entity.Name }}", field, operation, recordIdsText, exception.ValueObjectType, string.Join(",", exception.InvariantCodes));
+        InvalidPersistedValue(logger, field, operation, recordIdsText, exception.ValueObjectType, string.Join(",", exception.InvariantCodes), exception);
     }
 
     private static bool TryDecodeToken(string concurrencyToken, out byte[] rowVersion)

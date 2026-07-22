@@ -12,6 +12,10 @@ namespace {{ .Service.Name }}.Api.Tests.Features.{{ .Entity.FeatureName }};
 
 public sealed class {{ .Entity.Name }}EndpointsTests
 {
+    private static readonly string[] ExpectedValidationErrorKeys = [{{ range $index, $field := .Entity.ValueObjectFields }}{{ if $index }}, {{ end }}"{{ .CamelName }}"{{ end }}];
+    private static readonly string[] Expected{{ .Entity.Name }}JsonProperties = ["concurrencyToken", {{ range .Entity.Fields }}"{{ .CamelName }}", {{ end }}];
+    private static readonly string[] AllowedValidationProblemProperties = ["errors", "status", "title", "traceId", "type"];
+
     [Fact]
     public async Task CrudRoutesRequireAuthentication()
     {
@@ -115,12 +119,12 @@ public sealed class {{ .Entity.Name }}EndpointsTests
         Assert.StartsWith("application/problem+json", response.Content.Headers.ContentType?.MediaType, StringComparison.Ordinal);
         var problemJson = await response.Content.ReadAsStringAsync();
         using var problemDocument = JsonDocument.Parse(problemJson);
-        AssertValidationProblemJson(problemDocument.RootElement, [{{ range $index, $field := .Entity.ValueObjectFields }}{{ if $index }}, {{ end }}"{{ .CamelName }}"{{ end }}]);
+        AssertValidationProblemJson(problemDocument.RootElement, ExpectedValidationErrorKeys);
         var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
         Assert.NotNull(problem);
         Assert.Equal("Validation failed", problem.Title);
         Assert.Equal(400, problem.Status);
-        Assert.Equal(new[] { {{ range $index, $field := .Entity.ValueObjectFields }}{{ if $index }}, {{ end }}"{{ .CamelName }}"{{ end }} }, problem.Errors.Keys.OrderBy(key => key, StringComparer.Ordinal).ToArray());
+        Assert.Equal(ExpectedValidationErrorKeys, problem.Errors.Keys.OrderBy(key => key, StringComparer.Ordinal).ToArray());
 {{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        Assert.Equal(["{{ .InvalidCode }}: {{ .InvalidCode }} message."], problem.Errors["{{ .CamelName }}"]);
 {{ end }}{{ end }}    }
 
@@ -135,12 +139,12 @@ public sealed class {{ .Entity.Name }}EndpointsTests
         Assert.StartsWith("application/problem+json", response.Content.Headers.ContentType?.MediaType, StringComparison.Ordinal);
         var problemJson = await response.Content.ReadAsStringAsync();
         using var problemDocument = JsonDocument.Parse(problemJson);
-        AssertValidationProblemJson(problemDocument.RootElement, [{{ range $index, $field := .Entity.ValueObjectFields }}{{ if $index }}, {{ end }}"{{ .CamelName }}"{{ end }}]);
+        AssertValidationProblemJson(problemDocument.RootElement, ExpectedValidationErrorKeys);
         var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
         Assert.NotNull(problem);
         Assert.Equal("Validation failed", problem.Title);
         Assert.Equal(400, problem.Status);
-        Assert.Equal(new[] { {{ range $index, $field := .Entity.ValueObjectFields }}{{ if $index }}, {{ end }}"{{ .CamelName }}"{{ end }} }, problem.Errors.Keys.OrderBy(key => key, StringComparer.Ordinal).ToArray());
+        Assert.Equal(ExpectedValidationErrorKeys, problem.Errors.Keys.OrderBy(key => key, StringComparer.Ordinal).ToArray());
 {{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        Assert.Equal(["{{ .InvalidCode }}: {{ .InvalidCode }} message."], problem.Errors["{{ .CamelName }}"]);
 {{ end }}{{ end }}    }
 
@@ -202,7 +206,7 @@ public sealed class {{ .Entity.Name }}EndpointsTests
     private static void Assert{{ .Entity.Name }}Json(JsonElement root{{ range .Entity.NonIDFields }}, {{ .ContractType }} expected{{ .Name }}{{ end }}, string expectedConcurrencyToken)
     {
         Assert.Equal(JsonValueKind.Object, root.ValueKind);
-        Assert.Equal(new[] { "concurrencyToken", {{ range .Entity.Fields }}"{{ .CamelName }}", {{ end }} }.OrderBy(name => name, StringComparer.Ordinal).ToArray(), root.EnumerateObject().Select(property => property.Name).OrderBy(name => name, StringComparer.Ordinal).ToArray());
+        Assert.Equal(Expected{{ .Entity.Name }}JsonProperties.OrderBy(name => name, StringComparer.Ordinal).ToArray(), root.EnumerateObject().Select(property => property.Name).OrderBy(name => name, StringComparer.Ordinal).ToArray());
         Assert.Equal(Guid.Parse("11111111-1111-1111-1111-111111111111"), root.GetProperty("id").GetGuid());
 {{ range .Entity.NonIDFields }}{{ if eq .ContractType "string" }}        Assert.Equal(JsonValueKind.String, root.GetProperty("{{ .CamelName }}").ValueKind);
         Assert.Equal(expected{{ .Name }}, root.GetProperty("{{ .CamelName }}").GetString());
@@ -226,8 +230,7 @@ public sealed class {{ .Entity.Name }}EndpointsTests
 
     private static void AssertValidationProblemJson(JsonElement root, string[] expectedErrorKeys)
     {
-        var allowedTopLevel = new[] { "errors", "status", "title", "traceId", "type" };
-        Assert.Empty(root.EnumerateObject().Select(property => property.Name).Except(allowedTopLevel, StringComparer.Ordinal));
+        Assert.Empty(root.EnumerateObject().Select(property => property.Name).Except(AllowedValidationProblemProperties, StringComparer.Ordinal));
         Assert.Equal("Validation failed", root.GetProperty("title").GetString());
         Assert.Equal(400, root.GetProperty("status").GetInt32());
         Assert.Equal(JsonValueKind.Object, root.GetProperty("errors").ValueKind);

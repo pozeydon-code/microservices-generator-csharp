@@ -46,6 +46,8 @@ This output is generated as source files only. It does not run dotnet, NuGet, mi
 
 ## Build and test
 
+Generated workspaces keep quality defaults in `Directory.Build.props`: nullable reference types, implicit usings, SDK recommended analyzers, code-style enforcement during build, and warnings-as-errors. The generator runtime harness restores, builds, and tests the generated `net10.0` `.slnx` workspace with these settings so clean output is validated continuously.
+
 ```bash
 dotnet restore ./CommercePlatform.sln
 dotnet build ./CommercePlatform.sln --nologo -warnaserror

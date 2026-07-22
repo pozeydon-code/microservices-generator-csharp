@@ -1,4 +1,4 @@
-namespace ProductService.Domain.Shared;
+namespace ProductService.Domain.Common;
 
 public sealed class DomainReconstitutionException(string valueObjectType, IReadOnlyList<string> invariantCodes)
     : InvalidOperationException($"Persisted {valueObjectType} value is invalid.")

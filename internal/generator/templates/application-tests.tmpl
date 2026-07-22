@@ -2,7 +2,7 @@ using {{ .Service.Name }}.Application.Common;
 using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
 using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
 using Domain{{ .Entity.Name }} = {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }}.{{ .Entity.Name }};
-{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Shared.ValueObjects;
+{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Common.ValueObjects;
 {{ end }}
 using Xunit;
 

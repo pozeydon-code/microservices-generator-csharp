@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 {{ range .Entities }}using {{ $.Name }}.Domain.Features.{{ .FeatureName }};
-{{ end }}{{ if .HasValueObjects }}using {{ .Name }}.Domain.Shared.ValueObjects;
+{{ end }}{{ if .HasValueObjects }}using {{ .Name }}.Domain.Common.ValueObjects;
 {{ end }}
 
 namespace {{ .Name }}.Infrastructure.Persistence;

@@ -245,6 +245,29 @@ func TestGenerateUsesSelectedTargetFramework(t *testing.T) {
 	assertContains(t, readme, "Minimal generated .NET 8 microservice workspace for product management.")
 }
 
+func TestGenerateDirectoryBuildPropsOwnsQualityDefaults(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	files, err := gen.Generate(testConfig())
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	props := string(generatedContent(t, files, "Directory.Build.props"))
+
+	for _, expected := range []string{
+		"<Nullable>enable</Nullable>",
+		"<ImplicitUsings>enable</ImplicitUsings>",
+		"<AnalysisLevel>latest-recommended</AnalysisLevel>",
+		"<AnalysisMode>Recommended</AnalysisMode>",
+		"<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>",
+		"<TreatWarningsAsErrors>true</TreatWarningsAsErrors>",
+	} {
+		assertContains(t, props, expected)
+	}
+}
+
 func TestGenerateDefaultsSolutionFileFormatFromTargetFramework(t *testing.T) {
 	gen, err := New()
 	if err != nil {

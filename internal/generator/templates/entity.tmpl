@@ -1,6 +1,6 @@
 namespace {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
 
-{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Shared.ValueObjects;
+{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Common.ValueObjects;
 {{ end }}
 
 public sealed class {{ .Entity.Name }}State

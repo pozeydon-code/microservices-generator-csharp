@@ -3,13 +3,18 @@ using Microsoft.Extensions.Logging;
 using ProductService.Application.Common;
 using ProductService.Application.Features.Products;
 using ProductService.Domain.Features.Products;
-using ProductService.Domain.Shared;
+using ProductService.Domain.Common;
 using ProductService.Infrastructure.Persistence;
 
 namespace ProductService.Infrastructure.Persistence.Features.Products;
 
 public sealed class ProductRepository(ProductServiceDbContext dbContext, ILogger<ProductRepository> logger) : IProductRepository
 {
+    private static readonly Action<ILogger, string, string, string, string, string, Exception?> InvalidPersistedValue = LoggerMessage.Define<string, string, string, string, string>(
+        LogLevel.Error,
+        new EventId(1, nameof(InvalidPersistedValue)),
+        "Invalid persisted value while materializing ProductService/Product.{Field} during {Operation}. RecordIds={RecordIds}; ValueObject={ValueObject}; InvariantCodes={InvariantCodes}");
+
     public async Task<(IReadOnlyList<EntitySnapshot<Product>> Items, int TotalCount)> ListAsync(int skip, int take, CancellationToken cancellationToken)
     {
         using var activity = ProductService.Infrastructure.DependencyInjection.ActivitySource.StartActivity("Product.list");
@@ -101,7 +106,7 @@ public sealed class ProductRepository(ProductServiceDbContext dbContext, ILogger
     private async Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync(DomainReconstitutionException exception, Guid? id, CancellationToken cancellationToken)
     {
         await Task.CompletedTask;
-        var code = exception.InvariantCodes.FirstOrDefault() ?? string.Empty;
+        var code = exception.InvariantCodes.Count > 0 ? exception.InvariantCodes[0] : string.Empty;
         if (exception.ValueObjectType == "ProductName")
         {
             var predicate = code switch
@@ -158,7 +163,7 @@ public sealed class ProductRepository(ProductServiceDbContext dbContext, ILogger
             ["invariant_codes"] = string.Join(",", exception.InvariantCodes),
             ["record_ids"] = recordIdsText
         }));
-        logger.LogError(exception, "Invalid persisted value while materializing {Service}/{Entity}.{Field} during {Operation}. RecordIds={RecordIds}; ValueObject={ValueObject}; InvariantCodes={InvariantCodes}", "ProductService", "Product", field, operation, recordIdsText, exception.ValueObjectType, string.Join(",", exception.InvariantCodes));
+        InvalidPersistedValue(logger, field, operation, recordIdsText, exception.ValueObjectType, string.Join(",", exception.InvariantCodes), exception);
     }
 
     private static bool TryDecodeToken(string concurrencyToken, out byte[] rowVersion)

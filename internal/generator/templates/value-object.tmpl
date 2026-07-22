@@ -1,7 +1,8 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
-using {{ .Service.Name }}.Domain.Shared;
+using {{ .Service.Name }}.Domain.Common;
 
-namespace {{ .Service.Name }}.Domain.Shared.ValueObjects;
+namespace {{ .Service.Name }}.Domain.Common.ValueObjects;
 
 public sealed class {{ .ValueObject.Name }} : IEquatable<{{ .ValueObject.Name }}>
 {
@@ -13,16 +14,16 @@ public sealed class {{ .ValueObject.Name }} : IEquatable<{{ .ValueObject.Name }}
 
     public static DomainResult<{{ .ValueObject.Name }}> Create({{ .ValueObject.ParameterType }} value, string? field = null)
     {
-{{ if eq .ValueObject.Type "string" }}        if (value is null) return DomainResult<{{ .ValueObject.Name }}>.Failure(new DomainError("{{ .ValueObject.Name }}.Null", "{{ .ValueObject.Name }} must not be null.", field));
-{{ end }}{{ if .ValueObject.HasRequired }}        if (string.IsNullOrWhiteSpace(value)) return DomainResult<{{ .ValueObject.Name }}>.Failure(new DomainError("{{ .ValueObject.Name }}.Required", "{{ .ValueObject.Name }} is required.", field));
-{{ end }}{{ if .ValueObject.MinLength }}        if (value!.Length < {{ .ValueObject.MinLength }}) return DomainResult<{{ .ValueObject.Name }}>.Failure(new DomainError("{{ .ValueObject.Name }}.MinLength", "{{ .ValueObject.Name }} must be at least {{ .ValueObject.MinLength }} characters.", field));
-{{ end }}{{ if .ValueObject.MaxLength }}        if (value.Length > {{ .ValueObject.MaxLength }}) return DomainResult<{{ .ValueObject.Name }}>.Failure(new DomainError("{{ .ValueObject.Name }}.MaxLength", "{{ .ValueObject.Name }} must be at most {{ .ValueObject.MaxLength }} characters.", field));
-{{ end }}{{ if .ValueObject.Pattern }}        if (!Pattern.IsMatch(value)) return DomainResult<{{ .ValueObject.Name }}>.Failure(new DomainError("{{ .ValueObject.Name }}.Pattern", "{{ .ValueObject.Name }} has an invalid format.", field));
-{{ end }}{{ if .ValueObject.Minimum }}        if (value < {{ .ValueObject.Minimum }}) return DomainResult<{{ .ValueObject.Name }}>.Failure(new DomainError("{{ .ValueObject.Name }}.Minimum", "{{ .ValueObject.Name }} must be greater than or equal to {{ .ValueObject.Minimum }}.", field));
-{{ end }}{{ if .ValueObject.Maximum }}        if (value > {{ .ValueObject.Maximum }}) return DomainResult<{{ .ValueObject.Name }}>.Failure(new DomainError("{{ .ValueObject.Name }}.Maximum", "{{ .ValueObject.Name }} must be less than or equal to {{ .ValueObject.Maximum }}.", field));
-{{ end }}{{ if .ValueObject.HasNotEmpty }}        if (value == Guid.Empty) return DomainResult<{{ .ValueObject.Name }}>.Failure(new DomainError("{{ .ValueObject.Name }}.NotEmpty", "{{ .ValueObject.Name }} must not be empty.", field));
-{{ end }}{{ if .ValueObject.HasNotDefault }}        if (value == default) return DomainResult<{{ .ValueObject.Name }}>.Failure(new DomainError("{{ .ValueObject.Name }}.NotDefault", "{{ .ValueObject.Name }} must not be the default value.", field));
-{{ end }}        return DomainResult<{{ .ValueObject.Name }}>.Success(new {{ .ValueObject.Name }}(value));
+{{ if eq .ValueObject.Type "string" }}        if (value is null) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.Null", "{{ .ValueObject.Name }} must not be null.", field));
+{{ end }}{{ if .ValueObject.HasRequired }}        if (string.IsNullOrWhiteSpace(value)) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.Required", "{{ .ValueObject.Name }} is required.", field));
+{{ end }}{{ if .ValueObject.MinLength }}        if (value!.Length < {{ .ValueObject.MinLength }}) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.MinLength", "{{ .ValueObject.Name }} must be at least {{ .ValueObject.MinLength }} characters.", field));
+{{ end }}{{ if .ValueObject.MaxLength }}        if (value.Length > {{ .ValueObject.MaxLength }}) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.MaxLength", "{{ .ValueObject.Name }} must be at most {{ .ValueObject.MaxLength }} characters.", field));
+{{ end }}{{ if .ValueObject.Pattern }}        if (!Pattern.IsMatch(value)) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.Pattern", "{{ .ValueObject.Name }} has an invalid format.", field));
+{{ end }}{{ if .ValueObject.Minimum }}        if (value < {{ .ValueObject.Minimum }}) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.Minimum", "{{ .ValueObject.Name }} must be greater than or equal to {{ .ValueObject.Minimum }}.", field));
+{{ end }}{{ if .ValueObject.Maximum }}        if (value > {{ .ValueObject.Maximum }}) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.Maximum", "{{ .ValueObject.Name }} must be less than or equal to {{ .ValueObject.Maximum }}.", field));
+{{ end }}{{ if .ValueObject.HasNotEmpty }}        if (value == Guid.Empty) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.NotEmpty", "{{ .ValueObject.Name }} must not be empty.", field));
+{{ end }}{{ if .ValueObject.HasNotDefault }}        if (value == default) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.NotDefault", "{{ .ValueObject.Name }} must not be the default value.", field));
+{{ end }}        return DomainResult.Success(new {{ .ValueObject.Name }}(value));
     }
 
     public static {{ .ValueObject.Name }} Rehydrate({{ .ValueObject.Type }} value)
@@ -34,5 +35,5 @@ public sealed class {{ .ValueObject.Name }} : IEquatable<{{ .ValueObject.Name }}
     public bool Equals({{ .ValueObject.Name }}? other) => other is not null && EqualityComparer<{{ .ValueObject.Type }}>.Default.Equals(Value, other.Value);
     public override bool Equals(object? obj) => Equals(obj as {{ .ValueObject.Name }});
     public override int GetHashCode() => EqualityComparer<{{ .ValueObject.Type }}>.Default.GetHashCode(Value);
-    public override string ToString() => Value.ToString() ?? string.Empty;
+    public override string ToString() => Convert.ToString(Value, CultureInfo.InvariantCulture) ?? string.Empty;
 }

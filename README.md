@@ -58,6 +58,8 @@ Generated workspaces centralize NuGet versions in `Directory.Packages.props`. Th
 
 NuGet audit remains enabled in generated workspaces. `CentralPackageTransitivePinningEnabled` is also enabled so the central XML package pin can override vulnerable transitives; NuGet still rejects unsafe downgrades with NU1109 instead of hiding audit failures.
 
+Generated workspaces centralize quality defaults in `Directory.Build.props`: nullable reference types, implicit usings, SDK recommended analyzers, code-style enforcement during build, and warnings-as-errors. The runtime harness keeps generated `net10.0` `.slnx` output warning-clean by restoring, building, and testing it when `dotnet` is available.
+
 When `dotnet` is available, the generator test harness validates a generated `net10.0` `.slnx` workspace with restore, build, and test runtime commands.
 
 ## Command

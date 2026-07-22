@@ -1,6 +1,6 @@
 using ProductService.Application.Common;
 using ProductService.Domain.Features.Products;
-using ProductService.Domain.Shared.ValueObjects;
+using ProductService.Domain.Common.ValueObjects;
 
 
 namespace ProductService.Application.Features.Products;
@@ -25,11 +25,11 @@ public sealed class ProductUseCases(IProductRepository repository) : IProductUse
         var state = CreateState(request);
         if (state.Validation.Issues.Count > 0)
         {
-            return MutationValidationResult<ProductDto>.ValidationFailed(state.Validation);
+            return MutationValidationResult.ValidationFailed<ProductDto>(state.Validation);
         }
         var entity = Product.Create(state.State!);
         var snapshot = await repository.AddAsync(entity, cancellationToken);
-        return MutationValidationResult<ProductDto>.Created(ToDto(snapshot));
+        return MutationValidationResult.Created(ToDto(snapshot));
     }
 
     public async Task<MutationValidationResult<ProductDto>> UpdateAsync(Guid id, UpdateProductRequest request, CancellationToken cancellationToken)
@@ -37,29 +37,29 @@ public sealed class ProductUseCases(IProductRepository repository) : IProductUse
         var state = CreateState(request);
         if (state.Validation.Issues.Count > 0)
         {
-            return MutationValidationResult<ProductDto>.ValidationFailed(state.Validation);
+            return MutationValidationResult.ValidationFailed<ProductDto>(state.Validation);
         }
         if (string.IsNullOrWhiteSpace(request.ConcurrencyToken))
         {
-            return MutationValidationResult<ProductDto>.InvalidToken();
+            return MutationValidationResult.InvalidToken<ProductDto>();
         }
         var snapshot = await repository.GetByIdAsync(id, cancellationToken);
         if (snapshot is null)
         {
-            return MutationValidationResult<ProductDto>.NotFound();
+            return MutationValidationResult.NotFound<ProductDto>();
         }
         snapshot.Entity.Update(state.State!);
         var status = await repository.UpdateAsync(snapshot.Entity, request.ConcurrencyToken, cancellationToken);
         if (status == SaveResultStatus.Conflict)
         {
-            return MutationValidationResult<ProductDto>.Conflict();
+            return MutationValidationResult.Conflict<ProductDto>();
         }
         if (status == SaveResultStatus.InvalidToken)
         {
-            return MutationValidationResult<ProductDto>.InvalidToken();
+            return MutationValidationResult.InvalidToken<ProductDto>();
         }
         var updated = await repository.GetByIdAsync(id, cancellationToken);
-        return MutationValidationResult<ProductDto>.Updated(ToDto(updated ?? snapshot));
+        return MutationValidationResult.Updated(ToDto(updated ?? snapshot));
     }
 
     public async Task<MutationResult<bool>> DeleteAsync(Guid id, string concurrencyToken, CancellationToken cancellationToken)

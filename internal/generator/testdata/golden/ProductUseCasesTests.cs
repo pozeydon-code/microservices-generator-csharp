@@ -2,7 +2,7 @@ using ProductService.Application.Common;
 using ProductService.Application.Features.Products;
 using ProductService.Domain.Features.Products;
 using DomainProduct = ProductService.Domain.Features.Products.Product;
-using ProductService.Domain.Shared.ValueObjects;
+using ProductService.Domain.Common.ValueObjects;
 
 using Xunit;
 

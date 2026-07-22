@@ -7,7 +7,7 @@ using {{ .Name }}.Application.Common;
 using {{ $.Name }}.Domain.Features.{{ .FeatureName }};
 using {{ $.Name }}.Infrastructure.Persistence.Features.{{ .FeatureName }};
 using Domain{{ .Name }} = {{ $.Name }}.Domain.Features.{{ .FeatureName }}.{{ .Name }};
-{{ end }}{{ if .HasValueObjects }}using {{ .Name }}.Domain.Shared.ValueObjects;
+{{ end }}{{ if .HasValueObjects }}using {{ .Name }}.Domain.Common.ValueObjects;
 {{ end }}
 using {{ .Name }}.Infrastructure.Persistence;
 using Xunit;
@@ -205,7 +205,7 @@ public sealed class {{ .Name }}InfrastructureTests
         await using var reloadContext = database.CreateContext();
         var logger = new CaptureLogger<{{ $entity.Name }}Repository>();
         var repository = new {{ $entity.Name }}Repository(reloadContext, logger);
-        var exception = await Assert.ThrowsAsync<{{ $.Name }}.Domain.Shared.DomainReconstitutionException>(() => repository.GetByIdAsync(id, CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<{{ $.Name }}.Domain.Common.DomainReconstitutionException>(() => repository.GetByIdAsync(id, CancellationToken.None));
         Assert.Equal("{{ $corrupt.DomainType }}", exception.ValueObjectType);
         Assert.Contains("{{ $corrupt.InvalidCode }}", exception.InvariantCodes);
         Assert.Contains("{{ $entity.Name }}", logger.LastMessage);

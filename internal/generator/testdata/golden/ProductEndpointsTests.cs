@@ -12,6 +12,10 @@ namespace ProductService.Api.Tests.Features.Products;
 
 public sealed class ProductEndpointsTests
 {
+    private static readonly string[] ExpectedValidationErrorKeys = ["name", "price"];
+    private static readonly string[] ExpectedProductJsonProperties = ["concurrencyToken", "id", "isActive", "name", "price", ];
+    private static readonly string[] AllowedValidationProblemProperties = ["errors", "status", "title", "traceId", "type"];
+
     [Fact]
     public async Task CrudRoutesRequireAuthentication()
     {
@@ -119,12 +123,12 @@ public sealed class ProductEndpointsTests
         Assert.StartsWith("application/problem+json", response.Content.Headers.ContentType?.MediaType, StringComparison.Ordinal);
         var problemJson = await response.Content.ReadAsStringAsync();
         using var problemDocument = JsonDocument.Parse(problemJson);
-        AssertValidationProblemJson(problemDocument.RootElement, ["name", "price"]);
+        AssertValidationProblemJson(problemDocument.RootElement, ExpectedValidationErrorKeys);
         var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
         Assert.NotNull(problem);
         Assert.Equal("Validation failed", problem.Title);
         Assert.Equal(400, problem.Status);
-        Assert.Equal(new[] { "name", "price" }, problem.Errors.Keys.OrderBy(key => key, StringComparer.Ordinal).ToArray());
+        Assert.Equal(ExpectedValidationErrorKeys, problem.Errors.Keys.OrderBy(key => key, StringComparer.Ordinal).ToArray());
         Assert.Equal(["ProductName.Required: ProductName.Required message."], problem.Errors["name"]);
         Assert.Equal(["ProductPrice.Minimum: ProductPrice.Minimum message."], problem.Errors["price"]);
     }
@@ -140,12 +144,12 @@ public sealed class ProductEndpointsTests
         Assert.StartsWith("application/problem+json", response.Content.Headers.ContentType?.MediaType, StringComparison.Ordinal);
         var problemJson = await response.Content.ReadAsStringAsync();
         using var problemDocument = JsonDocument.Parse(problemJson);
-        AssertValidationProblemJson(problemDocument.RootElement, ["name", "price"]);
+        AssertValidationProblemJson(problemDocument.RootElement, ExpectedValidationErrorKeys);
         var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
         Assert.NotNull(problem);
         Assert.Equal("Validation failed", problem.Title);
         Assert.Equal(400, problem.Status);
-        Assert.Equal(new[] { "name", "price" }, problem.Errors.Keys.OrderBy(key => key, StringComparer.Ordinal).ToArray());
+        Assert.Equal(ExpectedValidationErrorKeys, problem.Errors.Keys.OrderBy(key => key, StringComparer.Ordinal).ToArray());
         Assert.Equal(["ProductName.Required: ProductName.Required message."], problem.Errors["name"]);
         Assert.Equal(["ProductPrice.Minimum: ProductPrice.Minimum message."], problem.Errors["price"]);
     }
@@ -212,7 +216,7 @@ public sealed class ProductEndpointsTests
     private static void AssertProductJson(JsonElement root, bool expectedIsActive, string expectedName, decimal expectedPrice, string expectedConcurrencyToken)
     {
         Assert.Equal(JsonValueKind.Object, root.ValueKind);
-        Assert.Equal(new[] { "concurrencyToken", "id", "isActive", "name", "price",  }.OrderBy(name => name, StringComparer.Ordinal).ToArray(), root.EnumerateObject().Select(property => property.Name).OrderBy(name => name, StringComparer.Ordinal).ToArray());
+        Assert.Equal(ExpectedProductJsonProperties.OrderBy(name => name, StringComparer.Ordinal).ToArray(), root.EnumerateObject().Select(property => property.Name).OrderBy(name => name, StringComparer.Ordinal).ToArray());
         Assert.Equal(Guid.Parse("11111111-1111-1111-1111-111111111111"), root.GetProperty("id").GetGuid());
         Assert.Equal(expectedIsActive ? JsonValueKind.True : JsonValueKind.False, root.GetProperty("isActive").ValueKind);
         Assert.Equal(expectedIsActive, root.GetProperty("isActive").GetBoolean());
@@ -226,8 +230,7 @@ public sealed class ProductEndpointsTests
 
     private static void AssertValidationProblemJson(JsonElement root, string[] expectedErrorKeys)
     {
-        var allowedTopLevel = new[] { "errors", "status", "title", "traceId", "type" };
-        Assert.Empty(root.EnumerateObject().Select(property => property.Name).Except(allowedTopLevel, StringComparer.Ordinal));
+        Assert.Empty(root.EnumerateObject().Select(property => property.Name).Except(AllowedValidationProblemProperties, StringComparer.Ordinal));
         Assert.Equal("Validation failed", root.GetProperty("title").GetString());
         Assert.Equal(400, root.GetProperty("status").GetInt32());
         Assert.Equal(JsonValueKind.Object, root.GetProperty("errors").ValueKind);
