@@ -3,12 +3,15 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pozeydon-code/generator-microservices-go/internal/application"
 )
+
+var ansiRegexp = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	plan := application.GenerationPlan{
@@ -43,28 +46,28 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 
 	assertContains(t, view, "Microgen - READY")
 	assertContains(t, view, "Primary: g Generate")
-	assertContains(t, view, "== Config ==")
-	assertContains(t, view, "Source       microgen.json (existing JSON)")
-	assertContains(t, view, "Product      CommercePlatform")
-	assertContains(t, view, "Description  Product management.")
-	assertContains(t, view, "Target       net8.0")
-	assertContains(t, view, "Format       .sln")
-	assertContains(t, view, "Contents     2 services, 3 entities, 3 value objects")
-	assertContains(t, view, "Services     ProductService, OrderService")
-	assertContains(t, view, "== Output Preview ==")
-	assertContains(t, view, "Directory    /tmp/generated")
-	assertContains(t, view, "Write mode   replace")
-	assertContains(t, view, "Force        required=yes, used=yes")
-	assertContains(t, view, "Files        6 planned")
-	assertContains(t, view, "Impact       create=4, replace=2 (mixed actions)")
-	assertContains(t, view, "DANGER       replacement removes 1 previous generated file(s)")
-	assertContains(t, view, "             src/ProductService/OldEndpoint.cs")
-	assertContains(t, view, "== Planned Files ==")
-	assertContains(t, view, "== Actions ==")
+	assertContains(t, view, "Config")
+	assertContains(t, view, "Source microgen.json (existing JSON)")
+	assertContains(t, view, "Product CommercePlatform")
+	assertContains(t, view, "Description Product management.")
+	assertContains(t, view, "Target net8.0")
+	assertContains(t, view, "Format .sln")
+	assertContains(t, view, "Contents 2 services, 3 entities, 3 value objects")
+	assertContains(t, view, "Services ProductService, OrderService")
+	assertContains(t, view, "Output Preview")
+	assertContains(t, view, "Directory /tmp/generated")
+	assertContains(t, view, "Write mode replace")
+	assertContains(t, view, "Force required=yes, used=yes")
+	assertContains(t, view, "Files 6 planned")
+	assertContains(t, view, "Impact create=4, replace=2 (mixed actions)")
+	assertContains(t, view, "DANGER replacement removes 1 previous generated file(s)")
+	assertContains(t, view, "src/ProductService/OldEndpoint.cs")
+	assertContains(t, view, "Planned Files")
+	assertContains(t, view, "Actions")
 	assertContains(t, view, "Files 1-5 of 6 (filter: all)")
-	assertContains(t, view, "Selected: 1/6 replace README.md")
-	assertContains(t, view, "> [1/6] replace README.md")
-	assertContains(t, view, "  [5/6] create tests/ProductService/ProductService.Api.Tests/ProductEndpointsTests.cs")
+	assertContains(t, view, "Selected: 1/6 [REPLACE] README.md")
+	assertContains(t, view, "> [1/6] [REPLACE] README.md")
+	assertContains(t, view, "  [5/6] [CREATE] tests/ProductService/ProductService.Api.Tests/ProductEndpointsTests.cs")
 	assertContains(t, view, "g Generate files into the output directory.")
 	assertContains(t, view, "e Edit solution settings. Service, entity, field, and value-object editing is not available yet.")
 	assertContains(t, view, readyHelp)
@@ -74,10 +77,18 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	}
 }
 
+func TestModelViewShowsPrimaryActionOnce(t *testing.T) {
+	view := stripANSI(NewModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil).View())
+
+	if count := strings.Count(view, "Primary:"); count != 1 {
+		t.Fatalf("expected one primary action, got %d in %q", count, view)
+	}
+}
+
 func TestModelViewShowsBootstrappedConfigSource(t *testing.T) {
 	view := NewModel(plannedFilesPlan(1), application.GenerateRequest{ConfigPath: "starter.json", ConfigBootstrapped: true}, nil, nil, nil).View()
 
-	assertContains(t, view, "Source       starter.json (starter config bootstrapped this run)")
+	assertContains(t, view, "Source starter.json (starter config bootstrapped this run)")
 	assertContains(t, view, "Created starter config. Edit settings incrementally; service/entity/field editing comes later.")
 }
 
@@ -88,17 +99,17 @@ func TestModelViewTruncatesDeletedFilePreview(t *testing.T) {
 
 	view := NewModel(plan, application.GenerateRequest{ConfigPath: "microgen.json"}, nil, nil, nil).View()
 
-	assertContains(t, view, "DANGER       replacement removes 4 previous generated file(s)")
-	assertContains(t, view, "             old-1.txt, old-2.txt, old-3.txt, and 1 more")
+	assertContains(t, view, "DANGER replacement removes 4 previous generated file(s)")
+	assertContains(t, view, "old-1.txt, old-2.txt, old-3.txt, and 1 more")
 }
 
 func TestModelViewShowsPlannedFileRangeAndCursor(t *testing.T) {
 	view := NewModel(plannedFilesPlan(6), application.GenerateRequest{}, nil, nil, nil).View()
 
 	assertContains(t, view, "Files 1-5 of 6 (filter: all)")
-	assertContains(t, view, "Selected: 1/6 create file-01.txt")
-	assertContains(t, view, "> [1/6] create file-01.txt")
-	assertContains(t, view, "  [5/6] create file-05.txt")
+	assertContains(t, view, "Selected: 1/6 [CREATE] file-01.txt")
+	assertContains(t, view, "> [1/6] [CREATE] file-01.txt")
+	assertContains(t, view, "  [5/6] [CREATE] file-05.txt")
 	assertNotContains(t, view, "file-06.txt")
 }
 
@@ -111,7 +122,7 @@ func TestModelUpdateMovesPlannedFileCursorAndWindow(t *testing.T) {
 		t.Fatal("expected no command")
 	}
 	assertContains(t, model.View(), "Files 1-5 of 7 (filter: all)")
-	assertContains(t, model.View(), "> [2/7] create file-02.txt")
+	assertContains(t, model.View(), "> [2/7] [CREATE] file-02.txt")
 
 	for range 4 {
 		updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
@@ -122,7 +133,7 @@ func TestModelUpdateMovesPlannedFileCursorAndWindow(t *testing.T) {
 	}
 	view := model.View()
 	assertContains(t, view, "Files 2-6 of 7 (filter: all)")
-	assertContains(t, view, "> [6/7] create file-06.txt")
+	assertContains(t, view, "> [6/7] [CREATE] file-06.txt")
 	assertNotContains(t, view, "file-01.txt")
 
 	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyUp})
@@ -132,7 +143,7 @@ func TestModelUpdateMovesPlannedFileCursorAndWindow(t *testing.T) {
 	}
 	view = model.View()
 	assertContains(t, view, "Files 2-6 of 7 (filter: all)")
-	assertContains(t, view, "> [5/7] create file-05.txt")
+	assertContains(t, view, "> [5/7] [CREATE] file-05.txt")
 }
 
 func TestModelUpdateClampsPlannedFileNavigationBounds(t *testing.T) {
@@ -142,7 +153,7 @@ func TestModelUpdateClampsPlannedFileNavigationBounds(t *testing.T) {
 	model = updated.(Model)
 	view := model.View()
 	assertContains(t, view, "Files 1-3 of 3 (filter: all)")
-	assertContains(t, view, "> [1/3] create file-01.txt")
+	assertContains(t, view, "> [1/3] [CREATE] file-01.txt")
 
 	for range 5 {
 		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
@@ -150,7 +161,7 @@ func TestModelUpdateClampsPlannedFileNavigationBounds(t *testing.T) {
 	}
 	view = model.View()
 	assertContains(t, view, "Files 1-3 of 3 (filter: all)")
-	assertContains(t, view, "> [3/3] create file-03.txt")
+	assertContains(t, view, "> [3/3] [CREATE] file-03.txt")
 }
 
 func TestModelUpdateSupportsPlannedFileHomeEndAndPageKeys(t *testing.T) {
@@ -160,25 +171,25 @@ func TestModelUpdateSupportsPlannedFileHomeEndAndPageKeys(t *testing.T) {
 	model = updated.(Model)
 	view := model.View()
 	assertContains(t, view, "Files 2-6 of 12 (filter: all)")
-	assertContains(t, view, "> [6/12] create file-06.txt")
+	assertContains(t, view, "> [6/12] [CREATE] file-06.txt")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
 	model = updated.(Model)
 	view = model.View()
 	assertContains(t, view, "Files 1-5 of 12 (filter: all)")
-	assertContains(t, view, "> [1/12] create file-01.txt")
+	assertContains(t, view, "> [1/12] [CREATE] file-01.txt")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnd})
 	model = updated.(Model)
 	view = model.View()
 	assertContains(t, view, "Files 8-12 of 12 (filter: all)")
-	assertContains(t, view, "> [12/12] create file-12.txt")
+	assertContains(t, view, "> [12/12] [CREATE] file-12.txt")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyHome})
 	model = updated.(Model)
 	view = model.View()
 	assertContains(t, view, "Files 1-5 of 12 (filter: all)")
-	assertContains(t, view, "> [1/12] create file-01.txt")
+	assertContains(t, view, "> [1/12] [CREATE] file-01.txt")
 }
 
 func TestModelUpdateWindowSizeChangesVisibleFileRange(t *testing.T) {
@@ -191,7 +202,7 @@ func TestModelUpdateWindowSizeChangesVisibleFileRange(t *testing.T) {
 	}
 	view := model.View()
 	assertContains(t, view, "Files 1-6 of 20 (filter: all)")
-	assertContains(t, view, "  [6/20] create file-06.txt")
+	assertContains(t, view, "  [6/20] [CREATE] file-06.txt")
 	assertNotContains(t, view, "file-07.txt")
 
 	updated, cmd = model.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
@@ -201,7 +212,7 @@ func TestModelUpdateWindowSizeChangesVisibleFileRange(t *testing.T) {
 	}
 	view = model.View()
 	assertContains(t, view, "Files 1-12 of 20 (filter: all)")
-	assertContains(t, view, "  [12/20] create file-12.txt")
+	assertContains(t, view, "  [12/20] [CREATE] file-12.txt")
 	assertNotContains(t, view, "file-13.txt")
 
 	updated, cmd = model.Update(tea.WindowSizeMsg{Width: 80, Height: 19})
@@ -211,7 +222,7 @@ func TestModelUpdateWindowSizeChangesVisibleFileRange(t *testing.T) {
 	}
 	view = model.View()
 	assertContains(t, view, "Files 1-3 of 20 (filter: all)")
-	assertContains(t, view, "  [3/20] create file-03.txt")
+	assertContains(t, view, "  [3/20] [CREATE] file-03.txt")
 	assertNotContains(t, view, "file-04.txt")
 }
 
@@ -222,7 +233,7 @@ func TestModelUpdateClampsNavigationAfterResize(t *testing.T) {
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnd})
 	model = updated.(Model)
 	assertContains(t, model.View(), "Files 9-20 of 20 (filter: all)")
-	assertContains(t, model.View(), "> [20/20] create file-20.txt")
+	assertContains(t, model.View(), "> [20/20] [CREATE] file-20.txt")
 
 	updated, cmd := model.Update(tea.WindowSizeMsg{Width: 80, Height: 19})
 	model = updated.(Model)
@@ -231,7 +242,7 @@ func TestModelUpdateClampsNavigationAfterResize(t *testing.T) {
 	}
 	view := model.View()
 	assertContains(t, view, "Files 18-20 of 20 (filter: all)")
-	assertContains(t, view, "> [20/20] create file-20.txt")
+	assertContains(t, view, "> [20/20] [CREATE] file-20.txt")
 	assertNotContains(t, view, "file-17.txt")
 }
 
@@ -249,8 +260,8 @@ func TestModelViewShowsImpactSummaryInDeterministicActionOrder(t *testing.T) {
 
 	view := NewModel(plan, application.GenerateRequest{}, nil, nil, nil).View()
 
-	assertContains(t, view, "Files        5 planned")
-	assertContains(t, view, "Impact       create=2, replace=2, unchanged=1 (mixed actions)")
+	assertContains(t, view, "Files 5 planned")
+	assertContains(t, view, "Impact create=2, replace=2, unchanged=1 (mixed actions)")
 }
 
 func TestModelUpdateCyclesActionFilterAndNavigatesFilteredFiles(t *testing.T) {
@@ -273,33 +284,33 @@ func TestModelUpdateCyclesActionFilterAndNavigatesFilteredFiles(t *testing.T) {
 	}
 	view := model.View()
 	assertContains(t, view, "Files 1-2 of 2 (filter: create)")
-	assertContains(t, view, "Filter       Press a to cycle filters back to all.")
-	assertContains(t, view, "Selected: 1/2 create create-1.txt")
-	assertContains(t, view, "> [1/2] create create-1.txt")
+	assertContains(t, view, "Filter Press a to cycle filters back to all.")
+	assertContains(t, view, "Selected: 1/2 [CREATE] create-1.txt")
+	assertContains(t, view, "> [1/2] [CREATE] create-1.txt")
 	assertNotContains(t, view, "replace-1.txt")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
 	model = updated.(Model)
 	view = model.View()
-	assertContains(t, view, "Selected: 2/2 create create-2.txt")
-	assertContains(t, view, "> [2/2] create create-2.txt")
+	assertContains(t, view, "Selected: 2/2 [CREATE] create-2.txt")
+	assertContains(t, view, "> [2/2] [CREATE] create-2.txt")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	model = updated.(Model)
 	view = model.View()
 	assertContains(t, view, "Files 1-2 of 2 (filter: replace)")
-	assertContains(t, view, "Selected: 1/2 replace replace-1.txt")
+	assertContains(t, view, "Selected: 1/2 [REPLACE] replace-1.txt")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	model = updated.(Model)
 	view = model.View()
 	assertContains(t, view, "Files 1-1 of 1 (filter: unchanged)")
-	assertContains(t, view, "Selected: 1/1 unchanged unchanged-1.txt")
+	assertContains(t, view, "Selected: 1/1 [UNCHANGED] unchanged-1.txt")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	model = updated.(Model)
 	assertContains(t, model.View(), "Files 1-5 of 5 (filter: all)")
-	assertNotContains(t, model.View(), "Filter       Press a to cycle filters back to all.")
+	assertNotContains(t, model.View(), "Filter Press a to cycle filters back to all.")
 }
 
 func TestModelViewReassuresWhenAllPlannedFilesAreUnchanged(t *testing.T) {
@@ -313,7 +324,7 @@ func TestModelViewReassuresWhenAllPlannedFilesAreUnchanged(t *testing.T) {
 
 	view := NewModel(plan, application.GenerateRequest{}, nil, nil, nil).View()
 
-	assertContains(t, view, "Impact       unchanged only")
+	assertContains(t, view, "Impact unchanged only")
 	assertContains(t, view, "No generated file content changes detected.")
 }
 
@@ -572,11 +583,11 @@ func TestModelUpdateRecordsRefreshSuccess(t *testing.T) {
 		t.Fatalf("expected refreshed ready state, got %#v", updatedModel)
 	}
 	view := updatedModel.View()
-	assertContains(t, view, "Product      Refreshed")
-	assertContains(t, view, "Target       net9.0")
-	assertContains(t, view, "Directory    /tmp/refreshed")
+	assertContains(t, view, "Product Refreshed")
+	assertContains(t, view, "Target net9.0")
+	assertContains(t, view, "Directory /tmp/refreshed")
 	assertContains(t, view, "Files 1-2 of 2 (filter: all)")
-	assertContains(t, view, "> [2/2] create file-02.txt")
+	assertContains(t, view, "> [2/2] [CREATE] file-02.txt")
 }
 
 func TestModelUpdateRecordsRefreshFailureAndAllowsRetry(t *testing.T) {
@@ -599,7 +610,7 @@ func TestModelUpdateRecordsRefreshFailureAndAllowsRetry(t *testing.T) {
 	view := failedModel.View()
 	assertContains(t, view, "Microgen - FAILED")
 	assertContains(t, view, "Primary: g Retry generation")
-	assertContains(t, view, "FAILED       Refresh failed: plan failed")
+	assertContains(t, view, "FAILED Refresh failed: plan failed")
 	assertContains(t, view, "g Retry generation, or r refresh the plan first.")
 
 	retrying, retryCmd := failedModel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
@@ -869,11 +880,11 @@ func TestModelUpdateSaveSuccessWithRefreshFailureAllowsRetry(t *testing.T) {
 	view := model.View()
 	assertContains(t, view, "Microgen - FAILED")
 	assertContains(t, view, "Primary: r Retry refresh")
-	assertContains(t, view, "Product      CatalogPlatform")
-	assertContains(t, view, "Description  New description")
-	assertContains(t, view, "Target       net9.0")
+	assertContains(t, view, "Product CatalogPlatform")
+	assertContains(t, view, "Description New description")
+	assertContains(t, view, "Target net9.0")
 	assertContains(t, view, "Settings saved, but the plan refresh failed. Press r to retry the refresh.")
-	assertContains(t, view, "FAILED       Refresh after save failed: plan failed")
+	assertContains(t, view, "FAILED Refresh after save failed: plan failed")
 	assertContains(t, view, "r Retry plan refresh. Other actions stay locked until refresh succeeds.")
 	assertContains(t, view, "Keys: r retry refresh | q/esc/ctrl+c quit")
 	assertNotContains(t, view, "Save failed")
@@ -956,7 +967,7 @@ func TestModelUpdateRecordsGenerationSuccess(t *testing.T) {
 	assertContains(t, view, "Microgen - GENERATED")
 	assertContains(t, view, "Primary: r Refresh")
 	assertContains(t, view, "Generated 3 files in /tmp/generated.")
-	assertContains(t, view, "WARNING      existing warning")
+	assertContains(t, view, "WARNING existing warning")
 	assertContains(t, view, generatedHelp)
 	assertNotContains(t, view, readyHelp)
 	assertNotContains(t, view, "g to generate")
@@ -982,7 +993,7 @@ func TestModelUpdateRecordsGenerationFailureAndAllowsRetry(t *testing.T) {
 	view := failedModel.View()
 	assertContains(t, view, "Microgen - FAILED")
 	assertContains(t, view, "Primary: g Retry generation")
-	assertContains(t, view, "FAILED       Generation failed: write failed")
+	assertContains(t, view, "FAILED Generation failed: write failed")
 	assertContains(t, view, "g Retry generation, or r refresh the plan first.")
 	assertContains(t, view, readyHelp)
 
@@ -1001,9 +1012,14 @@ func TestModelUpdateRecordsGenerationFailureAndAllowsRetry(t *testing.T) {
 
 func assertContains(t *testing.T, value, expected string) {
 	t.Helper()
+	value = stripANSI(value)
 	if !strings.Contains(value, expected) {
 		t.Fatalf("expected %q to contain %q", value, expected)
 	}
+}
+
+func stripANSI(value string) string {
+	return ansiRegexp.ReplaceAllString(value, "")
 }
 
 func plannedFilesPlan(count int) application.GenerationPlan {
@@ -1016,6 +1032,7 @@ func plannedFilesPlan(count int) application.GenerationPlan {
 
 func assertNotContains(t *testing.T, value, unexpected string) {
 	t.Helper()
+	value = stripANSI(value)
 	if strings.Contains(value, unexpected) {
 		t.Fatalf("expected %q not to contain %q", value, unexpected)
 	}

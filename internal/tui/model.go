@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/pozeydon-code/generator-microservices-go/internal/application"
 )
 
@@ -18,6 +19,32 @@ const (
 
 const readyHelp = "Navigate files: arrows/k/j/pgup/pgdown/home/end. Actions: g generate, e edit settings, r refresh, a filter."
 const generatedHelp = "Navigate files: arrows/k/j/pgup/pgdown/home/end. Actions: r refresh, a filter."
+
+var (
+	border = lipgloss.Border{
+		Top:         "-",
+		Bottom:      "-",
+		Left:        "|",
+		Right:       "|",
+		TopLeft:     "+",
+		TopRight:    "+",
+		BottomLeft:  "+",
+		BottomRight: "+",
+	}
+
+	appTitleStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63"))
+	cardStyle         = lipgloss.NewStyle().Border(border).BorderForeground(lipgloss.Color("240")).Padding(0, 1)
+	sectionTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99"))
+	labelStyle        = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245"))
+	dimStyle          = lipgloss.NewStyle().Faint(true)
+	successStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("42"))
+	warningStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
+	dangerStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("196"))
+	busyStyle         = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
+	readyStyle        = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("45"))
+	badgeStyle        = lipgloss.NewStyle().Bold(true)
+	selectedRowStyle  = lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("236")).Foreground(lipgloss.Color("231"))
+)
 
 type PlanFunc func(application.GenerateRequest) (application.GenerationPlan, error)
 type GenerateFunc func(application.GenerateRequest) (application.GenerateResult, error)
@@ -610,51 +637,81 @@ func (m Model) saveSettingsCmd() tea.Cmd {
 
 func (m Model) View() string {
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "Microgen - %s\n", m.statusLabel())
-	fmt.Fprintf(&builder, "Primary: %s\n", m.primaryAction())
+	fmt.Fprintf(&builder, "%s - %s\n", appTitleStyle.Render("Microgen"), m.statusBadge())
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Primary:"), m.primaryActionStyle().Render(m.primaryAction()))
 	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, "== Config ==")
-	fmt.Fprintf(&builder, "Source       %s (%s)\n", m.request.ConfigPath, m.configSourceLabel())
+	fmt.Fprintln(&builder, m.configCard())
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, m.outputPreviewCard())
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, m.plannedFilesCard())
+	fmt.Fprintln(&builder)
+	if m.message != "" {
+		fmt.Fprintln(&builder, successStyle.Render(m.message))
+		fmt.Fprintln(&builder)
+	}
+	fmt.Fprintln(&builder, m.actionsCard())
+	return builder.String()
+}
+
+func (m Model) configCard() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Config"))
+	fmt.Fprintf(&builder, "%s %s %s\n", labelStyle.Render("Source"), m.request.ConfigPath, dimStyle.Render("("+m.configSourceLabel()+")"))
 	if m.request.ConfigBootstrapped {
-		fmt.Fprintln(&builder, "             Created starter config. Edit settings incrementally; service/entity/field editing comes later.")
+		fmt.Fprintln(&builder, dimStyle.Render("Created starter config. Edit settings incrementally; service/entity/field editing comes later."))
 	}
-	fmt.Fprintf(&builder, "Product      %s\n", m.plan.Config.SolutionName)
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Product"), m.plan.Config.SolutionName)
 	if m.plan.Config.SolutionDescription != "" {
-		fmt.Fprintf(&builder, "Description  %s\n", m.plan.Config.SolutionDescription)
+		fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Description"), m.plan.Config.SolutionDescription)
 	}
-	fmt.Fprintf(&builder, "Target       %s\n", m.plan.Config.TargetFramework)
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Target"), m.plan.Config.TargetFramework)
 	if m.plan.Config.SolutionFormat != "" {
-		fmt.Fprintf(&builder, "Format       .%s\n", m.plan.Config.SolutionFormat)
+		fmt.Fprintf(&builder, "%s .%s\n", labelStyle.Render("Format"), m.plan.Config.SolutionFormat)
 	}
-	fmt.Fprintf(&builder, "Contents     %d services, %d entities, %d value objects\n", m.plan.Config.ServiceCount, m.plan.Config.EntityCount, m.plan.Config.ValueObjectCount)
+	fmt.Fprintf(&builder, "%s %d services, %d entities, %d value objects\n", labelStyle.Render("Contents"), m.plan.Config.ServiceCount, m.plan.Config.EntityCount, m.plan.Config.ValueObjectCount)
 	if len(m.plan.Config.ServiceNames) > 0 {
-		fmt.Fprintf(&builder, "Services     %s\n", strings.Join(m.plan.Config.ServiceNames, ", "))
+		fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Services"), strings.Join(m.plan.Config.ServiceNames, ", "))
 	}
-	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, "== Output Preview ==")
-	fmt.Fprintf(&builder, "Directory    %s\n", m.plan.OutputDir)
-	fmt.Fprintf(&builder, "Write mode   %s\n", m.plan.OutputAction)
-	fmt.Fprintf(&builder, "Force        required=%s, used=%s\n", yesNo(m.plan.ForceRequired), yesNo(m.plan.ForceUsed))
-	fmt.Fprintf(&builder, "Files        %d planned\n", m.plan.FileCount)
+	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+}
+
+func (m Model) outputPreviewCard() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Output Preview"))
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Directory"), m.plan.OutputDir)
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Write mode"), m.plan.OutputAction)
+	forceStyle := dimStyle
+	if m.plan.ForceRequired && !m.plan.ForceUsed {
+		forceStyle = dangerStyle
+	} else if m.plan.ForceRequired {
+		forceStyle = warningStyle
+	}
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Force"), forceStyle.Render(fmt.Sprintf("required=%s, used=%s", yesNo(m.plan.ForceRequired), yesNo(m.plan.ForceUsed))))
+	fmt.Fprintf(&builder, "%s %d planned\n", labelStyle.Render("Files"), m.plan.FileCount)
 	impact := m.impactSummary()
-	fmt.Fprintf(&builder, "Impact       %s\n", impact)
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Impact"), impact)
 	if m.plan.FileCount > 0 && impact == "unchanged only" {
-		fmt.Fprintln(&builder, "             No generated file content changes detected.")
+		fmt.Fprintln(&builder, successStyle.Render("No generated file content changes detected."))
 	}
 	if m.plan.ExtraFileCount > 0 {
-		fmt.Fprintf(&builder, "DANGER       replacement removes %d previous generated file(s)\n", m.plan.ExtraFileCount)
-		fmt.Fprintf(&builder, "             %s\n", deletedFilePreview(m.plan.DeletedFiles))
+		fmt.Fprintf(&builder, "%s replacement removes %d previous generated file(s)\n", dangerStyle.Render("DANGER"), m.plan.ExtraFileCount)
+		fmt.Fprintf(&builder, "%s\n", dangerStyle.Render(deletedFilePreview(m.plan.DeletedFiles)))
 	}
-	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, "== Planned Files ==")
+	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+}
+
+func (m Model) plannedFilesCard() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Planned Files"))
 
 	indices := m.filteredFileIndices()
 	fileCount := len(indices)
 	if fileCount == 0 {
 		if m.actionFilter != "" {
-			fmt.Fprintf(&builder, "No files match filter %q. Press a to reset the filter.\n", m.actionFilter)
+			fmt.Fprintf(&builder, "%s\n", warningStyle.Render(fmt.Sprintf("No files match filter %q. Press a to reset the filter.", m.actionFilter)))
 		} else {
-			fmt.Fprintln(&builder, "No files planned.")
+			fmt.Fprintln(&builder, dimStyle.Render("No files planned."))
 		}
 	} else {
 		start := m.fileOffset
@@ -666,68 +723,66 @@ func (m Model) View() string {
 		if m.actionFilter != "" {
 			filter = m.actionFilter
 		}
-		fmt.Fprintf(&builder, "Files %d-%d of %d (filter: %s)\n", start+1, end, fileCount, filter)
+		fmt.Fprintf(&builder, "%s %d-%d of %d %s\n", labelStyle.Render("Files"), start+1, end, fileCount, dimStyle.Render("(filter: "+filter+")"))
 		if m.actionFilter != "" {
-			fmt.Fprintln(&builder, "Filter       Press a to cycle filters back to all.")
+			fmt.Fprintf(&builder, "%s Press a to cycle filters back to all.\n", labelStyle.Render("Filter"))
 		}
 		selectedPosition := m.selectedFilteredPosition(indices)
 		if selectedPosition >= 0 {
 			selectedFile := m.plan.Files[indices[selectedPosition]]
-			fmt.Fprintf(&builder, "Selected: %d/%d %s %s\n", selectedPosition+1, fileCount, selectedFile.Action, selectedFile.Path)
+			fmt.Fprintf(&builder, "%s %d/%d %s %s\n", labelStyle.Render("Selected:"), selectedPosition+1, fileCount, actionBadge(selectedFile.Action), selectedFile.Path)
 		}
 		for position, planIndex := range indices[start:end] {
 			file := m.plan.Files[planIndex]
-			cursor := " "
+			row := fmt.Sprintf("  [%d/%d] %s %s", start+position+1, fileCount, actionBadge(file.Action), file.Path)
 			if start+position == selectedPosition {
-				cursor = ">"
+				row = selectedRowStyle.Render(fmt.Sprintf("> [%d/%d] %s %s", start+position+1, fileCount, actionBadge(file.Action), file.Path))
 			}
-			fmt.Fprintf(&builder, "%s [%d/%d] %s %s\n", cursor, start+position+1, fileCount, file.Action, file.Path)
+			fmt.Fprintln(&builder, row)
 		}
 	}
+	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+}
 
-	fmt.Fprintln(&builder)
-	if m.message != "" {
-		fmt.Fprintln(&builder, m.message)
-		fmt.Fprintln(&builder)
-	}
+func (m Model) actionsCard() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Actions"))
 	if m.status == statusEditing || m.status == statusSaving {
-		fmt.Fprintln(&builder, "== Actions ==")
 		m.renderSettingsEditor(&builder)
-		return builder.String()
+		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 	}
-	fmt.Fprintln(&builder, "== Actions ==")
 	switch m.status {
 	case statusReady:
-		fmt.Fprintln(&builder, "g Generate files into the output directory.")
+		fmt.Fprintf(&builder, "%s Generate files into the output directory.\n", successStyle.Render("g"))
 		fmt.Fprintln(&builder, "e Edit solution settings. Service, entity, field, and value-object editing is not available yet.")
 	case statusRefreshing:
-		fmt.Fprintln(&builder, "Refreshing plan. Please wait; editing, filtering, and generation are paused.")
+		fmt.Fprintln(&builder, busyStyle.Render("Refreshing plan. Please wait; editing, filtering, and generation are paused."))
 	case statusGenerating:
-		fmt.Fprintln(&builder, "Generating files. Please wait; exit is available after generation finishes.")
+		fmt.Fprintln(&builder, busyStyle.Render("Generating files. Please wait; exit is available after generation finishes."))
 	case statusGenerated:
-		fmt.Fprintf(&builder, "Generated %d files in %s.\n", m.result.Plan.FileCount, m.result.OutputDir)
+		fmt.Fprintln(&builder, successStyle.Render(fmt.Sprintf("Generated %d files in %s.", m.result.Plan.FileCount, m.result.OutputDir)))
 		if m.result.Warning != "" {
-			fmt.Fprintf(&builder, "WARNING      %s\n", m.result.Warning)
+			fmt.Fprintf(&builder, "%s %s\n", warningStyle.Render("WARNING"), warningStyle.Render(m.result.Warning))
 		}
 	case statusSaving:
-		fmt.Fprintln(&builder, "Saving settings. Please wait; exit is available after save finishes.")
+		fmt.Fprintln(&builder, busyStyle.Render("Saving settings. Please wait; exit is available after save finishes."))
 	case statusFailed:
 		context := m.errContext
 		if context == "" {
 			context = "Generation"
 		}
-		fmt.Fprintf(&builder, "FAILED       %s failed: %v\n", context, m.err)
+		fmt.Fprintf(&builder, "%s %s failed: %v\n", dangerStyle.Render("FAILED"), context, m.err)
 		if m.errContext == "Refresh after save" {
-			fmt.Fprintln(&builder, "r Retry plan refresh. Other actions stay locked until refresh succeeds.")
+			fmt.Fprintln(&builder, dangerStyle.Render("r Retry plan refresh. Other actions stay locked until refresh succeeds."))
 		} else {
-			fmt.Fprintln(&builder, "g Retry generation, or r refresh the plan first.")
+			fmt.Fprintln(&builder, dangerStyle.Render("g Retry generation, or r refresh the plan first."))
 		}
 	}
 	fmt.Fprintln(&builder)
 	if m.status != statusGenerating && m.status != statusRefreshing {
 		if m.postSaveRefreshFailed() {
 			fmt.Fprintln(&builder, "Keys: r retry refresh | q/esc/ctrl+c quit")
-			return builder.String()
+			return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 		}
 		if m.status == statusGenerated {
 			fmt.Fprintln(&builder, generatedHelp)
@@ -737,7 +792,7 @@ func (m Model) View() string {
 		fmt.Fprintln(&builder, "Config modes: existing JSON with --config <path>; starter JSON with --new --config <path>.")
 		fmt.Fprintln(&builder, "Exit: q/esc/ctrl+c")
 	}
-	return builder.String()
+	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 }
 
 func (m Model) statusLabel() string {
@@ -758,6 +813,38 @@ func (m Model) statusLabel() string {
 		return "SAVING"
 	default:
 		return "READY"
+	}
+}
+
+func (m Model) statusBadge() string {
+	return badgeStyle.Foreground(m.statusColor()).Render(m.statusLabel())
+}
+
+func (m Model) statusColor() lipgloss.Color {
+	switch m.status {
+	case statusReady:
+		return lipgloss.Color("45")
+	case statusRefreshing, statusGenerating, statusSaving, statusEditing:
+		return lipgloss.Color("39")
+	case statusGenerated:
+		return lipgloss.Color("42")
+	case statusFailed:
+		return lipgloss.Color("196")
+	default:
+		return lipgloss.Color("45")
+	}
+}
+
+func (m Model) primaryActionStyle() lipgloss.Style {
+	switch m.status {
+	case statusReady, statusGenerated:
+		return successStyle
+	case statusRefreshing, statusGenerating, statusSaving, statusEditing:
+		return busyStyle
+	case statusFailed:
+		return dangerStyle
+	default:
+		return readyStyle
 	}
 }
 
@@ -782,6 +869,20 @@ func (m Model) primaryAction() string {
 		return "Saving settings"
 	default:
 		return "g Generate"
+	}
+}
+
+func actionBadge(action string) string {
+	label := "[" + strings.ToUpper(action) + "]"
+	switch action {
+	case "create":
+		return badgeStyle.Foreground(lipgloss.Color("42")).Render(label)
+	case "replace":
+		return badgeStyle.Foreground(lipgloss.Color("214")).Render(label)
+	case "unchanged":
+		return badgeStyle.Foreground(lipgloss.Color("245")).Render(label)
+	default:
+		return badgeStyle.Foreground(lipgloss.Color("39")).Render(label)
 	}
 }
 
