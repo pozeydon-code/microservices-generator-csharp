@@ -2,6 +2,8 @@ package application
 
 import (
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -56,9 +58,10 @@ type Service struct {
 }
 
 type GenerateRequest struct {
-	ConfigPath string
-	OutputDir  string
-	Force      bool
+	ConfigPath         string
+	OutputDir          string
+	Force              bool
+	ConfigBootstrapped bool
 }
 
 type SolutionSettings struct {
@@ -75,13 +78,15 @@ type UpdateSolutionSettingsResult struct {
 }
 
 type GenerationPlan struct {
-	Config        ConfigSummary
-	OutputDir     string
-	OutputAction  string
-	ForceRequired bool
-	ForceUsed     bool
-	FileCount     int
-	Files         []PlannedFile
+	Config         ConfigSummary
+	OutputDir      string
+	OutputAction   string
+	ForceRequired  bool
+	ForceUsed      bool
+	FileCount      int
+	Files          []PlannedFile
+	ExtraFileCount int
+	DeletedFiles   []string
 
 	generatedFiles []GeneratedFile
 }
@@ -121,6 +126,7 @@ type OutputPlan struct {
 	ForceRequired bool
 	ForceUsed     bool
 	Files         []OutputPlannedFile
+	DeletedFiles  []string
 }
 
 type OutputPlannedFile struct {
@@ -160,6 +166,25 @@ func (s Service) ValidateConfig(cfg spec.Config) error {
 
 func (s Service) TargetFrameworkSuggestions() []string {
 	return s.ports.TargetFrameworks.SuggestedTargetFrameworks()
+}
+
+func (s Service) CreateStarterConfig(path string) (ConfigSummary, error) {
+	if strings.TrimSpace(path) == "" {
+		return ConfigSummary{}, errors.New("config path is required")
+	}
+	if _, err := os.Stat(path); err == nil {
+		return ConfigSummary{}, fmt.Errorf("refusing to create starter config because %s already exists", path)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return ConfigSummary{}, fmt.Errorf("stat config: %w", err)
+	}
+	cfg := starterConfig()
+	if err := s.ValidateConfig(cfg); err != nil {
+		return ConfigSummary{}, err
+	}
+	if err := s.SaveConfig(path, cfg); err != nil {
+		return ConfigSummary{}, err
+	}
+	return summarizeConfig(cfg), nil
 }
 
 func (s Service) PlanGeneration(request GenerateRequest) (GenerationPlan, error) {
@@ -222,12 +247,42 @@ func (s Service) planGenerationFromConfig(request GenerateRequest, cfg spec.Conf
 		ForceUsed:      outputPlan.ForceUsed,
 		FileCount:      len(files),
 		Files:          make([]PlannedFile, len(outputPlan.Files)),
+		ExtraFileCount: len(outputPlan.DeletedFiles),
+		DeletedFiles:   append([]string(nil), outputPlan.DeletedFiles...),
 		generatedFiles: files,
 	}
 	for index, file := range outputPlan.Files {
 		plan.Files[index] = PlannedFile{Path: file.Path, Action: file.Action}
 	}
 	return plan, nil
+}
+
+func starterConfig() spec.Config {
+	return spec.Config{
+		SchemaVersion: spec.ConfigSchemaVersion,
+		Generation: spec.GenerationOptions{
+			TargetFramework: spec.DefaultTargetFramework,
+			SolutionFormat:  spec.DefaultSolutionFormat(spec.DefaultTargetFramework),
+		},
+		Solution: spec.Solution{
+			Name:        "StarterPlatform",
+			Description: "Starter microservice platform.",
+		},
+		Services: []spec.Service{
+			{
+				Name: "CatalogService",
+				Entities: []spec.Entity{
+					{
+						Name: "Product",
+						Fields: []spec.Field{
+							{Name: "Id", Type: "Guid"},
+							{Name: "Name", Type: "string"},
+						},
+					},
+				},
+			},
+		},
+	}
 }
 
 func summarizeConfig(cfg spec.Config) ConfigSummary {
@@ -408,5 +463,6 @@ func (filesystemOutputPlanner) PlanOutput(outputDir string, files []GeneratedFil
 		ForceRequired: plan.ForceRequired,
 		ForceUsed:     plan.ForceUsed,
 		Files:         plannedFiles,
+		DeletedFiles:  append([]string(nil), plan.DeletedFiles...),
 	}, nil
 }

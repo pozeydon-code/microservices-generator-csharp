@@ -63,6 +63,7 @@ type Plan struct {
 	ForceRequired bool
 	ForceUsed     bool
 	Files         []PlannedFile
+	DeletedFiles  []string
 }
 
 type PlannedFile struct {
@@ -105,11 +106,13 @@ func PlanOutput(outputDir string, files []generator.GeneratedFile, force bool) (
 		action = PlanActionReplace
 	}
 	plannedFiles := make([]PlannedFile, 0, len(files))
+	plannedPaths := make(map[string]struct{}, len(files))
 	for _, file := range files {
 		cleanPath, err := cleanGeneratedPath(file.Path)
 		if err != nil {
 			return Plan{OutputDir: root}, err
 		}
+		plannedPaths[cleanPath] = struct{}{}
 		fileAction := action
 		if state.exists {
 			fileAction, err = planExistingFileAction(root, cleanPath, file.Content)
@@ -120,6 +123,13 @@ func PlanOutput(outputDir string, files []generator.GeneratedFile, force bool) (
 		plannedFiles = append(plannedFiles, PlannedFile{Path: cleanPath, Action: fileAction})
 	}
 	sort.Slice(plannedFiles, func(i, j int) bool { return plannedFiles[i].Path < plannedFiles[j].Path })
+	deletedFiles := []string(nil)
+	if state.exists {
+		deletedFiles, err = planDeletedFiles(root, plannedPaths)
+		if err != nil {
+			return Plan{OutputDir: root}, err
+		}
+	}
 
 	return Plan{
 		OutputDir:     root,
@@ -127,7 +137,27 @@ func PlanOutput(outputDir string, files []generator.GeneratedFile, force bool) (
 		ForceRequired: state.exists,
 		ForceUsed:     state.exists && force,
 		Files:         plannedFiles,
+		DeletedFiles:  deletedFiles,
 	}, nil
+}
+
+func planDeletedFiles(root string, plannedPaths map[string]struct{}) ([]string, error) {
+	manifest, err := readManifest(root)
+	if err != nil {
+		return nil, fmt.Errorf("inspect existing generated manifest: %w", err)
+	}
+	deletedFiles := []string(nil)
+	for _, file := range manifest.Files {
+		cleanPath, err := cleanGeneratedPath(file.Path)
+		if err != nil {
+			return nil, fmt.Errorf("manifest contains unsafe path %q", file.Path)
+		}
+		if _, planned := plannedPaths[cleanPath]; !planned {
+			deletedFiles = append(deletedFiles, cleanPath)
+		}
+	}
+	sort.Strings(deletedFiles)
+	return deletedFiles, nil
 }
 
 func planExistingFileAction(root, cleanPath string, content []byte) (PlanAction, error) {

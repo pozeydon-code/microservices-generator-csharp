@@ -16,8 +16,8 @@ const (
 	reservedViewRows      = 18
 )
 
-const readyHelp = "Navigate files: up/down, k/j, pgup/pgdown, home/end. Press a to filter by action, r to refresh the plan, g to generate."
-const generatedHelp = "Generation is complete. Navigate files: up/down, k/j, pgup/pgdown, home/end. Press a to filter by action, r to refresh the plan."
+const readyHelp = "Existing JSON: --config <path>. Starter config: --new --config <path>. Navigate files with arrows/k/j/pgup/pgdown/home/end. Press a to filter, e to edit solution settings, r to refresh, g to generate."
+const generatedHelp = "Generation is complete. Existing JSON: --config <path>. Starter config: --new --config <path>. Navigate files with arrows/k/j/pgup/pgdown/home/end. Press a to filter or r to refresh."
 
 type PlanFunc func(application.GenerateRequest) (application.GenerationPlan, error)
 type GenerateFunc func(application.GenerateRequest) (application.GenerateResult, error)
@@ -612,6 +612,8 @@ func (m Model) View() string {
 	var builder strings.Builder
 	fmt.Fprintln(&builder, "Microgen")
 	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, "Config")
+	fmt.Fprintf(&builder, "Source: %s (%s)\n", m.request.ConfigPath, m.configSourceLabel())
 	fmt.Fprintf(&builder, "Product: %s\n", m.plan.Config.SolutionName)
 	if m.plan.Config.SolutionDescription != "" {
 		fmt.Fprintf(&builder, "Description: %s\n", m.plan.Config.SolutionDescription)
@@ -625,11 +627,15 @@ func (m Model) View() string {
 		fmt.Fprintf(&builder, "Service names: %s\n", strings.Join(m.plan.Config.ServiceNames, ", "))
 	}
 	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, "Output Preview")
 	fmt.Fprintf(&builder, "Output directory: %s\n", m.plan.OutputDir)
 	fmt.Fprintf(&builder, "Output action: %s\n", m.plan.OutputAction)
 	fmt.Fprintf(&builder, "Force: required=%s, used=%s\n", yesNo(m.plan.ForceRequired), yesNo(m.plan.ForceUsed))
 	fmt.Fprintf(&builder, "Files planned: %d\n", m.plan.FileCount)
 	fmt.Fprintf(&builder, "Impact: %s\n", m.impactSummary())
+	if m.plan.ExtraFileCount > 0 {
+		fmt.Fprintf(&builder, "Warning: replacement would remove %d previous generated file(s): %s\n", m.plan.ExtraFileCount, deletedFilePreview(m.plan.DeletedFiles))
+	}
 	fmt.Fprintln(&builder)
 	fmt.Fprintln(&builder, "Planned files:")
 
@@ -717,6 +723,28 @@ func (m Model) View() string {
 		fmt.Fprintln(&builder, "Press q, esc, or ctrl+c to quit.")
 	}
 	return builder.String()
+}
+
+func (m Model) configSourceLabel() string {
+	if m.request.ConfigBootstrapped {
+		return "starter config bootstrapped this run"
+	}
+	return "existing JSON"
+}
+
+func deletedFilePreview(files []string) string {
+	if len(files) == 0 {
+		return "none"
+	}
+	limit := len(files)
+	if limit > 3 {
+		limit = 3
+	}
+	preview := strings.Join(files[:limit], ", ")
+	if len(files) > limit {
+		preview += fmt.Sprintf(", and %d more", len(files)-limit)
+	}
+	return preview
 }
 
 func (m Model) renderSettingsEditor(builder *strings.Builder) {

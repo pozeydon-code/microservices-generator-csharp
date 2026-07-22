@@ -30,6 +30,7 @@ func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T)
 			Action:        "replace",
 			ForceRequired: true,
 			ForceUsed:     true,
+			DeletedFiles:  []string{"src/OldEndpoint.cs"},
 			Files: []OutputPlannedFile{
 				{Path: "README.md", Action: "replace"},
 				{Path: "src/ProductService/Product.cs", Action: "unchanged"},
@@ -63,6 +64,9 @@ func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T)
 	if plan.FileCount != 2 {
 		t.Fatalf("expected file count 2, got %d", plan.FileCount)
 	}
+	if plan.ExtraFileCount != 1 || !reflect.DeepEqual(plan.DeletedFiles, []string{"src/OldEndpoint.cs"}) {
+		t.Fatalf("expected deleted file metadata to be mapped, got count=%d files=%#v", plan.ExtraFileCount, plan.DeletedFiles)
+	}
 	expectedSummary := ConfigSummary{
 		SolutionName:        "CommercePlatform",
 		SolutionDescription: "Product management.",
@@ -79,6 +83,52 @@ func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T)
 	expectedFiles := []PlannedFile{{Path: "README.md", Action: "replace"}, {Path: "src/ProductService/Product.cs", Action: "unchanged"}}
 	if !reflect.DeepEqual(plan.Files, expectedFiles) {
 		t.Fatalf("expected planned files %#v, got %#v", expectedFiles, plan.Files)
+	}
+}
+
+func TestServiceCreateStarterConfigSavesValidMinimalConfig(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	service := NewService(Ports{ConfigSaver: saver, ConfigValidator: specValidator{}})
+	path := filepath.Join(t.TempDir(), "microgen.json")
+
+	summary, err := service.CreateStarterConfig(path)
+
+	if err != nil {
+		t.Fatalf("expected starter config creation, got %v", err)
+	}
+	if !saver.called || saver.path != path {
+		t.Fatalf("expected starter config to be saved at %s, called=%v path=%q", path, saver.called, saver.path)
+	}
+	if saver.cfg.SchemaVersion != spec.ConfigSchemaVersion || saver.cfg.Generation.TargetFramework != spec.DefaultTargetFramework || saver.cfg.Generation.SolutionFormat != "sln" {
+		t.Fatalf("expected schema and generation defaults, got %#v", saver.cfg)
+	}
+	if saver.cfg.Solution.Name != "StarterPlatform" || len(saver.cfg.Services) != 1 || len(saver.cfg.Services[0].Entities) != 1 {
+		t.Fatalf("expected starter solution/service/entity, got %#v", saver.cfg)
+	}
+	fields := saver.cfg.Services[0].Entities[0].Fields
+	if len(fields) != 2 || fields[0].Name != "Id" || fields[0].Type != "Guid" || fields[1].Name != "Name" || fields[1].Type != "string" {
+		t.Fatalf("expected starter entity with Guid Id and string Name, got %#v", fields)
+	}
+	if summary.SolutionName != "StarterPlatform" || summary.TargetFramework != spec.DefaultTargetFramework || summary.ServiceCount != 1 || summary.EntityCount != 1 {
+		t.Fatalf("expected starter summary, got %#v", summary)
+	}
+}
+
+func TestServiceCreateStarterConfigRefusesExistingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "microgen.json")
+	if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write existing config: %v", err)
+	}
+	saver := &fakeConfigSaver{}
+	service := NewService(Ports{ConfigSaver: saver, ConfigValidator: specValidator{}})
+
+	_, err := service.CreateStarterConfig(path)
+
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected existing-file refusal, got %v", err)
+	}
+	if saver.called {
+		t.Fatal("expected existing starter config not to be overwritten")
 	}
 }
 

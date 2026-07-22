@@ -22,11 +22,13 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 			ValueObjectCount:    3,
 			ServiceNames:        []string{"ProductService", "OrderService"},
 		},
-		OutputDir:     "/tmp/generated",
-		OutputAction:  "replace",
-		ForceRequired: true,
-		ForceUsed:     true,
-		FileCount:     6,
+		OutputDir:      "/tmp/generated",
+		OutputAction:   "replace",
+		ForceRequired:  true,
+		ForceUsed:      true,
+		FileCount:      6,
+		ExtraFileCount: 1,
+		DeletedFiles:   []string{"src/ProductService/OldEndpoint.cs"},
 		Files: []application.PlannedFile{
 			{Path: "README.md", Action: "replace"},
 			{Path: "src/ProductService/Product.cs", Action: "replace"},
@@ -37,20 +39,24 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 		},
 	}
 
-	view := NewModel(plan, application.GenerateRequest{}, nil, nil, nil).View()
+	view := NewModel(plan, application.GenerateRequest{ConfigPath: "microgen.json"}, nil, nil, nil).View()
 
 	assertContains(t, view, "Microgen")
+	assertContains(t, view, "Config")
+	assertContains(t, view, "Source: microgen.json (existing JSON)")
 	assertContains(t, view, "Product: CommercePlatform")
 	assertContains(t, view, "Description: Product management.")
 	assertContains(t, view, "Target framework: net8.0")
 	assertContains(t, view, "Solution format: .sln")
 	assertContains(t, view, "Services: 2, entities: 3, value objects: 3")
 	assertContains(t, view, "Service names: ProductService, OrderService")
+	assertContains(t, view, "Output Preview")
 	assertContains(t, view, "Output directory: /tmp/generated")
 	assertContains(t, view, "Output action: replace")
 	assertContains(t, view, "Force: required=yes, used=yes")
 	assertContains(t, view, "Files planned: 6")
 	assertContains(t, view, "Impact: create=4, replace=2 (mixed actions)")
+	assertContains(t, view, "Warning: replacement would remove 1 previous generated file(s): src/ProductService/OldEndpoint.cs")
 	assertContains(t, view, "Files 1-5 of 6 (filter: all)")
 	assertContains(t, view, "Selected: 1/6 replace README.md")
 	assertContains(t, view, "> [1/6] replace README.md")
@@ -61,6 +67,22 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	if strings.Contains(view, "tests/ProductService/ProductService.Domain.Tests/ProductTests.cs") {
 		t.Fatalf("expected file preview to be truncated, got view %q", view)
 	}
+}
+
+func TestModelViewShowsBootstrappedConfigSource(t *testing.T) {
+	view := NewModel(plannedFilesPlan(1), application.GenerateRequest{ConfigPath: "starter.json", ConfigBootstrapped: true}, nil, nil, nil).View()
+
+	assertContains(t, view, "Source: starter.json (starter config bootstrapped this run)")
+}
+
+func TestModelViewTruncatesDeletedFilePreview(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.ExtraFileCount = 4
+	plan.DeletedFiles = []string{"old-1.txt", "old-2.txt", "old-3.txt", "old-4.txt"}
+
+	view := NewModel(plan, application.GenerateRequest{ConfigPath: "microgen.json"}, nil, nil, nil).View()
+
+	assertContains(t, view, "Warning: replacement would remove 4 previous generated file(s): old-1.txt, old-2.txt, old-3.txt, and 1 more")
 }
 
 func TestModelViewShowsPlannedFileRangeAndCursor(t *testing.T) {

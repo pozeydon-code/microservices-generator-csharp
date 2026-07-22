@@ -207,6 +207,76 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 	}
 }
 
+func TestRunTUINewCreatesStarterConfigAndStartsProgram(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "microgen.json")
+	outputDir := filepath.Join(t.TempDir(), "generated")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	programStarted := false
+	originalRunTUIProgram := runTUIProgram
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, targetFrameworkSuggestions []string) error {
+		programStarted = true
+		if !request.ConfigBootstrapped || request.ConfigPath != configPath || request.OutputDir != outputDir {
+			t.Fatalf("expected bootstrapped request for new config, got %#v", request)
+		}
+		if plan.Config.SolutionName != "StarterPlatform" || plan.Config.ServiceCount != 1 || plan.Config.EntityCount != 1 || plan.FileCount == 0 {
+			t.Fatalf("expected starter plan, got %#v", plan)
+		}
+		return nil
+	}
+	t.Cleanup(func() { runTUIProgram = originalRunTUIProgram })
+
+	code := Run([]string{"tui", "--new", "--config", configPath, "--output", outputDir}, &stdout, &stderr)
+
+	if code != ExitOK {
+		t.Fatalf("expected success, got code %d stderr %q", code, stderr.String())
+	}
+	if !programStarted {
+		t.Fatal("expected TUI program to start")
+	}
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("expected starter config to be written: %v", err)
+	}
+	for _, want := range []string{"\"schemaVersion\": 1", "\"targetFramework\": \"net8.0\"", "\"name\": \"StarterPlatform\"", "\"name\": \"CatalogService\"", "\"type\": \"Guid\""} {
+		if !strings.Contains(string(content), want) {
+			t.Fatalf("expected starter config to contain %q, got %s", want, content)
+		}
+	}
+	if stdout.String() != "" || stderr.String() != "" {
+		t.Fatalf("expected no CLI output around TUI, got stdout %q stderr %q", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunTUINewRefusesExistingConfig(t *testing.T) {
+	configPath := writeTempConfig(t, validJSONConfig)
+	outputDir := filepath.Join(t.TempDir(), "generated")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	programStarted := false
+	originalRunTUIProgram := runTUIProgram
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, targetFrameworkSuggestions []string) error {
+		programStarted = true
+		return nil
+	}
+	t.Cleanup(func() { runTUIProgram = originalRunTUIProgram })
+
+	code := Run([]string{"tui", "--new", "--config", configPath, "--output", outputDir}, &stdout, &stderr)
+
+	if code != ExitError {
+		t.Fatalf("expected error, got code %d", code)
+	}
+	if programStarted {
+		t.Fatal("expected existing config refusal before starting TUI")
+	}
+	if stdout.String() != "" {
+		t.Fatalf("expected empty stdout, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "already exists") {
+		t.Fatalf("expected existing-file refusal, got stderr %q", stderr.String())
+	}
+}
+
 func TestRunReturnsUsageErrorForUnknownCommand(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -219,7 +289,7 @@ func TestRunReturnsUsageErrorForUnknownCommand(t *testing.T) {
 	if stdout.String() != "" {
 		t.Fatalf("expected empty stdout, got %q", stdout.String())
 	}
-	expectedStderr := "unknown command \"unknown\"\nUsage: microgen generate --config <path> --output <dir> [--force]\n       microgen tui --config <path> --output <dir> [--force]\n  --force replaces only a verified microgen-owned generated directory.\n"
+	expectedStderr := "unknown command \"unknown\"\nUsage: microgen generate --config <path> --output <dir> [--force]\n       microgen tui --config <path> --output <dir> [--force] [--new]\n  --new creates a starter config at --config and refuses to overwrite an existing file.\n  --force replaces only a verified microgen-owned generated directory.\n"
 	if stderr.String() != expectedStderr {
 		t.Fatalf("expected stderr %q, got %q", expectedStderr, stderr.String())
 	}
@@ -245,7 +315,7 @@ func TestRunGenerateHelpExitsOK(t *testing.T) {
 			if code != ExitOK {
 				t.Fatalf("expected OK exit code, got %d stderr %q", code, stderr.String())
 			}
-			expectedStdout := "Usage: microgen generate --config <path> --output <dir> [--force]\n       microgen tui --config <path> --output <dir> [--force]\n  --force replaces only a verified microgen-owned generated directory.\n"
+			expectedStdout := "Usage: microgen generate --config <path> --output <dir> [--force]\n       microgen tui --config <path> --output <dir> [--force] [--new]\n  --new creates a starter config at --config and refuses to overwrite an existing file.\n  --force replaces only a verified microgen-owned generated directory.\n"
 			if stdout.String() != expectedStdout {
 				t.Fatalf("expected stdout %q, got %q", expectedStdout, stdout.String())
 			}

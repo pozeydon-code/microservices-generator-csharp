@@ -121,6 +121,35 @@ func TestPlanOutputReportsPerFileActionsForOwnedOutput(t *testing.T) {
 	}
 }
 
+func TestPlanOutputReportsManifestFilesMissingFromReplacementSet(t *testing.T) {
+	outputDir := writeInitialOutput(t)
+	if err := os.MkdirAll(filepath.Join(outputDir, "src"), 0o755); err != nil {
+		t.Fatalf("create generated directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outputDir, "src", "OldEndpoint.cs"), []byte("old endpoint\n"), 0o644); err != nil {
+		t.Fatalf("write old generated file: %v", err)
+	}
+	if err := writeManifest(outputDir, []generator.GeneratedFile{
+		{Path: "README.md", Content: []byte("original\n")},
+		{Path: "src/OldEndpoint.cs", Content: []byte("old endpoint\n")},
+	}); err != nil {
+		t.Fatalf("update manifest: %v", err)
+	}
+
+	plan, err := PlanOutput(outputDir, []generator.GeneratedFile{{Path: "README.md", Content: []byte("replacement\n")}}, true)
+
+	if err != nil {
+		t.Fatalf("expected plan, got %v", err)
+	}
+	expectedDeletedFiles := []string{"src/OldEndpoint.cs"}
+	if !reflect.DeepEqual(plan.DeletedFiles, expectedDeletedFiles) {
+		t.Fatalf("expected deleted files %#v, got %#v", expectedDeletedFiles, plan.DeletedFiles)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "src", "OldEndpoint.cs")); err != nil {
+		t.Fatalf("expected planning not to delete old file: %v", err)
+	}
+}
+
 func TestPlanOutputRejectsUnknownExistingDirectory(t *testing.T) {
 	outputDir := t.TempDir()
 

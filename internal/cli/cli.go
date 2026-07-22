@@ -52,6 +52,7 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 	configPath := flags.String("config", "", "Path to the microgen JSON configuration file")
 	outputDir := flags.String("output", "", "Directory where generated files will be planned")
 	force := flags.Bool("force", false, "Plan replacement of a verified microgen-owned generated directory")
+	newConfig := flags.Bool("new", false, "Create a starter config at --config before opening the TUI")
 	flags.Usage = func() { printUsage(flags.Output()) }
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -79,6 +80,13 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 		return ExitError
 	}
 	request := application.GenerateRequest{ConfigPath: *configPath, OutputDir: *outputDir, Force: *force}
+	if *newConfig {
+		if _, err := service.CreateStarterConfig(*configPath); err != nil {
+			fmt.Fprintf(stderr, "%v\n", err)
+			return ExitError
+		}
+		request.ConfigBootstrapped = true
+	}
 	plan, err := service.PlanGeneration(request)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
@@ -144,6 +152,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 
 func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "Usage: microgen generate --config <path> --output <dir> [--force]")
-	fmt.Fprintln(writer, "       microgen tui --config <path> --output <dir> [--force]")
+	fmt.Fprintln(writer, "       microgen tui --config <path> --output <dir> [--force] [--new]")
+	fmt.Fprintln(writer, "  --new creates a starter config at --config and refuses to overwrite an existing file.")
 	fmt.Fprintln(writer, "  --force replaces only a verified microgen-owned generated directory.")
 }
