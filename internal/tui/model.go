@@ -16,8 +16,8 @@ const (
 	reservedViewRows      = 18
 )
 
-const readyHelp = "Existing JSON: --config <path>. Starter config: --new --config <path>. Navigate files with arrows/k/j/pgup/pgdown/home/end. Press a to filter, e to edit solution settings, r to refresh, g to generate."
-const generatedHelp = "Generation is complete. Existing JSON: --config <path>. Starter config: --new --config <path>. Navigate files with arrows/k/j/pgup/pgdown/home/end. Press a to filter or r to refresh."
+const readyHelp = "Navigate files: arrows/k/j/pgup/pgdown/home/end. Actions: g generate, e edit settings, r refresh, a filter."
+const generatedHelp = "Navigate files: arrows/k/j/pgup/pgdown/home/end. Actions: r refresh, a filter."
 
 type PlanFunc func(application.GenerateRequest) (application.GenerationPlan, error)
 type GenerateFunc func(application.GenerateRequest) (application.GenerateResult, error)
@@ -610,39 +610,52 @@ func (m Model) saveSettingsCmd() tea.Cmd {
 
 func (m Model) View() string {
 	var builder strings.Builder
-	fmt.Fprintln(&builder, "Microgen")
+	fmt.Fprintf(&builder, "Microgen - %s\n", m.statusLabel())
+	fmt.Fprintf(&builder, "Primary: %s\n", m.primaryAction())
 	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, "Config")
-	fmt.Fprintf(&builder, "Source: %s (%s)\n", m.request.ConfigPath, m.configSourceLabel())
-	fmt.Fprintf(&builder, "Product: %s\n", m.plan.Config.SolutionName)
+	fmt.Fprintln(&builder, "== Config ==")
+	fmt.Fprintf(&builder, "Source       %s (%s)\n", m.request.ConfigPath, m.configSourceLabel())
+	if m.request.ConfigBootstrapped {
+		fmt.Fprintln(&builder, "             Created starter config. Edit settings incrementally; service/entity/field editing comes later.")
+	}
+	fmt.Fprintf(&builder, "Product      %s\n", m.plan.Config.SolutionName)
 	if m.plan.Config.SolutionDescription != "" {
-		fmt.Fprintf(&builder, "Description: %s\n", m.plan.Config.SolutionDescription)
+		fmt.Fprintf(&builder, "Description  %s\n", m.plan.Config.SolutionDescription)
 	}
-	fmt.Fprintf(&builder, "Target framework: %s\n", m.plan.Config.TargetFramework)
+	fmt.Fprintf(&builder, "Target       %s\n", m.plan.Config.TargetFramework)
 	if m.plan.Config.SolutionFormat != "" {
-		fmt.Fprintf(&builder, "Solution format: .%s\n", m.plan.Config.SolutionFormat)
+		fmt.Fprintf(&builder, "Format       .%s\n", m.plan.Config.SolutionFormat)
 	}
-	fmt.Fprintf(&builder, "Services: %d, entities: %d, value objects: %d\n", m.plan.Config.ServiceCount, m.plan.Config.EntityCount, m.plan.Config.ValueObjectCount)
+	fmt.Fprintf(&builder, "Contents     %d services, %d entities, %d value objects\n", m.plan.Config.ServiceCount, m.plan.Config.EntityCount, m.plan.Config.ValueObjectCount)
 	if len(m.plan.Config.ServiceNames) > 0 {
-		fmt.Fprintf(&builder, "Service names: %s\n", strings.Join(m.plan.Config.ServiceNames, ", "))
+		fmt.Fprintf(&builder, "Services     %s\n", strings.Join(m.plan.Config.ServiceNames, ", "))
 	}
 	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, "Output Preview")
-	fmt.Fprintf(&builder, "Output directory: %s\n", m.plan.OutputDir)
-	fmt.Fprintf(&builder, "Output action: %s\n", m.plan.OutputAction)
-	fmt.Fprintf(&builder, "Force: required=%s, used=%s\n", yesNo(m.plan.ForceRequired), yesNo(m.plan.ForceUsed))
-	fmt.Fprintf(&builder, "Files planned: %d\n", m.plan.FileCount)
-	fmt.Fprintf(&builder, "Impact: %s\n", m.impactSummary())
+	fmt.Fprintln(&builder, "== Output Preview ==")
+	fmt.Fprintf(&builder, "Directory    %s\n", m.plan.OutputDir)
+	fmt.Fprintf(&builder, "Write mode   %s\n", m.plan.OutputAction)
+	fmt.Fprintf(&builder, "Force        required=%s, used=%s\n", yesNo(m.plan.ForceRequired), yesNo(m.plan.ForceUsed))
+	fmt.Fprintf(&builder, "Files        %d planned\n", m.plan.FileCount)
+	impact := m.impactSummary()
+	fmt.Fprintf(&builder, "Impact       %s\n", impact)
+	if m.plan.FileCount > 0 && impact == "unchanged only" {
+		fmt.Fprintln(&builder, "             No generated file content changes detected.")
+	}
 	if m.plan.ExtraFileCount > 0 {
-		fmt.Fprintf(&builder, "Warning: replacement would remove %d previous generated file(s): %s\n", m.plan.ExtraFileCount, deletedFilePreview(m.plan.DeletedFiles))
+		fmt.Fprintf(&builder, "DANGER       replacement removes %d previous generated file(s)\n", m.plan.ExtraFileCount)
+		fmt.Fprintf(&builder, "             %s\n", deletedFilePreview(m.plan.DeletedFiles))
 	}
 	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, "Planned files:")
+	fmt.Fprintln(&builder, "== Planned Files ==")
 
 	indices := m.filteredFileIndices()
 	fileCount := len(indices)
 	if fileCount == 0 {
-		fmt.Fprintln(&builder, "- No files planned")
+		if m.actionFilter != "" {
+			fmt.Fprintf(&builder, "No files match filter %q. Press a to reset the filter.\n", m.actionFilter)
+		} else {
+			fmt.Fprintln(&builder, "No files planned.")
+		}
 	} else {
 		start := m.fileOffset
 		end := start + m.visibleFileRows()
@@ -654,6 +667,9 @@ func (m Model) View() string {
 			filter = m.actionFilter
 		}
 		fmt.Fprintf(&builder, "Files %d-%d of %d (filter: %s)\n", start+1, end, fileCount, filter)
+		if m.actionFilter != "" {
+			fmt.Fprintln(&builder, "Filter       Press a to cycle filters back to all.")
+		}
 		selectedPosition := m.selectedFilteredPosition(indices)
 		if selectedPosition >= 0 {
 			selectedFile := m.plan.Files[indices[selectedPosition]]
@@ -675,43 +691,42 @@ func (m Model) View() string {
 		fmt.Fprintln(&builder)
 	}
 	if m.status == statusEditing || m.status == statusSaving {
+		fmt.Fprintln(&builder, "== Actions ==")
 		m.renderSettingsEditor(&builder)
 		return builder.String()
 	}
+	fmt.Fprintln(&builder, "== Actions ==")
 	switch m.status {
 	case statusReady:
-		fmt.Fprintln(&builder, "Press r to refresh the plan or g to generate files. Generation writes files to the output directory.")
+		fmt.Fprintln(&builder, "g Generate files into the output directory.")
+		fmt.Fprintln(&builder, "e Edit solution settings. Service, entity, field, and value-object editing is not available yet.")
 	case statusRefreshing:
-		fmt.Fprintln(&builder, "Refreshing plan...")
-		fmt.Fprintln(&builder, "Please wait while the read-only plan refresh finishes. Press q, esc, or ctrl+c to quit.")
+		fmt.Fprintln(&builder, "Refreshing plan. Please wait; editing, filtering, and generation are paused.")
 	case statusGenerating:
-		fmt.Fprintln(&builder, "Generating files...")
-		fmt.Fprintln(&builder, "Generation is in progress. Exit will be available after it finishes.")
+		fmt.Fprintln(&builder, "Generating files. Please wait; exit is available after generation finishes.")
 	case statusGenerated:
 		fmt.Fprintf(&builder, "Generated %d files in %s.\n", m.result.Plan.FileCount, m.result.OutputDir)
 		if m.result.Warning != "" {
-			fmt.Fprintf(&builder, "Warning: %s\n", m.result.Warning)
+			fmt.Fprintf(&builder, "WARNING      %s\n", m.result.Warning)
 		}
 	case statusSaving:
-		fmt.Fprintln(&builder, "Saving settings...")
-		fmt.Fprintln(&builder, "Save is in progress. Exit will be available after it finishes.")
+		fmt.Fprintln(&builder, "Saving settings. Please wait; exit is available after save finishes.")
 	case statusFailed:
 		context := m.errContext
 		if context == "" {
 			context = "Generation"
 		}
-		fmt.Fprintf(&builder, "%s failed: %v\n", context, m.err)
+		fmt.Fprintf(&builder, "FAILED       %s failed: %v\n", context, m.err)
 		if m.errContext == "Refresh after save" {
-			fmt.Fprintln(&builder, "Only refresh retry is available until the plan refresh succeeds.")
+			fmt.Fprintln(&builder, "r Retry plan refresh. Other actions stay locked until refresh succeeds.")
 		} else {
-			fmt.Fprintln(&builder, "Press r to refresh the plan or g to retry generation.")
+			fmt.Fprintln(&builder, "g Retry generation, or r refresh the plan first.")
 		}
 	}
 	fmt.Fprintln(&builder)
 	if m.status != statusGenerating && m.status != statusRefreshing {
 		if m.postSaveRefreshFailed() {
-			fmt.Fprintln(&builder, "Press r to retry the plan refresh.")
-			fmt.Fprintln(&builder, "Press q, esc, or ctrl+c to quit.")
+			fmt.Fprintln(&builder, "Keys: r retry refresh | q/esc/ctrl+c quit")
 			return builder.String()
 		}
 		if m.status == statusGenerated {
@@ -719,10 +734,55 @@ func (m Model) View() string {
 		} else {
 			fmt.Fprintln(&builder, readyHelp)
 		}
-		fmt.Fprintln(&builder, "Press e to edit solution settings. Service, entity, field, and value-object editing is not available yet.")
-		fmt.Fprintln(&builder, "Press q, esc, or ctrl+c to quit.")
+		fmt.Fprintln(&builder, "Config modes: existing JSON with --config <path>; starter JSON with --new --config <path>.")
+		fmt.Fprintln(&builder, "Exit: q/esc/ctrl+c")
 	}
 	return builder.String()
+}
+
+func (m Model) statusLabel() string {
+	switch m.status {
+	case statusReady:
+		return "READY"
+	case statusRefreshing:
+		return "REFRESHING"
+	case statusGenerating:
+		return "GENERATING"
+	case statusGenerated:
+		return "GENERATED"
+	case statusFailed:
+		return "FAILED"
+	case statusEditing:
+		return "EDITING"
+	case statusSaving:
+		return "SAVING"
+	default:
+		return "READY"
+	}
+}
+
+func (m Model) primaryAction() string {
+	switch m.status {
+	case statusReady:
+		return "g Generate"
+	case statusRefreshing:
+		return "Refreshing plan"
+	case statusGenerating:
+		return "Generating files"
+	case statusGenerated:
+		return "r Refresh"
+	case statusFailed:
+		if m.postSaveRefreshFailed() {
+			return "r Retry refresh"
+		}
+		return "g Retry generation"
+	case statusEditing:
+		return "enter Save settings"
+	case statusSaving:
+		return "Saving settings"
+	default:
+		return "g Generate"
+	}
 }
 
 func (m Model) configSourceLabel() string {
@@ -802,6 +862,9 @@ func (m Model) impactSummary() string {
 	}
 	if len(parts) > 1 {
 		return strings.Join(parts, ", ") + " (mixed actions)"
+	}
+	if actions[0] == "unchanged" {
+		return "unchanged only"
 	}
 	return parts[0]
 }
