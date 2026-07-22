@@ -103,7 +103,7 @@ public sealed class {{ .Entity.Name }}Repository({{ .Service.Name }}DbContext db
     private EntitySnapshot<{{ .Entity.Name }}> ToSnapshot({{ .Entity.Name }} entity) =>
         new(entity, Convert.ToBase64String((byte[])dbContext.Entry(entity).Property("RowVersion").CurrentValue!));
 
-    private async Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync(DomainReconstitutionException exception, Guid? id, CancellationToken cancellationToken)
+{{ if .Entity.HasValueObjectFields }}    private async Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync(DomainReconstitutionException exception, Guid? id, CancellationToken cancellationToken)
     {
         await Task.CompletedTask;
         var code = exception.InvariantCodes.Count > 0 ? exception.InvariantCodes[0] : string.Empty;
@@ -134,7 +134,14 @@ public sealed class {{ .Entity.Name }}Repository({{ .Service.Name }}DbContext db
         }
 {{ end }}{{ end }}        return (string.Empty, []);
     }
-
+{{ else }}    private static Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync(DomainReconstitutionException exception, Guid? id, CancellationToken cancellationToken)
+    {
+        _ = exception;
+        _ = id;
+        _ = cancellationToken;
+        return Task.FromResult<(string Field, IReadOnlyList<Guid> RecordIds)>((string.Empty, []));
+    }
+{{ end }}
     private void RecordReconstitutionFailure(System.Diagnostics.Activity? activity, DomainReconstitutionException exception, string operation, string field, IReadOnlyList<Guid> recordIds)
     {
         var recordIdsText = string.Join(",", recordIds);

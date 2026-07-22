@@ -507,6 +507,61 @@ func TestGenerateRecordEntityTestsUseDomainAliases(t *testing.T) {
 	}
 }
 
+func TestGenerateRecordRepositoryDiagnosticsAvoidsInstanceAnalyzerWarningWithoutValueObjects(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	tests := []struct {
+		name                 string
+		cfg                  spec.Config
+		expectedSignature    string
+		unexpectedSignature  string
+		expectedDbContextUse string
+	}{
+		{
+			name:                "zero value objects",
+			cfg:                 recordCollisionConfig(false),
+			expectedSignature:   "private static Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync",
+			unexpectedSignature: "private async Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync",
+		},
+		{
+			name:                 "value object backed",
+			cfg:                  recordCollisionConfig(true),
+			expectedSignature:    "private async Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync",
+			unexpectedSignature:  "private static Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync",
+			expectedDbContextUse: "await dbContext.Database.SqlQueryRaw<Guid>(sql, id.Value).ToListAsync(cancellationToken)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			files, err := gen.Generate(tt.cfg)
+			if err != nil {
+				t.Fatalf("generate: %v", err)
+			}
+			repository := string(generatedContent(t, files, "src/RecordService/RecordService.Infrastructure/Persistence/Features/Records/RecordRepository.cs"))
+
+			assertContains(t, repository, tt.expectedSignature)
+			assertNotContains(t, repository, tt.unexpectedSignature)
+			if tt.expectedDbContextUse != "" {
+				assertContains(t, repository, tt.expectedDbContextUse)
+			}
+		})
+	}
+}
+
+func TestGenerateRecordCollisionZeroValueObjectRuntimeBuild(t *testing.T) {
+	cfg := recordCollisionConfig(false)
+	cfg.Generation.TargetFramework = "net10.0"
+	workspace := generateWorkspace(t, cfg)
+	dotnet := locateDotnet(t)
+
+	runDotnetRuntimeCommand(t, dotnet, workspace, "restore", workspace.solutionPath)
+	runDotnetRuntimeCommand(t, dotnet, workspace, "build", "--no-restore", workspace.solutionPath)
+}
+
 func TestGenerateUsesParameterizedRepositoryDiagnostics(t *testing.T) {
 	gen, err := New()
 	if err != nil {
@@ -675,14 +730,18 @@ type generatedWorkspace struct {
 
 func generateExampleWorkspace(t *testing.T, targetFramework, solutionFormat string) generatedWorkspace {
 	t.Helper()
+	cfg := exampleConfig(t)
+	cfg.Generation.TargetFramework = targetFramework
+	cfg.Generation.SolutionFormat = solutionFormat
+	return generateWorkspace(t, cfg)
+}
+
+func generateWorkspace(t *testing.T, cfg spec.Config) generatedWorkspace {
+	t.Helper()
 	gen, err := New()
 	if err != nil {
 		t.Fatalf("new generator: %v", err)
 	}
-	cfg := exampleConfig(t)
-	cfg.Generation.TargetFramework = targetFramework
-	cfg.Generation.SolutionFormat = solutionFormat
-
 	files, err := gen.Generate(cfg)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
