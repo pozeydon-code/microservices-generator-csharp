@@ -127,6 +127,9 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/ProductServiceDbContext.cs"], "HasConversion(value => value.Value, value => ProductName.Rehydrate(value))")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.EntityFrameworkCore.SqlServer\" Version=\"8.0.28")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.AspNetCore.Mvc.Testing\" Version=\"8.0.28")
+	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.Data.SqlClient\" Version=\"6.1.1")
+	assertContains(t, contentByPath["Directory.Packages.props"], "System.Security.Cryptography.Xml\" Version=\"8.0.4")
+	assertContains(t, contentByPath["Directory.Packages.props"], "CentralPackageTransitivePinningEnabled>true")
 	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj"], "Microsoft.EntityFrameworkCore.SqlServer")
 	assertContains(t, contentByPath["src/ProductService/ProductService.Host/ProductService.Host.csproj"], "ProductService.Infrastructure.csproj")
 	assertContains(t, contentByPath["src/ProductService/ProductService.Host/ProductService.Host.csproj"], "ProductService.Api.csproj")
@@ -188,6 +191,7 @@ func TestGenerateUsesSelectedTargetFramework(t *testing.T) {
 	assertContains(t, props, "<TargetFramework>net9.0</TargetFramework>")
 	assertContains(t, packages, `Microsoft.AspNetCore.Mvc.Testing" Version="9.0.7`)
 	assertContains(t, packages, `Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.7`)
+	assertContains(t, packages, `System.Security.Cryptography.Xml" Version="9.0.18`)
 	assertContains(t, metadata, `"targetFramework": "net9.0"`)
 	assertNotContains(t, props, "net8.0")
 	assertNotContains(t, packages, "Version=\"8.0.28")
@@ -249,11 +253,13 @@ func TestGenerateSlnxReferencesAllProjectsDeterministically(t *testing.T) {
 		t.Fatalf("generate: %v", err)
 	}
 	slnx := string(generatedContent(t, files, "CommercePlatform.slnx"))
+	packages := string(generatedContent(t, files, "Directory.Packages.props"))
 
 	assertContains(t, slnx, "<Solution>\n")
 	assertContains(t, slnx, `  <Project Path="src/ProductService/ProductService.Api/ProductService.Api.csproj" />`)
 	assertContains(t, slnx, `  <Project Path="tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj" />`)
 	assertNotContains(t, slnx, "ProjectConfigurationPlatforms")
+	assertContains(t, packages, `System.Security.Cryptography.Xml" Version="10.0.10`)
 }
 
 func TestGenerateExampleSolutionFilesAreRuntimeParseable(t *testing.T) {

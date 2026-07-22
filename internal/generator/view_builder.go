@@ -18,6 +18,7 @@ type SolutionTemplateData struct {
 	SolutionFileName           string
 	AspNetCorePackageVersion   string
 	EntityFrameworkCoreVersion string
+	CryptographyXmlVersion     string
 	Services                   []ServiceView
 	Projects                   []ProjectView
 }
@@ -138,6 +139,7 @@ func buildSolutionView(cfg spec.Config) SolutionTemplateData {
 		SolutionFileName:           cfg.Solution.Name + "." + solutionFormat,
 		AspNetCorePackageVersion:   dotNetPackageVersion(targetFramework),
 		EntityFrameworkCoreVersion: dotNetPackageVersion(targetFramework),
+		CryptographyXmlVersion:     cryptographyXmlPackageVersion(targetFramework),
 		Services:                   make([]ServiceView, 0, len(services)),
 	}
 	for _, service := range services {

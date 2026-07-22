@@ -83,7 +83,7 @@ public sealed class ProductServiceArchitectureTests
     private static string FindSolutionRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current is not null && !current.EnumerateFiles("*.sln").Any())
+        while (current is not null && !current.EnumerateFiles("*.sln").Any() && !current.EnumerateFiles("*.slnx").Any())
         {
             current = current.Parent;
         }

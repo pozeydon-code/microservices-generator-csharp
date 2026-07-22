@@ -19,6 +19,7 @@ public sealed class {{ .Name }}InfrastructureTests
     [Fact]
     public async Task ReadinessReportsSchemaHealthTransitions()
     {
+        if (!SqlTestDatabase.IsConfigured) { return; }
         var databaseName = $"{{ .Name }}_readiness_{Guid.NewGuid():N}";
         await using var database = new SqlTestDatabase(databaseName);
 
@@ -46,6 +47,7 @@ public sealed class {{ .Name }}InfrastructureTests
 {{ if .ReadinessLengthField }}    [Fact]
     public async Task ReadinessRejectsIncorrectStringValueObjectMaxLengthNullabilityAndPreflightFindsViolations()
     {
+        if (!SqlTestDatabase.IsConfigured) { return; }
         var databaseName = $"{{ .Name }}_readiness_length_{Guid.NewGuid():N}";
         await using var database = new SqlTestDatabase(databaseName);
         await database.InitializeAsync();
@@ -71,6 +73,7 @@ public sealed class {{ .Name }}InfrastructureTests
     [Fact]
     public async Task ValueObjectPreflightDetectsRepairsAndClearsSqlSafeViolations()
     {
+        if (!SqlTestDatabase.IsConfigured) { return; }
         var databaseName = $"{{ .Name }}_preflight_{Guid.NewGuid():N}";
         await using var database = new SqlTestDatabase(databaseName);
         await database.InitializeAsync();
@@ -110,6 +113,7 @@ public sealed class {{ .Name }}InfrastructureTests
 {{ range .Entities }}    [Fact]
     public async Task {{ .Name }}RepositoryPersistsReloadsConcurrencyAndConflicts()
     {
+        if (!SqlTestDatabase.IsConfigured) { return; }
         var databaseName = $"{{ $.Name }}_{{ .Name }}_{Guid.NewGuid():N}";
         await using var database = new SqlTestDatabase(databaseName);
         await database.InitializeAsync();
@@ -158,6 +162,7 @@ public sealed class {{ .Name }}InfrastructureTests
     [Fact]
     public async Task {{ .Name }}RepositoryMapsTwoContextConcurrencyRaceToConflict()
     {
+        if (!SqlTestDatabase.IsConfigured) { return; }
         var databaseName = $"{{ $.Name }}_{{ .Name }}_race_{Guid.NewGuid():N}";
         await using var database = new SqlTestDatabase(databaseName);
         await database.InitializeAsync();
@@ -184,6 +189,7 @@ public sealed class {{ .Name }}InfrastructureTests
 {{ $entity := . }}{{ range $corrupt := .NonIDFields }}{{ if $corrupt.IsValueObject }}    [Fact]
     public async Task {{ $entity.Name }}RepositoryRejectsCorruptPersisted{{ $corrupt.Name }}Value()
     {
+        if (!SqlTestDatabase.IsConfigured) { return; }
         var databaseName = $"{{ $.Name }}_{{ $entity.Name }}_corrupt_{{ $corrupt.Name }}_{Guid.NewGuid():N}";
         await using var database = new SqlTestDatabase(databaseName);
         await database.InitializeAsync();
@@ -247,6 +253,8 @@ public sealed class {{ .Name }}InfrastructureTests
 
     private sealed class SqlTestDatabase(string databaseName) : IAsyncDisposable
     {
+        public static bool IsConfigured => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MICROGEN_TEST_SQLSERVER"));
+
         private readonly string connectionString = BuildConnectionString(databaseName);
 
         public async Task InitializeAsync()
