@@ -52,6 +52,14 @@ Domain <- Application <- Infrastructure
 Application + Api + Infrastructure <- Host
 ```
 
+## Generated dependency policy
+
+Generated workspaces centralize NuGet versions in `Directory.Packages.props`. The generator chooses ASP.NET Core, EF Core, SqlClient, and `System.Security.Cryptography.Xml` versions from a target-framework dependency policy table, so `net10.0` and future targets are deliberate generator behavior rather than scattered template literals.
+
+NuGet audit remains enabled in generated workspaces. `CentralPackageTransitivePinningEnabled` is also enabled so the central XML package pin can override vulnerable transitives; NuGet still rejects unsafe downgrades with NU1109 instead of hiding audit failures.
+
+When `dotnet` is available, the generator test harness validates a generated `net10.0` `.slnx` workspace with restore, build, and test runtime commands.
+
 ## Command
 
 ```bash

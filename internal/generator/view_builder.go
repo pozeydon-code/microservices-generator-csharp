@@ -17,7 +17,9 @@ type SolutionTemplateData struct {
 	SolutionFormat             string
 	SolutionFileName           string
 	AspNetCorePackageVersion   string
+	AspNetCoreTestingVersion   string
 	EntityFrameworkCoreVersion string
+	SqlClientVersion           string
 	CryptographyXmlVersion     string
 	Services                   []ServiceView
 	Projects                   []ProjectView
@@ -132,14 +134,17 @@ func buildSolutionView(cfg spec.Config) SolutionTemplateData {
 	services := sortedServices(cfg.Services)
 	targetFramework := cfg.TargetFramework()
 	solutionFormat := cfg.SolutionFormat()
+	dependencyPolicy := dependencyPolicyForTargetFramework(targetFramework)
 	view := SolutionTemplateData{
 		Solution:                   cfg.Solution,
 		TargetFramework:            targetFramework,
 		SolutionFormat:             solutionFormat,
 		SolutionFileName:           cfg.Solution.Name + "." + solutionFormat,
-		AspNetCorePackageVersion:   dotNetPackageVersion(targetFramework),
-		EntityFrameworkCoreVersion: dotNetPackageVersion(targetFramework),
-		CryptographyXmlVersion:     cryptographyXmlPackageVersion(targetFramework),
+		AspNetCorePackageVersion:   dependencyPolicy.AspNetCorePackageVersion,
+		AspNetCoreTestingVersion:   dependencyPolicy.AspNetCoreTestingPackageVersion,
+		EntityFrameworkCoreVersion: dependencyPolicy.EntityFrameworkCorePackageVersion,
+		SqlClientVersion:           dependencyPolicy.SqlClientPackageVersion,
+		CryptographyXmlVersion:     dependencyPolicy.CryptographyXmlPackageVersion,
 		Services:                   make([]ServiceView, 0, len(services)),
 	}
 	for _, service := range services {

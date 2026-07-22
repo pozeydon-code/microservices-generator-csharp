@@ -129,6 +129,9 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.AspNetCore.Mvc.Testing\" Version=\"8.0.28")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.Data.SqlClient\" Version=\"6.1.1")
 	assertContains(t, contentByPath["Directory.Packages.props"], "System.Security.Cryptography.Xml\" Version=\"8.0.4")
+	assertContains(t, contentByPath["Directory.Packages.props"], "Package versions are generated from one target-framework policy table.")
+	assertContains(t, contentByPath["Directory.Packages.props"], "Allows central PackageVersion entries to override vulnerable transitives; NuGet rejects downgrades with NU1109.")
+	assertContains(t, contentByPath["Directory.Packages.props"], "Pinned for NuGet audit safety when EF/Core build transitives request vulnerable XML versions.")
 	assertContains(t, contentByPath["Directory.Packages.props"], "CentralPackageTransitivePinningEnabled>true")
 	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj"], "Microsoft.EntityFrameworkCore.SqlServer")
 	assertContains(t, contentByPath["src/ProductService/ProductService.Host/ProductService.Host.csproj"], "ProductService.Infrastructure.csproj")
@@ -167,6 +170,49 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 				t.Fatalf("generated file %s contains forbidden text %q", path, forbidden)
 			}
 		}
+	}
+}
+
+func TestGenerateDirectoryPackagesPropsUsesDependencyPolicy(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	tests := []struct {
+		name            string
+		targetFramework string
+		aspNetCore      string
+		aspNetCoreTest  string
+		entityFramework string
+		sqlClient       string
+		cryptographyXML string
+	}{
+		{name: "net8", targetFramework: "net8.0", aspNetCore: "8.0.28", aspNetCoreTest: "8.0.28", entityFramework: "8.0.28", sqlClient: "6.1.1", cryptographyXML: "8.0.4"},
+		{name: "net9", targetFramework: "net9.0", aspNetCore: "9.0.7", aspNetCoreTest: "9.0.7", entityFramework: "9.0.7", sqlClient: "6.1.1", cryptographyXML: "9.0.18"},
+		{name: "net10", targetFramework: "net10.0", aspNetCore: "10.0.0", aspNetCoreTest: "10.0.0", entityFramework: "10.0.0", sqlClient: "6.1.1", cryptographyXML: "10.0.10"},
+		{name: "net11", targetFramework: "net11.0", aspNetCore: "11.0.0", aspNetCoreTest: "11.0.0", entityFramework: "11.0.0", sqlClient: "6.1.1", cryptographyXML: "10.0.10"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := testConfig()
+			cfg.Generation.TargetFramework = tt.targetFramework
+
+			files, err := gen.Generate(cfg)
+			if err != nil {
+				t.Fatalf("generate: %v", err)
+			}
+			packages := string(generatedContent(t, files, "Directory.Packages.props"))
+
+			assertContains(t, packages, "<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>")
+			assertContains(t, packages, "<CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>")
+			assertContains(t, packages, `Microsoft.AspNetCore.Authentication.JwtBearer" Version="`+tt.aspNetCore+`"`)
+			assertContains(t, packages, `Microsoft.AspNetCore.Mvc.Testing" Version="`+tt.aspNetCoreTest+`"`)
+			assertContains(t, packages, `Microsoft.EntityFrameworkCore.Design" Version="`+tt.entityFramework+`"`)
+			assertContains(t, packages, `Microsoft.EntityFrameworkCore.SqlServer" Version="`+tt.entityFramework+`"`)
+			assertContains(t, packages, `Microsoft.Data.SqlClient" Version="`+tt.sqlClient+`"`)
+			assertContains(t, packages, `System.Security.Cryptography.Xml" Version="`+tt.cryptographyXML+`"`)
+		})
 	}
 }
 
