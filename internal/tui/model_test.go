@@ -50,9 +50,11 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	assertContains(t, view, "Output action: replace")
 	assertContains(t, view, "Force: required=yes, used=yes")
 	assertContains(t, view, "Files planned: 6")
-	assertContains(t, view, "Files 1-5 of 6")
-	assertContains(t, view, "> replace README.md")
-	assertContains(t, view, "  create tests/ProductService/ProductService.Api.Tests/ProductEndpointsTests.cs")
+	assertContains(t, view, "Impact: create=4, replace=2 (mixed actions)")
+	assertContains(t, view, "Files 1-5 of 6 (filter: all)")
+	assertContains(t, view, "Selected: 1/6 replace README.md")
+	assertContains(t, view, "> [1/6] replace README.md")
+	assertContains(t, view, "  [5/6] create tests/ProductService/ProductService.Api.Tests/ProductEndpointsTests.cs")
 	assertContains(t, view, "Press r to refresh the plan or g to generate files. Generation writes files to the output directory.")
 	assertContains(t, view, readyHelp)
 	assertContains(t, view, "Press q, esc, or ctrl+c to quit.")
@@ -64,9 +66,10 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 func TestModelViewShowsPlannedFileRangeAndCursor(t *testing.T) {
 	view := NewModel(plannedFilesPlan(6), application.GenerateRequest{}, nil, nil, nil).View()
 
-	assertContains(t, view, "Files 1-5 of 6")
-	assertContains(t, view, "> create file-01.txt")
-	assertContains(t, view, "  create file-05.txt")
+	assertContains(t, view, "Files 1-5 of 6 (filter: all)")
+	assertContains(t, view, "Selected: 1/6 create file-01.txt")
+	assertContains(t, view, "> [1/6] create file-01.txt")
+	assertContains(t, view, "  [5/6] create file-05.txt")
 	assertNotContains(t, view, "file-06.txt")
 }
 
@@ -78,8 +81,8 @@ func TestModelUpdateMovesPlannedFileCursorAndWindow(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("expected no command")
 	}
-	assertContains(t, model.View(), "Files 1-5 of 7")
-	assertContains(t, model.View(), "> create file-02.txt")
+	assertContains(t, model.View(), "Files 1-5 of 7 (filter: all)")
+	assertContains(t, model.View(), "> [2/7] create file-02.txt")
 
 	for range 4 {
 		updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
@@ -89,8 +92,8 @@ func TestModelUpdateMovesPlannedFileCursorAndWindow(t *testing.T) {
 		}
 	}
 	view := model.View()
-	assertContains(t, view, "Files 2-6 of 7")
-	assertContains(t, view, "> create file-06.txt")
+	assertContains(t, view, "Files 2-6 of 7 (filter: all)")
+	assertContains(t, view, "> [6/7] create file-06.txt")
 	assertNotContains(t, view, "file-01.txt")
 
 	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyUp})
@@ -99,8 +102,8 @@ func TestModelUpdateMovesPlannedFileCursorAndWindow(t *testing.T) {
 		t.Fatal("expected no command")
 	}
 	view = model.View()
-	assertContains(t, view, "Files 2-6 of 7")
-	assertContains(t, view, "> create file-05.txt")
+	assertContains(t, view, "Files 2-6 of 7 (filter: all)")
+	assertContains(t, view, "> [5/7] create file-05.txt")
 }
 
 func TestModelUpdateClampsPlannedFileNavigationBounds(t *testing.T) {
@@ -109,16 +112,16 @@ func TestModelUpdateClampsPlannedFileNavigationBounds(t *testing.T) {
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyUp})
 	model = updated.(Model)
 	view := model.View()
-	assertContains(t, view, "Files 1-3 of 3")
-	assertContains(t, view, "> create file-01.txt")
+	assertContains(t, view, "Files 1-3 of 3 (filter: all)")
+	assertContains(t, view, "> [1/3] create file-01.txt")
 
 	for range 5 {
 		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
 		model = updated.(Model)
 	}
 	view = model.View()
-	assertContains(t, view, "Files 1-3 of 3")
-	assertContains(t, view, "> create file-03.txt")
+	assertContains(t, view, "Files 1-3 of 3 (filter: all)")
+	assertContains(t, view, "> [3/3] create file-03.txt")
 }
 
 func TestModelUpdateSupportsPlannedFileHomeEndAndPageKeys(t *testing.T) {
@@ -127,26 +130,26 @@ func TestModelUpdateSupportsPlannedFileHomeEndAndPageKeys(t *testing.T) {
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
 	model = updated.(Model)
 	view := model.View()
-	assertContains(t, view, "Files 2-6 of 12")
-	assertContains(t, view, "> create file-06.txt")
+	assertContains(t, view, "Files 2-6 of 12 (filter: all)")
+	assertContains(t, view, "> [6/12] create file-06.txt")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
 	model = updated.(Model)
 	view = model.View()
-	assertContains(t, view, "Files 1-5 of 12")
-	assertContains(t, view, "> create file-01.txt")
+	assertContains(t, view, "Files 1-5 of 12 (filter: all)")
+	assertContains(t, view, "> [1/12] create file-01.txt")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnd})
 	model = updated.(Model)
 	view = model.View()
-	assertContains(t, view, "Files 8-12 of 12")
-	assertContains(t, view, "> create file-12.txt")
+	assertContains(t, view, "Files 8-12 of 12 (filter: all)")
+	assertContains(t, view, "> [12/12] create file-12.txt")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyHome})
 	model = updated.(Model)
 	view = model.View()
-	assertContains(t, view, "Files 1-5 of 12")
-	assertContains(t, view, "> create file-01.txt")
+	assertContains(t, view, "Files 1-5 of 12 (filter: all)")
+	assertContains(t, view, "> [1/12] create file-01.txt")
 }
 
 func TestModelUpdateWindowSizeChangesVisibleFileRange(t *testing.T) {
@@ -158,8 +161,8 @@ func TestModelUpdateWindowSizeChangesVisibleFileRange(t *testing.T) {
 		t.Fatal("expected no command")
 	}
 	view := model.View()
-	assertContains(t, view, "Files 1-6 of 20")
-	assertContains(t, view, "  create file-06.txt")
+	assertContains(t, view, "Files 1-6 of 20 (filter: all)")
+	assertContains(t, view, "  [6/20] create file-06.txt")
 	assertNotContains(t, view, "file-07.txt")
 
 	updated, cmd = model.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
@@ -168,8 +171,8 @@ func TestModelUpdateWindowSizeChangesVisibleFileRange(t *testing.T) {
 		t.Fatal("expected no command")
 	}
 	view = model.View()
-	assertContains(t, view, "Files 1-12 of 20")
-	assertContains(t, view, "  create file-12.txt")
+	assertContains(t, view, "Files 1-12 of 20 (filter: all)")
+	assertContains(t, view, "  [12/20] create file-12.txt")
 	assertNotContains(t, view, "file-13.txt")
 
 	updated, cmd = model.Update(tea.WindowSizeMsg{Width: 80, Height: 19})
@@ -178,8 +181,8 @@ func TestModelUpdateWindowSizeChangesVisibleFileRange(t *testing.T) {
 		t.Fatal("expected no command")
 	}
 	view = model.View()
-	assertContains(t, view, "Files 1-3 of 20")
-	assertContains(t, view, "  create file-03.txt")
+	assertContains(t, view, "Files 1-3 of 20 (filter: all)")
+	assertContains(t, view, "  [3/20] create file-03.txt")
 	assertNotContains(t, view, "file-04.txt")
 }
 
@@ -189,8 +192,8 @@ func TestModelUpdateClampsNavigationAfterResize(t *testing.T) {
 	model = updated.(Model)
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnd})
 	model = updated.(Model)
-	assertContains(t, model.View(), "Files 9-20 of 20")
-	assertContains(t, model.View(), "> create file-20.txt")
+	assertContains(t, model.View(), "Files 9-20 of 20 (filter: all)")
+	assertContains(t, model.View(), "> [20/20] create file-20.txt")
 
 	updated, cmd := model.Update(tea.WindowSizeMsg{Width: 80, Height: 19})
 	model = updated.(Model)
@@ -198,9 +201,93 @@ func TestModelUpdateClampsNavigationAfterResize(t *testing.T) {
 		t.Fatal("expected no command")
 	}
 	view := model.View()
-	assertContains(t, view, "Files 18-20 of 20")
-	assertContains(t, view, "> create file-20.txt")
+	assertContains(t, view, "Files 18-20 of 20 (filter: all)")
+	assertContains(t, view, "> [20/20] create file-20.txt")
 	assertNotContains(t, view, "file-17.txt")
+}
+
+func TestModelViewShowsImpactSummaryInDeterministicActionOrder(t *testing.T) {
+	plan := application.GenerationPlan{
+		FileCount: 5,
+		Files: []application.PlannedFile{
+			{Path: "replace-1.txt", Action: "replace"},
+			{Path: "create-1.txt", Action: "create"},
+			{Path: "skip-1.txt", Action: "skip"},
+			{Path: "create-2.txt", Action: "create"},
+			{Path: "replace-2.txt", Action: "replace"},
+		},
+	}
+
+	view := NewModel(plan, application.GenerateRequest{}, nil, nil, nil).View()
+
+	assertContains(t, view, "Files planned: 5")
+	assertContains(t, view, "Impact: create=2, replace=2, skip=1 (mixed actions)")
+}
+
+func TestModelUpdateCyclesActionFilterAndNavigatesFilteredFiles(t *testing.T) {
+	plan := application.GenerationPlan{
+		FileCount: 5,
+		Files: []application.PlannedFile{
+			{Path: "replace-1.txt", Action: "replace"},
+			{Path: "create-1.txt", Action: "create"},
+			{Path: "replace-2.txt", Action: "replace"},
+			{Path: "create-2.txt", Action: "create"},
+			{Path: "skip-1.txt", Action: "skip"},
+		},
+	}
+	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	model = updated.(Model)
+	if cmd != nil {
+		t.Fatal("expected no command")
+	}
+	view := model.View()
+	assertContains(t, view, "Files 1-2 of 2 (filter: create)")
+	assertContains(t, view, "Selected: 1/2 create create-1.txt")
+	assertContains(t, view, "> [1/2] create create-1.txt")
+	assertNotContains(t, view, "replace-1.txt")
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	view = model.View()
+	assertContains(t, view, "Selected: 2/2 create create-2.txt")
+	assertContains(t, view, "> [2/2] create create-2.txt")
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	model = updated.(Model)
+	view = model.View()
+	assertContains(t, view, "Files 1-2 of 2 (filter: replace)")
+	assertContains(t, view, "Selected: 1/2 replace replace-1.txt")
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	model = updated.(Model)
+	view = model.View()
+	assertContains(t, view, "Files 1-1 of 1 (filter: skip)")
+	assertContains(t, view, "Selected: 1/1 skip skip-1.txt")
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	model = updated.(Model)
+	assertContains(t, model.View(), "Files 1-5 of 5 (filter: all)")
+}
+
+func TestModelUpdateIgnoresActionFilterWhileBusy(t *testing.T) {
+	for _, status := range []modelStatus{statusRefreshing, statusGenerating, statusSaving} {
+		t.Run(fmt.Sprintf("status %d", status), func(t *testing.T) {
+			model := NewModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil)
+			model.status = status
+
+			updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+			updatedModel := updated.(Model)
+
+			if cmd != nil {
+				t.Fatal("expected no command")
+			}
+			if updatedModel.actionFilter != "" {
+				t.Fatalf("expected action filter to stay unset while busy, got %q", updatedModel.actionFilter)
+			}
+		})
+	}
 }
 
 func TestModelUpdateIgnoresPlannedFileNavigationWhileBusy(t *testing.T) {
@@ -439,8 +526,8 @@ func TestModelUpdateRecordsRefreshSuccess(t *testing.T) {
 	assertContains(t, view, "Product: Refreshed")
 	assertContains(t, view, "Target framework: net9.0")
 	assertContains(t, view, "Output directory: /tmp/refreshed")
-	assertContains(t, view, "Files 1-2 of 2")
-	assertContains(t, view, "> create file-02.txt")
+	assertContains(t, view, "Files 1-2 of 2 (filter: all)")
+	assertContains(t, view, "> [2/2] create file-02.txt")
 }
 
 func TestModelUpdateRecordsRefreshFailureAndAllowsRetry(t *testing.T) {

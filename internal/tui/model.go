@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,8 +16,8 @@ const (
 	reservedViewRows      = 18
 )
 
-const readyHelp = "Navigate files: up/down, k/j, pgup/pgdown, home/end. Press r to refresh the plan, g to generate."
-const generatedHelp = "Generation is complete. Navigate files: up/down, k/j, pgup/pgdown, home/end. Press r to refresh the plan."
+const readyHelp = "Navigate files: up/down, k/j, pgup/pgdown, home/end. Press a to filter by action, r to refresh the plan, g to generate."
+const generatedHelp = "Generation is complete. Navigate files: up/down, k/j, pgup/pgdown, home/end. Press a to filter by action, r to refresh the plan."
 
 type PlanFunc func(application.GenerateRequest) (application.GenerationPlan, error)
 type GenerateFunc func(application.GenerateRequest) (application.GenerateResult, error)
@@ -72,6 +73,7 @@ type Model struct {
 	fileCursor                 int
 	fileOffset                 int
 	windowRows                 int
+	actionFilter               string
 }
 
 func NewModel(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, targetFrameworkSuggestions ...[]string) Model {
@@ -138,14 +140,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.status == statusGenerating || m.status == statusRefreshing || m.status == statusSaving {
 				return m, nil
 			}
-			m.fileCursor = 0
+			indices := m.filteredFileIndices()
+			if len(indices) > 0 {
+				m.fileCursor = indices[0]
+			}
 			m.fileOffset = 0
 			return m, nil
 		case "end":
 			if m.status == statusGenerating || m.status == statusRefreshing || m.status == statusSaving {
 				return m, nil
 			}
-			m.fileCursor = len(m.plan.Files) - 1
+			indices := m.filteredFileIndices()
+			if len(indices) > 0 {
+				m.fileCursor = indices[len(indices)-1]
+			}
 			m.clampFileCursor()
 			return m, nil
 		case "pgup":
@@ -159,6 +167,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.moveFileCursor(m.visibleFileRows())
+			return m, nil
+		case "a":
+			if m.status == statusGenerating || m.status == statusRefreshing || m.status == statusSaving {
+				return m, nil
+			}
+			m.cycleActionFilter()
 			return m, nil
 		case "r":
 			if m.status == statusGenerating || m.status == statusRefreshing || m.status == statusSaving {
@@ -384,29 +398,53 @@ func (m *Model) cycleTargetFrameworkSuggestion() {
 }
 
 func (m *Model) moveFileCursor(delta int) {
-	m.fileCursor += delta
+	indices := m.filteredFileIndices()
+	if len(indices) == 0 {
+		m.clampFileCursor()
+		return
+	}
+	position := m.selectedFilteredPosition(indices)
+	if position < 0 {
+		position = closestFilteredPosition(indices, m.fileCursor)
+	}
+	position += delta
+	if position < 0 {
+		position = 0
+	}
+	if position >= len(indices) {
+		position = len(indices) - 1
+	}
+	m.fileCursor = indices[position]
 	m.clampFileCursor()
 }
 
 func (m *Model) clampFileCursor() {
-	fileCount := len(m.plan.Files)
+	indices := m.filteredFileIndices()
+	if len(indices) == 0 && m.actionFilter != "" {
+		m.actionFilter = ""
+		indices = m.filteredFileIndices()
+	}
+	fileCount := len(indices)
 	if fileCount == 0 {
 		m.fileCursor = 0
 		m.fileOffset = 0
 		return
 	}
-	if m.fileCursor < 0 {
-		m.fileCursor = 0
+	position := m.selectedFilteredPosition(indices)
+	if position < 0 {
+		position = closestFilteredPosition(indices, m.fileCursor)
+		m.fileCursor = indices[position]
 	}
-	if m.fileCursor >= fileCount {
-		m.fileCursor = fileCount - 1
+	if position >= fileCount {
+		position = fileCount - 1
+		m.fileCursor = indices[position]
 	}
-	if m.fileOffset > m.fileCursor {
-		m.fileOffset = m.fileCursor
+	if m.fileOffset > position {
+		m.fileOffset = position
 	}
 	rows := m.visibleFileRows()
-	if m.fileCursor >= m.fileOffset+rows {
-		m.fileOffset = m.fileCursor - rows + 1
+	if position >= m.fileOffset+rows {
+		m.fileOffset = position - rows + 1
 	}
 	lastOffset := fileCount - rows
 	if lastOffset < 0 {
@@ -418,6 +456,94 @@ func (m *Model) clampFileCursor() {
 	if m.fileOffset < 0 {
 		m.fileOffset = 0
 	}
+}
+
+func (m *Model) cycleActionFilter() {
+	actions := m.plannedFileActions()
+	if len(actions) == 0 {
+		m.actionFilter = ""
+		m.clampFileCursor()
+		return
+	}
+	if m.actionFilter == "" {
+		m.actionFilter = actions[0]
+		m.selectFirstFilteredFile()
+		m.clampFileCursor()
+		return
+	}
+	for index, action := range actions {
+		if action == m.actionFilter {
+			if index == len(actions)-1 {
+				m.actionFilter = ""
+			} else {
+				m.actionFilter = actions[index+1]
+			}
+			m.selectFirstFilteredFile()
+			m.clampFileCursor()
+			return
+		}
+	}
+	m.actionFilter = ""
+	m.selectFirstFilteredFile()
+	m.clampFileCursor()
+}
+
+func (m *Model) selectFirstFilteredFile() {
+	indices := m.filteredFileIndices()
+	if len(indices) == 0 {
+		m.fileCursor = 0
+		m.fileOffset = 0
+		return
+	}
+	m.fileCursor = indices[0]
+	m.fileOffset = 0
+}
+
+func (m Model) plannedFileActions() []string {
+	seen := make(map[string]bool)
+	for _, file := range m.plan.Files {
+		if file.Action == "" || seen[file.Action] {
+			continue
+		}
+		seen[file.Action] = true
+	}
+	actions := make([]string, 0, len(seen))
+	for action := range seen {
+		actions = append(actions, action)
+	}
+	sort.Strings(actions)
+	return actions
+}
+
+func (m Model) filteredFileIndices() []int {
+	indices := make([]int, 0, len(m.plan.Files))
+	for index, file := range m.plan.Files {
+		if m.actionFilter == "" || file.Action == m.actionFilter {
+			indices = append(indices, index)
+		}
+	}
+	return indices
+}
+
+func (m Model) selectedFilteredPosition(indices []int) int {
+	for position, index := range indices {
+		if index == m.fileCursor {
+			return position
+		}
+	}
+	return -1
+}
+
+func closestFilteredPosition(indices []int, cursor int) int {
+	position := 0
+	for index, fileIndex := range indices {
+		if fileIndex <= cursor {
+			position = index
+			continue
+		}
+		break
+	}
+	return position
 }
 
 func (m Model) visibleFileRows() int {
@@ -503,10 +629,12 @@ func (m Model) View() string {
 	fmt.Fprintf(&builder, "Output action: %s\n", m.plan.OutputAction)
 	fmt.Fprintf(&builder, "Force: required=%s, used=%s\n", yesNo(m.plan.ForceRequired), yesNo(m.plan.ForceUsed))
 	fmt.Fprintf(&builder, "Files planned: %d\n", m.plan.FileCount)
+	fmt.Fprintf(&builder, "Impact: %s\n", m.impactSummary())
 	fmt.Fprintln(&builder)
 	fmt.Fprintln(&builder, "Planned files:")
 
-	fileCount := len(m.plan.Files)
+	indices := m.filteredFileIndices()
+	fileCount := len(indices)
 	if fileCount == 0 {
 		fmt.Fprintln(&builder, "- No files planned")
 	} else {
@@ -515,13 +643,23 @@ func (m Model) View() string {
 		if end > fileCount {
 			end = fileCount
 		}
-		fmt.Fprintf(&builder, "Files %d-%d of %d\n", start+1, end, fileCount)
-		for index, file := range m.plan.Files[start:end] {
+		filter := "all"
+		if m.actionFilter != "" {
+			filter = m.actionFilter
+		}
+		fmt.Fprintf(&builder, "Files %d-%d of %d (filter: %s)\n", start+1, end, fileCount, filter)
+		selectedPosition := m.selectedFilteredPosition(indices)
+		if selectedPosition >= 0 {
+			selectedFile := m.plan.Files[indices[selectedPosition]]
+			fmt.Fprintf(&builder, "Selected: %d/%d %s %s\n", selectedPosition+1, fileCount, selectedFile.Action, selectedFile.Path)
+		}
+		for position, planIndex := range indices[start:end] {
+			file := m.plan.Files[planIndex]
 			cursor := " "
-			if start+index == m.fileCursor {
+			if start+position == selectedPosition {
 				cursor = ">"
 			}
-			fmt.Fprintf(&builder, "%s %s %s\n", cursor, file.Action, file.Path)
+			fmt.Fprintf(&builder, "%s [%d/%d] %s %s\n", cursor, start+position+1, fileCount, file.Action, file.Path)
 		}
 	}
 
@@ -615,4 +753,27 @@ func yesNo(value bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+func (m Model) impactSummary() string {
+	if len(m.plan.Files) == 0 {
+		return "none"
+	}
+	counts := make(map[string]int)
+	for _, file := range m.plan.Files {
+		counts[file.Action]++
+	}
+	actions := make([]string, 0, len(counts))
+	for action := range counts {
+		actions = append(actions, action)
+	}
+	sort.Strings(actions)
+	parts := make([]string, 0, len(actions))
+	for _, action := range actions {
+		parts = append(parts, fmt.Sprintf("%s=%d", action, counts[action]))
+	}
+	if len(parts) > 1 {
+		return strings.Join(parts, ", ") + " (mixed actions)"
+	}
+	return parts[0]
 }
