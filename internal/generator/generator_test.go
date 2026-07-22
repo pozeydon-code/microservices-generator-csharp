@@ -263,12 +263,6 @@ func TestGenerateSlnxReferencesAllProjectsDeterministically(t *testing.T) {
 }
 
 func TestGenerateExampleSolutionFilesAreRuntimeParseable(t *testing.T) {
-	gen, err := New()
-	if err != nil {
-		t.Fatalf("new generator: %v", err)
-	}
-	dotnet, dotnetErr := exec.LookPath("dotnet")
-
 	tests := []struct {
 		name               string
 		targetFramework    string
@@ -284,37 +278,27 @@ func TestGenerateExampleSolutionFilesAreRuntimeParseable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := exampleConfig(t)
-			cfg.Generation.TargetFramework = tt.targetFramework
-			cfg.Generation.SolutionFormat = tt.solutionFormat
+			workspace := generateExampleWorkspace(t, tt.targetFramework, tt.solutionFormat)
 
-			files, err := gen.Generate(cfg)
-			if err != nil {
-				t.Fatalf("generate: %v", err)
-			}
-			outputDir := t.TempDir()
-			writeGeneratedFiles(t, outputDir, files)
-
-			assertPathExists(t, filepath.Join(outputDir, tt.expectedSolution))
-			assertPathMissing(t, filepath.Join(outputDir, tt.unexpectedSolution))
+			assertPathExists(t, filepath.Join(workspace.dir, tt.expectedSolution))
+			assertPathMissing(t, filepath.Join(workspace.dir, tt.unexpectedSolution))
 
 			if !tt.validateWithDotnet {
 				return
 			}
-			if testing.Short() {
-				t.Skip("skipping dotnet solution parse in short mode")
-			}
-			if dotnetErr != nil {
-				t.Skipf("dotnet not installed: %v", dotnetErr)
-			}
-			cmd := exec.Command(dotnet, "sln", filepath.Join(outputDir, tt.expectedSolution), "list")
-			cmd.Dir = outputDir
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				t.Fatalf("dotnet sln list failed: %v\n%s", err, output)
-			}
+			dotnet := locateDotnet(t)
+			runDotnetRuntimeCommand(t, dotnet, workspace, "sln", workspace.solutionPath, "list")
 		})
 	}
+}
+
+func TestGenerateNet10DefaultSlnxRuntimeValidation(t *testing.T) {
+	workspace := generateExampleWorkspace(t, "net10.0", "")
+	dotnet := locateDotnet(t)
+
+	runDotnetRuntimeCommand(t, dotnet, workspace, "restore", workspace.solutionPath)
+	runDotnetRuntimeCommand(t, dotnet, workspace, "build", "--no-restore", workspace.solutionPath)
+	runDotnetRuntimeCommand(t, dotnet, workspace, "test", "--no-build", workspace.solutionPath)
 }
 
 func TestGenerateUsesPluralizedEntityNamesForFeatureAndRoute(t *testing.T) {
@@ -612,6 +596,59 @@ func exampleConfig(t *testing.T) spec.Config {
 		t.Fatalf("decode example config: %v", err)
 	}
 	return cfg
+}
+
+type generatedWorkspace struct {
+	dir          string
+	solutionName string
+	solutionPath string
+}
+
+func generateExampleWorkspace(t *testing.T, targetFramework, solutionFormat string) generatedWorkspace {
+	t.Helper()
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := exampleConfig(t)
+	cfg.Generation.TargetFramework = targetFramework
+	cfg.Generation.SolutionFormat = solutionFormat
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	outputDir := t.TempDir()
+	writeGeneratedFiles(t, outputDir, files)
+
+	solutionName := cfg.Solution.Name + "." + cfg.SolutionFormat()
+	return generatedWorkspace{
+		dir:          outputDir,
+		solutionName: solutionName,
+		solutionPath: filepath.Join(outputDir, solutionName),
+	}
+}
+
+func locateDotnet(t *testing.T) string {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping dotnet runtime validation in short mode")
+	}
+	dotnet, err := exec.LookPath("dotnet")
+	if err != nil {
+		t.Skipf("dotnet not installed: %v", err)
+	}
+	return dotnet
+}
+
+func runDotnetRuntimeCommand(t *testing.T, dotnet string, workspace generatedWorkspace, args ...string) {
+	t.Helper()
+	cmd := exec.Command(dotnet, args...)
+	cmd.Dir = workspace.dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("dotnet %s failed: %v\nworking directory: %s\nsolution: %s\noutput:\n%s", strings.Join(args, " "), err, workspace.dir, workspace.solutionName, output)
+	}
 }
 
 func writeGeneratedFiles(t *testing.T, outputDir string, files []GeneratedFile) {
