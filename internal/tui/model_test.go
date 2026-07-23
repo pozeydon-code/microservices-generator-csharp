@@ -80,7 +80,7 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	assertContains(t, view, "> ProductService: Product | VOs: ProductName")
 	assertContains(t, view, "  OrderService: Order, OrderLine | VOs: OrderNumber, Money")
 	assertContains(t, view, "up/down choose service, enter edit entities, e edit services, v edit value objects.")
-	assertContains(t, view, "Entity fields can be edited from the entity editor. Value-object invariants are not editable yet. New entities get Id Guid.")
+	assertContains(t, view, "Entity fields can be edited from the entity editor. Value-object type/rule editing is basic and has no advanced DSL. New entities get Id Guid.")
 
 	model.currentStep = stepPreview
 	view = model.View()
@@ -1715,7 +1715,7 @@ func TestModelUpdateOpensValueObjectsEditorAndSavesChanges(t *testing.T) {
 	assertContains(t, model.View(), "Editing value objects for ProductService")
 	assertContains(t, model.View(), "References:")
 	assertContains(t, model.View(), "ProductName <- Product.Name")
-	assertContains(t, model.View(), "Keys: up/down select, a add, r rename, d delete, enter save, esc cancel.")
+	assertContains(t, model.View(), "Keys: up/down select, a add, r rename, o rules, d delete, enter save, esc cancel.")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	model = updated.(Model)
@@ -1727,13 +1727,13 @@ func TestModelUpdateOpensValueObjectsEditorAndSavesChanges(t *testing.T) {
 	model = updated.(Model)
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
-	if model.valueObjectsEdit.renaming || model.valueObjectsEdit.valueObjects[0].string() != "CatalogName" {
+	if model.valueObjectsEdit.renaming || model.valueObjectsEdit.valueObjects[0].name.string() != "CatalogName" {
 		t.Fatalf("expected local value object rename confirmation, got %#v", model.valueObjectsEdit)
 	}
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	model = updated.(Model)
-	if model.valueObjectsEdit.selected != 2 || model.valueObjectsEdit.valueObjects[2].string() != "ValueObject3" {
+	if model.valueObjectsEdit.selected != 2 || model.valueObjectsEdit.valueObjects[2].name.string() != "ValueObject3" {
 		t.Fatalf("expected added placeholder value object selected, got %#v", model.valueObjectsEdit)
 	}
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyUp})
@@ -1758,7 +1758,7 @@ func TestModelUpdateOpensValueObjectsEditorAndSavesChanges(t *testing.T) {
 	if finished.err != nil || finished.result.Plan.FileCount != 4 {
 		t.Fatalf("expected successful value objects message, got %#v", finished)
 	}
-	wantValueObjects := []application.ValueObjectNameSetting{{OriginalName: "ProductName", Name: "CatalogName"}, {Name: "ValueObject3"}}
+	wantValueObjects := []application.ValueObjectNameSetting{{OriginalName: "ProductName", Name: "CatalogName", Type: "string", Validations: application.ValidationRuleSettings{Required: boolPtr(true), MinLength: intPtr(1), MaxLength: intPtr(100), ValidExample: stringPtr("Sample")}}, {Name: "ValueObject3", Type: "string", Validations: application.ValidationRuleSettings{Required: boolPtr(true), MinLength: intPtr(1), MaxLength: intPtr(100), ValidExample: stringPtr("Sample")}}}
 	if capturedSettings.ServiceName != "ProductService" || !reflect.DeepEqual(capturedSettings.ValueObjects, wantValueObjects) {
 		t.Fatalf("expected captured value object settings, got %#v", capturedSettings)
 	}
@@ -1767,7 +1767,7 @@ func TestModelUpdateOpensValueObjectsEditorAndSavesChanges(t *testing.T) {
 	if cmd != nil || model.status != statusReady || model.plan.FileCount != 4 || model.plan.Config.Services[0].ValueObjectNames[0] != "CatalogName" {
 		t.Fatalf("expected ready state with refreshed value objects plan, got cmd=%v model=%#v", cmd, model)
 	}
-	assertContains(t, model.View(), "Value objects saved. Plan refreshed. Invariant editing is future work.")
+	assertContains(t, model.View(), "Value objects saved. Plan refreshed. Basic type and rules can be edited from the value objects editor.")
 }
 
 func TestModelUpdateValueObjectsEditCancelKeepsPlan(t *testing.T) {
@@ -1823,8 +1823,155 @@ func TestModelUpdateValueObjectsRenameInsertsShortcutRunes(t *testing.T) {
 	model = updated.(Model)
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	model = updated.(Model)
-	if len(model.valueObjectsEdit.valueObjects) != 1 || model.valueObjectsEdit.valueObjects[0].string() != "adv" {
+	if len(model.valueObjectsEdit.valueObjects) != 1 || model.valueObjectsEdit.valueObjects[0].name.string() != "adv" {
 		t.Fatalf("expected shortcut runes to edit value object name during rename, got %#v", model.valueObjectsEdit)
+	}
+}
+
+func TestModelUpdateValueObjectRulesEditsStringRulesAndSaves(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{ServiceCount: 1, ValueObjectCount: 1, Services: []application.ServiceSummary{{Name: "ProductService", ValueObjectNames: []string{"ProductName"}, ValueObjects: []application.ValueObjectSummary{{Name: "ProductName", Type: "string", Validations: application.ValidationRuleSummary{Required: boolPtr(true), MinLength: intPtr(1), MaxLength: intPtr(100), ValidExample: stringPtr("Sample")}, RulesLabel: "required, min=1, max=100, validExample"}}}}}
+	var captured application.ValueObjectSettings
+	model := modelOnStep(plan, stepServices)
+	model.updateValueObjects = func(_ application.GenerateRequest, settings application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
+		captured = settings
+		return application.UpdateValueObjectSettingsResult{Saved: true, Plan: plan}, nil
+	}
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	model = updated.(Model)
+	assertContains(t, model.View(), "Editing rules for ProductService/ProductName")
+	assertContains(t, model.View(), "required: yes")
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeySpace})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'3'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.status != statusSaving || cmd == nil {
+		t.Fatalf("expected rules save command, got status=%v cmd=%v", model.status, cmd)
+	}
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+	if model.status != statusReady {
+		t.Fatalf("expected ready after string rules save, got %#v", model)
+	}
+	if len(captured.ValueObjects) != 1 || captured.ValueObjects[0].Type != "string" || captured.ValueObjects[0].Validations.Required != nil || captured.ValueObjects[0].Validations.MinLength == nil || *captured.ValueObjects[0].Validations.MinLength != 3 {
+		t.Fatalf("expected captured string rule settings, got %#v", captured)
+	}
+}
+
+func TestModelUpdateValueObjectRulesEditsNumericBounds(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{ServiceCount: 1, ValueObjectCount: 1, Services: []application.ServiceSummary{{Name: "ProductService", ValueObjectNames: []string{"ProductPrice"}, ValueObjects: []application.ValueObjectSummary{{Name: "ProductPrice", Type: "decimal", RulesLabel: "no rules"}}}}}
+	var captured application.ValueObjectSettings
+	model := modelOnStep(plan, stepServices)
+	model.updateValueObjects = func(_ application.GenerateRequest, settings application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
+		captured = settings
+		return application.UpdateValueObjectSettingsResult{Saved: true, Plan: plan}, nil
+	}
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("0")})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("999999.99")})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+	if model.status != statusReady || captured.ValueObjects[0].Validations.Minimum == nil || *captured.ValueObjects[0].Validations.Minimum != "0" || captured.ValueObjects[0].Validations.Maximum == nil || *captured.ValueObjects[0].Validations.Maximum != "999999.99" {
+		t.Fatalf("expected numeric bounds save, model=%#v captured=%#v", model, captured)
+	}
+}
+
+func TestModelUpdateValueObjectRulesTogglesGuidNotEmpty(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{ServiceCount: 1, ValueObjectCount: 1, Services: []application.ServiceSummary{{Name: "ProductService", ValueObjectNames: []string{"ProductId"}, ValueObjects: []application.ValueObjectSummary{{Name: "ProductId", Type: "Guid", RulesLabel: "no rules"}}}}}
+	var captured application.ValueObjectSettings
+	model := modelOnStep(plan, stepServices)
+	model.updateValueObjects = func(_ application.GenerateRequest, settings application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
+		captured = settings
+		return application.UpdateValueObjectSettingsResult{Saved: true, Plan: plan}, nil
+	}
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	model = updated.(Model)
+	assertContains(t, model.View(), "notEmpty: no")
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeySpace})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+	if model.status != statusReady || captured.ValueObjects[0].Validations.NotEmpty == nil || !*captured.ValueObjects[0].Validations.NotEmpty {
+		t.Fatalf("expected notEmpty toggle save, model=%#v captured=%#v", model, captured)
+	}
+}
+
+func TestModelUpdateValueObjectRulesBackCancelAndShortcutTextSafety(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{ServiceCount: 1, ValueObjectCount: 1, Services: []application.ServiceSummary{{Name: "ProductService", ValueObjectNames: []string{"ProductName"}, ValueObjects: []application.ValueObjectSummary{{Name: "ProductName", Type: "string", RulesLabel: "no rules"}}}}}
+	model := modelOnStep(plan, stepServices)
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	model = updated.(Model)
+	for range 4 {
+		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model = updated.(Model)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("bear")})
+	model = updated.(Model)
+	if !model.valueObjectsEdit.rulesOpen || model.valueObjectsEdit.valueObjects[0].rules.pattern.string() != "bear" {
+		t.Fatalf("expected shortcut runes to edit pattern text, got %#v", model.valueObjectsEdit)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	model = updated.(Model)
+	if model.status != statusEditing || model.edit.mode != editModeValueObjects || model.valueObjectsEdit.rulesOpen {
+		t.Fatalf("expected b to return to value object list, got %#v", model)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.status != statusReady {
+		t.Fatalf("expected esc from rules to cancel editing, got cmd=%v model=%#v", cmd, model)
 	}
 }
 
@@ -2047,12 +2194,20 @@ func entityEditNames(entities []textField) []string {
 	return names
 }
 
-func valueObjectEditNames(valueObjects []textField) []string {
+func valueObjectEditNames(valueObjects []valueObjectEditItem) []string {
 	names := make([]string, len(valueObjects))
 	for index, valueObject := range valueObjects {
-		names[index] = valueObject.string()
+		names[index] = valueObject.name.string()
 	}
 	return names
+}
+
+func intPtr(value int) *int {
+	return &value
+}
+
+func stringPtr(value string) *string {
+	return &value
 }
 
 func modelOnStep(plan application.GenerationPlan, step tuiStep) Model {

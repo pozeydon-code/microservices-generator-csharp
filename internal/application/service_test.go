@@ -77,8 +77,8 @@ func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T)
 		ValueObjectCount:    3,
 		ServiceNames:        []string{"ProductService", "OrderService"},
 		Services: []ServiceSummary{
-			{Name: "ProductService", EntityNames: []string{"Product"}, ValueObjectNames: []string{"ProductName"}, Entities: []EntitySummary{{Name: "Product", Fields: []FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}}}},
-			{Name: "OrderService", EntityNames: []string{"Order", "OrderLine"}, ValueObjectNames: []string{"OrderNumber", "Money"}, Entities: []EntitySummary{{Name: "Order", Fields: []FieldSummary{}}, {Name: "OrderLine", Fields: []FieldSummary{}}}},
+			{Name: "ProductService", EntityNames: []string{"Product"}, ValueObjectNames: []string{"ProductName"}, ValueObjects: []ValueObjectSummary{{Name: "ProductName", Type: "string", RulesLabel: "no rules"}}, Entities: []EntitySummary{{Name: "Product", Fields: []FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}}}},
+			{Name: "OrderService", EntityNames: []string{"Order", "OrderLine"}, ValueObjectNames: []string{"OrderNumber", "Money"}, ValueObjects: []ValueObjectSummary{{Name: "OrderNumber", Type: "string", RulesLabel: "no rules"}, {Name: "Money", Type: "decimal", RulesLabel: "no rules"}}, Entities: []EntitySummary{{Name: "Order", Fields: []FieldSummary{}}, {Name: "OrderLine", Fields: []FieldSummary{}}}},
 		},
 	}
 	if !reflect.DeepEqual(plan.Config, expectedSummary) {
@@ -738,6 +738,108 @@ func TestServiceUpdateValueObjectSettingsAddsRenamesDeletesAndPreservesDetails(t
 	}
 	if !reflect.DeepEqual(result.Config.Services[0].ValueObjectNames, []string{"CatalogCode", "Sku"}) {
 		t.Fatalf("expected value object summary names, got %#v", result.Config.Services[0])
+	}
+}
+
+func TestServiceUpdateValueObjectSettingsUpdatesStringRules(t *testing.T) {
+	required := true
+	minLength := 3
+	maxLength := 40
+	pattern := "^[A-Z]+$"
+	validExample := "SKU"
+	invalidExample := "bad"
+	saver := &fakeConfigSaver{}
+	service := NewService(Ports{ConfigLoader: &fakeConfigLoader{cfg: validConfigWithValueObjectsForEditing()}, ConfigSaver: saver, ConfigValidator: specValidator{}, Generator: &fakeGenerator{}, OutputPlanner: fakeOutputPlanner{}})
+
+	_, err := service.UpdateValueObjectSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ValueObjectSettings{ServiceName: "ProductService", ValueObjects: []ValueObjectNameSetting{{OriginalName: "ProductCode", Name: "ProductCode", Type: "string", Validations: ValidationRuleSettings{Required: &required, MinLength: &minLength, MaxLength: &maxLength, Pattern: &pattern, ValidExample: &validExample, InvalidExample: &invalidExample}}, {OriginalName: "LegacyCode", Name: "LegacyCode"}}})
+
+	if err != nil {
+		t.Fatalf("expected string rule update success, got %v", err)
+	}
+	rules := saver.cfg.Services[0].ValueObjects[0].Validations
+	if rules.Required == nil || !*rules.Required || rules.MinLength == nil || *rules.MinLength != 3 || rules.MaxLength == nil || *rules.MaxLength != 40 || rules.Pattern == nil || *rules.Pattern != pattern || rules.ValidExample == nil || *rules.ValidExample != validExample || rules.InvalidExample == nil || *rules.InvalidExample != invalidExample {
+		t.Fatalf("expected updated string rules, got %#v", rules)
+	}
+}
+
+func TestServiceUpdateValueObjectSettingsUpdatesNumericRules(t *testing.T) {
+	minimum := "0"
+	maximum := "999999.99"
+	saver := &fakeConfigSaver{}
+	service := NewService(Ports{ConfigLoader: &fakeConfigLoader{cfg: validConfigWithValueObjectsForEditing()}, ConfigSaver: saver, ConfigValidator: specValidator{}, Generator: &fakeGenerator{}, OutputPlanner: fakeOutputPlanner{}})
+
+	_, err := service.UpdateValueObjectSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ValueObjectSettings{ServiceName: "ProductService", ValueObjects: []ValueObjectNameSetting{{OriginalName: "ProductCode", Name: "ProductCode", Type: "decimal", Validations: ValidationRuleSettings{Minimum: &minimum, Maximum: &maximum}}, {OriginalName: "LegacyCode", Name: "LegacyCode"}}})
+
+	if err != nil {
+		t.Fatalf("expected numeric rule update success, got %v", err)
+	}
+	valueObject := saver.cfg.Services[0].ValueObjects[0]
+	if valueObject.Type != "decimal" || valueObject.Validations.Minimum == nil || valueObject.Validations.Minimum.String() != "0" || valueObject.Validations.Maximum == nil || valueObject.Validations.Maximum.String() != "999999.99" {
+		t.Fatalf("expected decimal rules, got %#v", valueObject)
+	}
+}
+
+func TestServiceUpdateValueObjectSettingsTypeChangeClearsIncompatibleRules(t *testing.T) {
+	minimum := "1"
+	saver := &fakeConfigSaver{}
+	service := NewService(Ports{ConfigLoader: &fakeConfigLoader{cfg: validConfigWithValueObjectsForEditing()}, ConfigSaver: saver, ConfigValidator: specValidator{}, Generator: &fakeGenerator{}, OutputPlanner: fakeOutputPlanner{}})
+
+	_, err := service.UpdateValueObjectSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ValueObjectSettings{ServiceName: "ProductService", ValueObjects: []ValueObjectNameSetting{{OriginalName: "ProductCode", Name: "ProductCode", Type: "int", Validations: ValidationRuleSettings{Minimum: &minimum}}, {OriginalName: "LegacyCode", Name: "LegacyCode"}}})
+
+	if err != nil {
+		t.Fatalf("expected type change success, got %v", err)
+	}
+	valueObject := saver.cfg.Services[0].ValueObjects[0]
+	if valueObject.Type != "int" || valueObject.Validations.MinLength != nil || valueObject.Validations.MaxLength != nil || valueObject.Validations.ValidExample != nil || valueObject.Validations.Minimum == nil || valueObject.Validations.Minimum.String() != "1" {
+		t.Fatalf("expected incompatible string rules cleared for int, got %#v", valueObject)
+	}
+}
+
+func TestServiceUpdateValueObjectSettingsValidationFailureDoesNotSave(t *testing.T) {
+	pattern := "["
+	validExample := "ABC"
+	invalidExample := "abc"
+	saver := &fakeConfigSaver{}
+	gen := &fakeGenerator{}
+	service := NewService(Ports{ConfigLoader: &fakeConfigLoader{cfg: validConfigWithValueObjectsForEditing()}, ConfigSaver: saver, ConfigValidator: specValidator{}, Generator: gen, OutputPlanner: fakeOutputPlanner{}})
+
+	_, err := service.UpdateValueObjectSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ValueObjectSettings{ServiceName: "ProductService", ValueObjects: []ValueObjectNameSetting{{OriginalName: "ProductCode", Name: "ProductCode", Type: "string", Validations: ValidationRuleSettings{Pattern: &pattern, ValidExample: &validExample, InvalidExample: &invalidExample}}, {OriginalName: "LegacyCode", Name: "LegacyCode"}}})
+
+	if err == nil || !strings.Contains(err.Error(), "pattern must compile as a regular expression") {
+		t.Fatalf("expected validation failure, got %v", err)
+	}
+	if saver.called || gen.called {
+		t.Fatalf("expected validation failure not to save or plan, saver=%v gen=%v", saver.called, gen.called)
+	}
+}
+
+func TestServiceUpdateValueObjectSettingsRejectsUnsupportedEditorTypeWithoutSaving(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	gen := &fakeGenerator{}
+	service := NewService(Ports{ConfigLoader: &fakeConfigLoader{cfg: validConfigWithValueObjectsForEditing()}, ConfigSaver: saver, ConfigValidator: specValidator{}, Generator: gen, OutputPlanner: fakeOutputPlanner{}})
+
+	_, err := service.UpdateValueObjectSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ValueObjectSettings{ServiceName: "ProductService", ValueObjects: []ValueObjectNameSetting{{OriginalName: "ProductCode", Name: "ProductCode", Type: "double"}, {OriginalName: "LegacyCode", Name: "LegacyCode"}}})
+
+	if err == nil || !strings.Contains(err.Error(), "type \"double\" is not editable in the basic rules editor") {
+		t.Fatalf("expected unsupported editor type failure, got %v", err)
+	}
+	if saver.called || gen.called {
+		t.Fatalf("expected unsupported editor type not to save or plan, saver=%v gen=%v", saver.called, gen.called)
+	}
+}
+
+func TestServiceUpdateValueObjectSettingsReferencedObjectCanUpdateRulesButNotName(t *testing.T) {
+	notEmpty := true
+	saver := &fakeConfigSaver{}
+	service := NewService(Ports{ConfigLoader: &fakeConfigLoader{cfg: validPersistableConfig()}, ConfigSaver: saver, ConfigValidator: specValidator{}, Generator: &fakeGenerator{}, OutputPlanner: fakeOutputPlanner{}})
+
+	_, err := service.UpdateValueObjectSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ValueObjectSettings{ServiceName: "ProductService", ValueObjects: []ValueObjectNameSetting{{OriginalName: "ProductName", Name: "ProductName", Type: "Guid", Validations: ValidationRuleSettings{NotEmpty: &notEmpty}}}})
+
+	if err != nil {
+		t.Fatalf("expected referenced value object rule update to preserve identity, got %v", err)
+	}
+	if got := saver.cfg.Services[0].ValueObjects[0]; got.Name != "ProductName" || got.Type != "Guid" || got.Validations.NotEmpty == nil || !*got.Validations.NotEmpty {
+		t.Fatalf("expected referenced value object rules updated without renaming, got %#v", got)
 	}
 }
 

@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -134,6 +135,42 @@ type fieldEditItem struct {
 	typeName     textField
 }
 
+type valueObjectEditItem struct {
+	originalName string
+	name         textField
+	typeName     textField
+	rules        valueObjectRuleEditState
+}
+
+type valueObjectRuleEditState struct {
+	required       bool
+	minLength      textField
+	maxLength      textField
+	pattern        textField
+	validExample   textField
+	invalidExample textField
+	minimum        textField
+	maximum        textField
+	notEmpty       bool
+	notDefault     bool
+}
+
+type valueObjectRuleField int
+
+const (
+	valueObjectRuleFieldType valueObjectRuleField = iota
+	valueObjectRuleFieldRequired
+	valueObjectRuleFieldMinLength
+	valueObjectRuleFieldMaxLength
+	valueObjectRuleFieldPattern
+	valueObjectRuleFieldValidExample
+	valueObjectRuleFieldInvalidExample
+	valueObjectRuleFieldMinimum
+	valueObjectRuleFieldMaximum
+	valueObjectRuleFieldNotEmpty
+	valueObjectRuleFieldNotDefault
+)
+
 type fieldsEditState struct {
 	serviceName string
 	entityName  string
@@ -145,10 +182,12 @@ type fieldsEditState struct {
 
 type valueObjectsEditState struct {
 	serviceName  string
-	original     []string
-	valueObjects []textField
+	valueObjects []valueObjectEditItem
 	selected     int
 	renaming     bool
+	rulesOpen    bool
+	editingRule  bool
+	focusedRule  valueObjectRuleField
 	returnStatus modelStatus
 }
 
@@ -535,7 +574,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.result = application.GenerateResult{}
 		m.err = nil
 		m.errContext = ""
-		m.message = "Value objects saved. Plan refreshed. Invariant editing is future work."
+		m.message = "Value objects saved. Plan refreshed. Basic type and rules can be edited from the value objects editor."
 		m.clampSelectedService()
 		m.clampFileCursor()
 		return m, nil
@@ -654,14 +693,65 @@ func (m *Model) startValueObjectsEditing() {
 	m.errContext = ""
 	m.message = ""
 	m.edit = editState{mode: editModeValueObjects}
-	m.valueObjectsEdit = valueObjectsEditState{returnStatus: returnStatus, serviceName: service.Name, original: append([]string(nil), service.ValueObjectNames...), valueObjects: make([]textField, 0, len(service.ValueObjectNames))}
-	for _, name := range service.ValueObjectNames {
-		m.valueObjectsEdit.valueObjects = append(m.valueObjectsEdit.valueObjects, newTextField(name))
+	m.valueObjectsEdit = valueObjectsEditState{returnStatus: returnStatus, serviceName: service.Name, valueObjects: make([]valueObjectEditItem, 0, len(service.ValueObjectNames))}
+	if len(service.ValueObjects) > 0 {
+		for _, valueObject := range service.ValueObjects {
+			m.valueObjectsEdit.valueObjects = append(m.valueObjectsEdit.valueObjects, valueObjectEditItemFromSummary(valueObject))
+		}
+	} else {
+		for _, name := range service.ValueObjectNames {
+			m.valueObjectsEdit.valueObjects = append(m.valueObjectsEdit.valueObjects, newValueObjectEditItem(name, name))
+		}
 	}
 	if len(m.valueObjectsEdit.valueObjects) == 0 {
-		m.valueObjectsEdit.valueObjects = append(m.valueObjectsEdit.valueObjects, newTextField(m.nextValueObjectPlaceholder()))
-		m.valueObjectsEdit.original = append(m.valueObjectsEdit.original, "")
+		m.valueObjectsEdit.valueObjects = append(m.valueObjectsEdit.valueObjects, newValueObjectEditItem("", m.nextValueObjectPlaceholder()))
 	}
+}
+
+func valueObjectEditItemFromSummary(summary application.ValueObjectSummary) valueObjectEditItem {
+	item := newValueObjectEditItem(summary.Name, summary.Name)
+	item.typeName = newTextField(summary.Type)
+	item.rules = valueObjectRuleEditStateFromSummary(summary.Validations)
+	return item
+}
+
+func newValueObjectEditItem(originalName, name string) valueObjectEditItem {
+	return valueObjectEditItem{originalName: originalName, name: newTextField(name), typeName: newTextField("string"), rules: valueObjectRuleEditState{required: true, minLength: newTextField("1"), maxLength: newTextField("100"), validExample: newTextField("Sample")}}
+}
+
+func valueObjectRuleEditStateFromSummary(summary application.ValidationRuleSummary) valueObjectRuleEditState {
+	rules := valueObjectRuleEditState{}
+	if summary.Required != nil {
+		rules.required = *summary.Required
+	}
+	rules.minLength = intRuleText(summary.MinLength)
+	rules.maxLength = intRuleText(summary.MaxLength)
+	rules.pattern = stringRuleText(summary.Pattern)
+	rules.validExample = stringRuleText(summary.ValidExample)
+	rules.invalidExample = stringRuleText(summary.InvalidExample)
+	rules.minimum = stringRuleText(summary.Minimum)
+	rules.maximum = stringRuleText(summary.Maximum)
+	if summary.NotEmpty != nil {
+		rules.notEmpty = *summary.NotEmpty
+	}
+	if summary.NotDefault != nil {
+		rules.notDefault = *summary.NotDefault
+	}
+	return rules
+}
+
+func intRuleText(value *int) textField {
+	if value == nil {
+		return textField{}
+	}
+	return newTextField(fmt.Sprintf("%d", *value))
+}
+
+func stringRuleText(value *string) textField {
+	if value == nil {
+		return textField{}
+	}
+	return newTextField(*value)
 }
 
 func (m Model) updateEntitiesEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -826,9 +916,18 @@ func (m Model) updateFieldsEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateValueObjectsEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyRunes && m.valueObjectsEdit.rulesOpen && m.valueObjectsEdit.editingRule {
+		if field := m.selectedValueObjectRuleTextField(); field != nil {
+			field.insert(msg.Runes)
+		}
+		return m, nil
+	}
 	if msg.Type == tea.KeyRunes && m.valueObjectsEdit.renaming {
 		m.selectedValueObjectField().insert(msg.Runes)
 		return m, nil
+	}
+	if m.valueObjectsEdit.rulesOpen {
+		return m.updateValueObjectRulesEdit(msg)
 	}
 	switch msg.String() {
 	case "esc":
@@ -857,8 +956,7 @@ func (m Model) updateValueObjectsEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "a":
 		if !m.valueObjectsEdit.renaming {
-			m.valueObjectsEdit.valueObjects = append(m.valueObjectsEdit.valueObjects, newTextField(m.nextValueObjectPlaceholder()))
-			m.valueObjectsEdit.original = append(m.valueObjectsEdit.original, "")
+			m.valueObjectsEdit.valueObjects = append(m.valueObjectsEdit.valueObjects, newValueObjectEditItem("", m.nextValueObjectPlaceholder()))
 			m.valueObjectsEdit.selected = len(m.valueObjectsEdit.valueObjects) - 1
 		}
 		return m, nil
@@ -871,13 +969,18 @@ func (m Model) updateValueObjectsEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.valueObjectsEdit.renaming && len(m.valueObjectsEdit.valueObjects) > 0 {
 			selected := m.valueObjectsEdit.selected
 			m.valueObjectsEdit.valueObjects = append(m.valueObjectsEdit.valueObjects[:selected], m.valueObjectsEdit.valueObjects[selected+1:]...)
-			m.valueObjectsEdit.original = append(m.valueObjectsEdit.original[:selected], m.valueObjectsEdit.original[selected+1:]...)
 			if m.valueObjectsEdit.selected >= len(m.valueObjectsEdit.valueObjects) {
 				m.valueObjectsEdit.selected = len(m.valueObjectsEdit.valueObjects) - 1
 			}
 			if m.valueObjectsEdit.selected < 0 {
 				m.valueObjectsEdit.selected = 0
 			}
+		}
+		return m, nil
+	case "o":
+		if !m.valueObjectsEdit.renaming && len(m.valueObjectsEdit.valueObjects) > 0 {
+			m.valueObjectsEdit.rulesOpen = true
+			m.valueObjectsEdit.focusedRule = valueObjectRuleFieldType
 		}
 		return m, nil
 	case "left":
@@ -898,6 +1001,79 @@ func (m Model) updateValueObjectsEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "delete":
 		if m.valueObjectsEdit.renaming {
 			m.selectedValueObjectField().delete()
+		}
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m Model) updateValueObjectRulesEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.status = m.valueObjectsEdit.returnStatus
+		m.err = nil
+		m.errContext = ""
+		return m, nil
+	case "b":
+		if !m.valueObjectsEdit.editingRule {
+			m.valueObjectsEdit.rulesOpen = false
+		}
+		return m, nil
+	case "enter":
+		if m.valueObjectsEdit.editingRule {
+			m.valueObjectsEdit.editingRule = false
+			return m, nil
+		}
+		m.status = statusSaving
+		m.err = nil
+		m.errContext = ""
+		return m, m.saveValueObjectsCmd()
+	case "tab", "down", "j":
+		if !m.valueObjectsEdit.editingRule {
+			m.moveValueObjectRuleFocus(1)
+		}
+		return m, nil
+	case "shift+tab", "up", "k":
+		if !m.valueObjectsEdit.editingRule {
+			m.moveValueObjectRuleFocus(-1)
+		}
+		return m, nil
+	case " ":
+		if !m.valueObjectsEdit.editingRule {
+			m.toggleSelectedValueObjectRule()
+		}
+		return m, nil
+	case "e":
+		if !m.valueObjectsEdit.editingRule && m.selectedValueObjectRuleTextField() != nil {
+			m.valueObjectsEdit.editingRule = true
+		}
+		return m, nil
+	case "left":
+		if m.valueObjectsEdit.editingRule {
+			if field := m.selectedValueObjectRuleTextField(); field != nil {
+				field.move(-1)
+			}
+		}
+		return m, nil
+	case "right":
+		if m.valueObjectsEdit.editingRule {
+			if field := m.selectedValueObjectRuleTextField(); field != nil {
+				field.move(1)
+			}
+		}
+		return m, nil
+	case "backspace":
+		if m.valueObjectsEdit.editingRule {
+			if field := m.selectedValueObjectRuleTextField(); field != nil {
+				field.backspace()
+			}
+		}
+		return m, nil
+	case "delete":
+		if m.valueObjectsEdit.editingRule {
+			if field := m.selectedValueObjectRuleTextField(); field != nil {
+				field.delete()
+			}
 		}
 		return m, nil
 	}
@@ -1106,23 +1282,102 @@ func (m *Model) selectedFieldText() *textField {
 
 func (m *Model) selectedValueObjectField() *textField {
 	if len(m.valueObjectsEdit.valueObjects) == 0 {
-		m.valueObjectsEdit.valueObjects = append(m.valueObjectsEdit.valueObjects, newTextField(m.nextValueObjectPlaceholder()))
-		m.valueObjectsEdit.original = append(m.valueObjectsEdit.original, "")
+		m.valueObjectsEdit.valueObjects = append(m.valueObjectsEdit.valueObjects, newValueObjectEditItem("", m.nextValueObjectPlaceholder()))
 		m.valueObjectsEdit.selected = 0
 	}
-	return &m.valueObjectsEdit.valueObjects[m.valueObjectsEdit.selected]
+	return &m.valueObjectsEdit.valueObjects[m.valueObjectsEdit.selected].name
 }
 
 func (m Model) nextValueObjectPlaceholder() string {
 	used := map[string]bool{}
 	for _, valueObject := range m.valueObjectsEdit.valueObjects {
-		used[valueObject.string()] = true
+		used[valueObject.name.string()] = true
 	}
 	for index := len(m.valueObjectsEdit.valueObjects) + 1; ; index++ {
 		name := fmt.Sprintf("ValueObject%d", index)
 		if !used[name] {
 			return name
 		}
+	}
+}
+
+func (m *Model) selectedValueObjectRuleTextField() *textField {
+	if len(m.valueObjectsEdit.valueObjects) == 0 {
+		return nil
+	}
+	selected := &m.valueObjectsEdit.valueObjects[m.valueObjectsEdit.selected]
+	switch m.valueObjectsEdit.focusedRule {
+	case valueObjectRuleFieldType:
+		return &selected.typeName
+	case valueObjectRuleFieldMinLength:
+		return &selected.rules.minLength
+	case valueObjectRuleFieldMaxLength:
+		return &selected.rules.maxLength
+	case valueObjectRuleFieldPattern:
+		return &selected.rules.pattern
+	case valueObjectRuleFieldValidExample:
+		return &selected.rules.validExample
+	case valueObjectRuleFieldInvalidExample:
+		return &selected.rules.invalidExample
+	case valueObjectRuleFieldMinimum:
+		return &selected.rules.minimum
+	case valueObjectRuleFieldMaximum:
+		return &selected.rules.maximum
+	}
+	return nil
+}
+
+func (m *Model) moveValueObjectRuleFocus(delta int) {
+	fields := m.visibleValueObjectRuleFields()
+	if len(fields) == 0 {
+		m.valueObjectsEdit.focusedRule = valueObjectRuleFieldType
+		return
+	}
+	position := 0
+	for index, field := range fields {
+		if field == m.valueObjectsEdit.focusedRule {
+			position = index
+			break
+		}
+	}
+	position += delta
+	if position < 0 {
+		position = len(fields) - 1
+	}
+	if position >= len(fields) {
+		position = 0
+	}
+	m.valueObjectsEdit.focusedRule = fields[position]
+}
+
+func (m Model) visibleValueObjectRuleFields() []valueObjectRuleField {
+	fields := []valueObjectRuleField{valueObjectRuleFieldType}
+	if len(m.valueObjectsEdit.valueObjects) == 0 {
+		return fields
+	}
+	switch m.valueObjectsEdit.valueObjects[m.valueObjectsEdit.selected].typeName.string() {
+	case "string":
+		fields = append(fields, valueObjectRuleFieldRequired, valueObjectRuleFieldMinLength, valueObjectRuleFieldMaxLength, valueObjectRuleFieldPattern, valueObjectRuleFieldValidExample, valueObjectRuleFieldInvalidExample)
+	case "int", "decimal":
+		fields = append(fields, valueObjectRuleFieldMinimum, valueObjectRuleFieldMaximum)
+	case "Guid":
+		fields = append(fields, valueObjectRuleFieldNotEmpty)
+	}
+	return fields
+}
+
+func (m *Model) toggleSelectedValueObjectRule() {
+	if len(m.valueObjectsEdit.valueObjects) == 0 {
+		return
+	}
+	rules := &m.valueObjectsEdit.valueObjects[m.valueObjectsEdit.selected].rules
+	switch m.valueObjectsEdit.focusedRule {
+	case valueObjectRuleFieldRequired:
+		rules.required = !rules.required
+	case valueObjectRuleFieldNotEmpty:
+		rules.notEmpty = !rules.notEmpty
+	case valueObjectRuleFieldNotDefault:
+		rules.notDefault = !rules.notDefault
 	}
 }
 
@@ -1565,17 +1820,54 @@ func (m Model) saveFieldsCmd() tea.Cmd {
 
 func (m Model) saveValueObjectsCmd() tea.Cmd {
 	settings := application.ValueObjectSettings{ServiceName: m.valueObjectsEdit.serviceName, ValueObjects: make([]application.ValueObjectNameSetting, 0, len(m.valueObjectsEdit.valueObjects))}
-	for index, valueObject := range m.valueObjectsEdit.valueObjects {
-		original := ""
-		if index < len(m.valueObjectsEdit.original) {
-			original = m.valueObjectsEdit.original[index]
-		}
-		settings.ValueObjects = append(settings.ValueObjects, application.ValueObjectNameSetting{OriginalName: original, Name: valueObject.string()})
+	for _, valueObject := range m.valueObjectsEdit.valueObjects {
+		settings.ValueObjects = append(settings.ValueObjects, application.ValueObjectNameSetting{OriginalName: valueObject.originalName, Name: valueObject.name.string(), Type: valueObject.typeName.string(), Validations: validationRuleSettingsFromEdit(valueObject.typeName.string(), valueObject.rules)})
 	}
 	return func() tea.Msg {
 		result, err := m.updateValueObjects(m.request, settings)
 		return valueObjectsFinishedMsg{result: result, err: err}
 	}
+}
+
+func validationRuleSettingsFromEdit(valueObjectType string, rules valueObjectRuleEditState) application.ValidationRuleSettings {
+	switch valueObjectType {
+	case "string":
+		return application.ValidationRuleSettings{Required: boolPtr(rules.required), MinLength: intPtrFromText(rules.minLength), MaxLength: intPtrFromText(rules.maxLength), Pattern: stringPtrFromText(rules.pattern), ValidExample: stringPtrFromText(rules.validExample), InvalidExample: stringPtrFromText(rules.invalidExample)}
+	case "int", "decimal":
+		return application.ValidationRuleSettings{Minimum: stringPtrFromText(rules.minimum), Maximum: stringPtrFromText(rules.maximum)}
+	case "Guid":
+		return application.ValidationRuleSettings{NotEmpty: boolPtr(rules.notEmpty)}
+	default:
+		return application.ValidationRuleSettings{}
+	}
+}
+
+func boolPtr(value bool) *bool {
+	if !value {
+		return nil
+	}
+	return &value
+}
+
+func intPtrFromText(field textField) *int {
+	value := strings.TrimSpace(field.string())
+	if value == "" {
+		return nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		invalid := -1
+		return &invalid
+	}
+	return &parsed
+}
+
+func stringPtrFromText(field textField) *string {
+	value := strings.TrimSpace(field.string())
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func (m Model) View() string {
@@ -1650,7 +1942,7 @@ func (m Model) sourceStepCard() string {
 	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Mode"), m.plan.OutputAction)
 	fmt.Fprintln(&builder)
 	fmt.Fprintln(&builder, "Use this step to confirm where the JSON comes from and where generated files will be planned.")
-	fmt.Fprintln(&builder, dimStyle.Render("Project, service, entity, and basic field editing are available; value objects are planned for later steps."))
+	fmt.Fprintln(&builder, dimStyle.Render("Project, service, entity, basic field, and basic value-object rule editing are available."))
 	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 }
 
@@ -1723,7 +2015,7 @@ func (m Model) servicesStepCard() string {
 	} else {
 		fmt.Fprintln(&builder, successStyle.Render("up/down choose service, enter edit entities, e edit services, v edit value objects."))
 	}
-	fmt.Fprintln(&builder, dimStyle.Render("Entity fields can be edited from the entity editor. Value-object invariants are not editable yet. New entities get Id Guid."))
+	fmt.Fprintln(&builder, dimStyle.Render("Entity fields can be edited from the entity editor. Value-object type/rule editing is basic and has no advanced DSL. New entities get Id Guid."))
 	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 }
 
@@ -2143,7 +2435,7 @@ func (m Model) renderFieldsEditor(builder *strings.Builder) {
 		return
 	}
 	fmt.Fprintf(builder, "Editing fields for %s/%s\n", m.fieldsEdit.serviceName, m.fieldsEdit.entityName)
-	fmt.Fprintln(builder, "Field details are name and type. Value-object validation rules are upcoming.")
+	fmt.Fprintln(builder, "Field details are name and type. Value-object validation rules are edited from the value objects editor.")
 	if m.err != nil {
 		fmt.Fprintf(builder, "Save failed: %v\n", m.err)
 	}
@@ -2183,9 +2475,13 @@ func (m Model) renderValueObjectsEditor(builder *strings.Builder) {
 		fmt.Fprintln(builder, "Save is in progress. Exit will be available after it finishes.")
 		return
 	}
+	if m.valueObjectsEdit.rulesOpen {
+		m.renderValueObjectRulesEditor(builder)
+		return
+	}
 	fmt.Fprintf(builder, "Editing value objects for %s\n", m.valueObjectsEdit.serviceName)
-	fmt.Fprintln(builder, "This editor changes value-object names only. New value objects are string-backed with conservative validation defaults.")
-	fmt.Fprintln(builder, "Invariant editing is future work. Referenced value objects cannot be renamed or deleted.")
+	fmt.Fprintln(builder, "Edit value-object names or open basic type/rule editing for the selected value object.")
+	fmt.Fprintln(builder, "Referenced value objects cannot be renamed or deleted, but their type and rules can be edited safely.")
 	if m.err != nil {
 		fmt.Fprintf(builder, "Save failed: %v\n", m.err)
 	}
@@ -2197,11 +2493,11 @@ func (m Model) renderValueObjectsEditor(builder *strings.Builder) {
 		if index == m.valueObjectsEdit.selected {
 			cursor = ">"
 		}
-		label := valueObject.string()
+		label := valueObject.name.string()
 		if index == m.valueObjectsEdit.selected && m.valueObjectsEdit.renaming {
 			label += "_"
 		}
-		fmt.Fprintf(builder, "%s %d. %s\n", cursor, index+1, label)
+		fmt.Fprintf(builder, "%s %d. %s: %s (%s)\n", cursor, index+1, label, valueObject.typeName.string(), rulesLabelForEdit(valueObject.typeName.string(), valueObject.rules))
 	}
 	if service, ok := m.valueObjectEditServiceSummary(); ok && len(service.ValueObjectReferences) > 0 {
 		fmt.Fprintln(builder)
@@ -2216,8 +2512,100 @@ func (m Model) renderValueObjectsEditor(builder *strings.Builder) {
 		fmt.Fprintln(builder, "Left/right, backspace, and delete edit the selected value object name.")
 		return
 	}
-	fmt.Fprintln(builder, "Keys: up/down select, a add, r rename, d delete, enter save, esc cancel.")
+	fmt.Fprintln(builder, "Keys: up/down select, a add, r rename, o rules, d delete, enter save, esc cancel.")
 	fmt.Fprintln(builder, "Final validation checks blank, duplicate, colliding, and referenced value-object changes before save.")
+}
+
+func (m Model) renderValueObjectRulesEditor(builder *strings.Builder) {
+	if len(m.valueObjectsEdit.valueObjects) == 0 {
+		fmt.Fprintln(builder, "Editing value-object rules")
+		fmt.Fprintln(builder, "No value object is selected. Press b to go back.")
+		return
+	}
+	valueObject := m.valueObjectsEdit.valueObjects[m.valueObjectsEdit.selected]
+	fmt.Fprintf(builder, "Editing rules for %s/%s\n", m.valueObjectsEdit.serviceName, valueObject.name.string())
+	fmt.Fprintln(builder, "Basic rules map directly to the current JSON spec; no advanced rule DSL is available.")
+	if m.err != nil {
+		fmt.Fprintf(builder, "Save failed: %v\n", m.err)
+	}
+	for _, field := range m.visibleValueObjectRuleFields() {
+		fmt.Fprintf(builder, "%s %s\n", editCursor(field == m.valueObjectsEdit.focusedRule), m.valueObjectRuleLine(valueObject, field))
+	}
+	fmt.Fprintln(builder)
+	if m.valueObjectsEdit.editingRule {
+		fmt.Fprintln(builder, "Edit mode: type text. Enter confirms the local value. Esc cancels value-object editing.")
+		fmt.Fprintln(builder, "Left/right, backspace, and delete edit the selected field. Shortcut letters are inserted as text.")
+		return
+	}
+	fmt.Fprintln(builder, "Keys: up/down select rule, e edit text, space toggle, enter save, b back, esc cancel.")
+	fmt.Fprintln(builder, "Types in this editor: string, decimal, int, Guid, bool. Validation runs before save.")
+}
+
+func (m Model) valueObjectRuleLine(valueObject valueObjectEditItem, field valueObjectRuleField) string {
+	suffix := ""
+	if field == m.valueObjectsEdit.focusedRule && m.valueObjectsEdit.editingRule && m.selectedValueObjectRuleTextField() != nil {
+		suffix = "_"
+	}
+	switch field {
+	case valueObjectRuleFieldType:
+		return "Type: " + valueObject.typeName.string() + suffix
+	case valueObjectRuleFieldRequired:
+		return "required: " + yesNo(valueObject.rules.required)
+	case valueObjectRuleFieldMinLength:
+		return "minLength: " + valueObject.rules.minLength.string() + suffix
+	case valueObjectRuleFieldMaxLength:
+		return "maxLength: " + valueObject.rules.maxLength.string() + suffix
+	case valueObjectRuleFieldPattern:
+		return "pattern: " + valueObject.rules.pattern.string() + suffix
+	case valueObjectRuleFieldValidExample:
+		return "validExample: " + valueObject.rules.validExample.string() + suffix
+	case valueObjectRuleFieldInvalidExample:
+		return "invalidExample: " + valueObject.rules.invalidExample.string() + suffix
+	case valueObjectRuleFieldMinimum:
+		return "minimum: " + valueObject.rules.minimum.string() + suffix
+	case valueObjectRuleFieldMaximum:
+		return "maximum: " + valueObject.rules.maximum.string() + suffix
+	case valueObjectRuleFieldNotEmpty:
+		return "notEmpty: " + yesNo(valueObject.rules.notEmpty)
+	case valueObjectRuleFieldNotDefault:
+		return "notDefault: " + yesNo(valueObject.rules.notDefault)
+	default:
+		return ""
+	}
+}
+
+func rulesLabelForEdit(valueObjectType string, rules valueObjectRuleEditState) string {
+	parts := []string{}
+	switch valueObjectType {
+	case "string":
+		if rules.required {
+			parts = append(parts, "required")
+		}
+		if rules.minLength.string() != "" {
+			parts = append(parts, "min="+rules.minLength.string())
+		}
+		if rules.maxLength.string() != "" {
+			parts = append(parts, "max="+rules.maxLength.string())
+		}
+		if rules.pattern.string() != "" {
+			parts = append(parts, "pattern")
+		}
+	case "int", "decimal":
+		if rules.minimum.string() != "" {
+			parts = append(parts, "minimum="+rules.minimum.string())
+		}
+		if rules.maximum.string() != "" {
+			parts = append(parts, "maximum="+rules.maximum.string())
+		}
+	case "Guid":
+		if rules.notEmpty {
+			parts = append(parts, "notEmpty")
+		}
+	}
+	if len(parts) == 0 {
+		return "no rules"
+	}
+	return strings.Join(parts, ", ")
 }
 
 func (m Model) valueObjectEditServiceSummary() (application.ServiceSummary, bool) {

@@ -1,6 +1,7 @@
 package application
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -110,6 +111,21 @@ type ValueObjectSettings struct {
 type ValueObjectNameSetting struct {
 	OriginalName string
 	Name         string
+	Type         string
+	Validations  ValidationRuleSettings
+}
+
+type ValidationRuleSettings struct {
+	Required       *bool
+	MinLength      *int
+	MaxLength      *int
+	Pattern        *string
+	ValidExample   *string
+	InvalidExample *string
+	Minimum        *string
+	Maximum        *string
+	NotEmpty       *bool
+	NotDefault     *bool
 }
 
 type UpdateSolutionSettingsResult struct {
@@ -177,8 +193,29 @@ type ServiceSummary struct {
 	Name                  string
 	EntityNames           []string
 	ValueObjectNames      []string
+	ValueObjects          []ValueObjectSummary
 	ValueObjectReferences []ValueObjectReferenceSummary
 	Entities              []EntitySummary
+}
+
+type ValueObjectSummary struct {
+	Name        string
+	Type        string
+	Validations ValidationRuleSummary
+	RulesLabel  string
+}
+
+type ValidationRuleSummary struct {
+	Required       *bool
+	MinLength      *int
+	MaxLength      *int
+	Pattern        *string
+	ValidExample   *string
+	InvalidExample *string
+	Minimum        *string
+	Maximum        *string
+	NotEmpty       *bool
+	NotDefault     *bool
 }
 
 type ValueObjectReferenceSummary struct {
@@ -405,6 +442,9 @@ func (s Service) UpdateValueObjectSettings(request GenerateRequest, settings Val
 		return UpdateValueObjectSettingsResult{}, fmt.Errorf("service %q was not found", settings.ServiceName)
 	}
 	service := cfg.Services[serviceIndex]
+	if err := validateEditableValueObjectTypes(service.ValueObjects, settings.ValueObjects); err != nil {
+		return UpdateValueObjectSettingsResult{}, err
+	}
 	if err := validateSafeValueObjectReferenceChanges(service, settings.ValueObjects); err != nil {
 		return UpdateValueObjectSettingsResult{}, err
 	}
@@ -553,18 +593,96 @@ func updatedValueObjects(existing []spec.ValueObject, settings []ValueObjectName
 	for _, setting := range settings {
 		if setting.OriginalName != "" {
 			if valueObject, ok := valueObjectByName(existing, used, setting.OriginalName); ok {
-				valueObject.Name = setting.Name
+				valueObject = valueObjectWithSettings(valueObject, setting)
 				valueObjects = append(valueObjects, valueObject)
 				continue
 			}
 		}
 		if valueObject, ok := valueObjectByName(existing, used, setting.Name); ok {
+			valueObject = valueObjectWithSettings(valueObject, setting)
 			valueObjects = append(valueObjects, valueObject)
 			continue
 		}
-		valueObjects = append(valueObjects, defaultValueObjectForName(setting.Name))
+		valueObjects = append(valueObjects, valueObjectWithSettings(defaultValueObjectForName(setting.Name), setting))
 	}
 	return valueObjects
+}
+
+func valueObjectWithSettings(valueObject spec.ValueObject, setting ValueObjectNameSetting) spec.ValueObject {
+	valueObject.Name = setting.Name
+	typeName := strings.TrimSpace(setting.Type)
+	if typeName != "" {
+		if !editableValueObjectType(typeName) && typeName == valueObject.Type {
+			return valueObject
+		}
+		valueObject.Type = typeName
+		valueObject.Validations = validationRulesFromSettings(setting.Validations)
+	}
+	return valueObject
+}
+
+func validateEditableValueObjectTypes(existing []spec.ValueObject, settings []ValueObjectNameSetting) error {
+	for _, setting := range settings {
+		typeName := strings.TrimSpace(setting.Type)
+		if typeName == "" || editableValueObjectType(typeName) {
+			continue
+		}
+		if valueObject, ok := existingValueObjectForSetting(existing, setting); ok && valueObject.Type == typeName {
+			continue
+		}
+		return fmt.Errorf("value object %q type %q is not editable in the basic rules editor", setting.Name, typeName)
+	}
+	return nil
+}
+
+func existingValueObjectForSetting(existing []spec.ValueObject, setting ValueObjectNameSetting) (spec.ValueObject, bool) {
+	for _, valueObject := range existing {
+		if setting.OriginalName != "" && valueObject.Name == setting.OriginalName {
+			return valueObject, true
+		}
+		if valueObject.Name == setting.Name {
+			return valueObject, true
+		}
+	}
+	return spec.ValueObject{}, false
+}
+
+func editableValueObjectType(typeName string) bool {
+	switch typeName {
+	case "string", "decimal", "int", "Guid", "bool":
+		return true
+	default:
+		return false
+	}
+}
+
+func validationRulesFromSettings(settings ValidationRuleSettings) spec.ValidationRules {
+	rules := spec.ValidationRules{
+		Required:       settings.Required,
+		MinLength:      settings.MinLength,
+		MaxLength:      settings.MaxLength,
+		Pattern:        nonEmptyStringPtr(settings.Pattern),
+		ValidExample:   settings.ValidExample,
+		InvalidExample: settings.InvalidExample,
+		NotEmpty:       settings.NotEmpty,
+		NotDefault:     settings.NotDefault,
+	}
+	if settings.Minimum != nil && strings.TrimSpace(*settings.Minimum) != "" {
+		minimum := json.Number(strings.TrimSpace(*settings.Minimum))
+		rules.Minimum = &minimum
+	}
+	if settings.Maximum != nil && strings.TrimSpace(*settings.Maximum) != "" {
+		maximum := json.Number(strings.TrimSpace(*settings.Maximum))
+		rules.Maximum = &maximum
+	}
+	return rules
+}
+
+func nonEmptyStringPtr(value *string) *string {
+	if value == nil || *value == "" {
+		return nil
+	}
+	return value
 }
 
 func valueObjectByName(valueObjects []spec.ValueObject, used []bool, name string) (spec.ValueObject, bool) {
@@ -764,11 +882,13 @@ func summarizeConfig(cfg spec.Config) ConfigSummary {
 		summary.ServiceNames[index] = service.Name
 		valueObjectNames := make([]string, len(service.ValueObjects))
 		valueObjectSet := map[string]bool{}
+		valueObjects := make([]ValueObjectSummary, len(service.ValueObjects))
 		for valueObjectIndex, valueObject := range service.ValueObjects {
 			valueObjectNames[valueObjectIndex] = valueObject.Name
 			valueObjectSet[valueObject.Name] = true
+			valueObjects[valueObjectIndex] = summarizeValueObject(valueObject)
 		}
-		summary.Services[index] = ServiceSummary{Name: service.Name, EntityNames: make([]string, len(service.Entities)), ValueObjectNames: valueObjectNames, Entities: make([]EntitySummary, len(service.Entities))}
+		summary.Services[index] = ServiceSummary{Name: service.Name, EntityNames: make([]string, len(service.Entities)), ValueObjectNames: valueObjectNames, ValueObjects: valueObjects, Entities: make([]EntitySummary, len(service.Entities))}
 		for entityIndex, entity := range service.Entities {
 			summary.Services[index].EntityNames[entityIndex] = entity.Name
 			summary.Services[index].Entities[entityIndex] = EntitySummary{Name: entity.Name, Fields: make([]FieldSummary, len(entity.Fields))}
@@ -783,6 +903,71 @@ func summarizeConfig(cfg spec.Config) ConfigSummary {
 		summary.ValueObjectCount += len(service.ValueObjects)
 	}
 	return summary
+}
+
+func summarizeValueObject(valueObject spec.ValueObject) ValueObjectSummary {
+	rules := summarizeValidationRules(valueObject.Validations)
+	return ValueObjectSummary{Name: valueObject.Name, Type: valueObject.Type, Validations: rules, RulesLabel: compactRulesLabel(rules)}
+}
+
+func summarizeValidationRules(rules spec.ValidationRules) ValidationRuleSummary {
+	summary := ValidationRuleSummary{
+		Required:       rules.Required,
+		MinLength:      rules.MinLength,
+		MaxLength:      rules.MaxLength,
+		Pattern:        rules.Pattern,
+		ValidExample:   rules.ValidExample,
+		InvalidExample: rules.InvalidExample,
+		NotEmpty:       rules.NotEmpty,
+		NotDefault:     rules.NotDefault,
+	}
+	if rules.Minimum != nil {
+		minimum := rules.Minimum.String()
+		summary.Minimum = &minimum
+	}
+	if rules.Maximum != nil {
+		maximum := rules.Maximum.String()
+		summary.Maximum = &maximum
+	}
+	return summary
+}
+
+func compactRulesLabel(rules ValidationRuleSummary) string {
+	parts := []string{}
+	if rules.Required != nil && *rules.Required {
+		parts = append(parts, "required")
+	}
+	if rules.MinLength != nil {
+		parts = append(parts, fmt.Sprintf("min=%d", *rules.MinLength))
+	}
+	if rules.MaxLength != nil {
+		parts = append(parts, fmt.Sprintf("max=%d", *rules.MaxLength))
+	}
+	if rules.Pattern != nil && *rules.Pattern != "" {
+		parts = append(parts, "pattern")
+	}
+	if rules.ValidExample != nil && *rules.ValidExample != "" {
+		parts = append(parts, "validExample")
+	}
+	if rules.InvalidExample != nil && *rules.InvalidExample != "" {
+		parts = append(parts, "invalidExample")
+	}
+	if rules.Minimum != nil && *rules.Minimum != "" {
+		parts = append(parts, "minimum="+*rules.Minimum)
+	}
+	if rules.Maximum != nil && *rules.Maximum != "" {
+		parts = append(parts, "maximum="+*rules.Maximum)
+	}
+	if rules.NotEmpty != nil && *rules.NotEmpty {
+		parts = append(parts, "notEmpty")
+	}
+	if rules.NotDefault != nil && *rules.NotDefault {
+		parts = append(parts, "notDefault")
+	}
+	if len(parts) == 0 {
+		return "no rules"
+	}
+	return strings.Join(parts, ", ")
 }
 
 func (s Service) Generate(request GenerateRequest) (GenerateResult, error) {
