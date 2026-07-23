@@ -52,6 +52,7 @@ type GenerateFunc func(application.GenerateRequest) (application.GenerateResult,
 type UpdateSettingsFunc func(application.GenerateRequest, application.SolutionSettings) (application.UpdateSolutionSettingsResult, error)
 type UpdateServicesFunc func(application.GenerateRequest, application.ServiceSettings) (application.UpdateServiceSettingsResult, error)
 type UpdateEntitiesFunc func(application.GenerateRequest, application.EntitySettings) (application.UpdateEntitySettingsResult, error)
+type UpdateFieldsFunc func(application.GenerateRequest, application.FieldSettings) (application.UpdateFieldSettingsResult, error)
 
 type modelStatus int
 
@@ -91,6 +92,7 @@ const (
 	editModeProject editMode = iota
 	editModeServices
 	editModeEntities
+	editModeFields
 )
 
 type textField struct {
@@ -124,6 +126,21 @@ type entitiesEditState struct {
 	returnStatus modelStatus
 }
 
+type fieldEditItem struct {
+	originalName string
+	name         textField
+	typeName     textField
+}
+
+type fieldsEditState struct {
+	serviceName string
+	entityName  string
+	fields      []fieldEditItem
+	selected    int
+	editingName bool
+	editingType bool
+}
+
 type Model struct {
 	plan                       application.GenerationPlan
 	request                    application.GenerateRequest
@@ -132,6 +149,7 @@ type Model struct {
 	update                     UpdateSettingsFunc
 	updateServices             UpdateServicesFunc
 	updateEntities             UpdateEntitiesFunc
+	updateFields               UpdateFieldsFunc
 	status                     modelStatus
 	result                     application.GenerateResult
 	err                        error
@@ -140,6 +158,7 @@ type Model struct {
 	edit                       editState
 	servicesEdit               servicesEditState
 	entitiesEdit               entitiesEditState
+	fieldsEdit                 fieldsEditState
 	targetFrameworkSuggestions []string
 	fileCursor                 int
 	fileOffset                 int
@@ -157,10 +176,11 @@ func NewModel(plan application.GenerationPlan, request application.GenerateReque
 	return Model{plan: plan, request: request, planFunc: planFunc, generate: generate, update: update, status: statusReady, targetFrameworkSuggestions: suggestions, windowRows: defaultFileWindowRows, currentStep: stepSource}
 }
 
-func Run(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, updateServices UpdateServicesFunc, updateEntities UpdateEntitiesFunc, targetFrameworkSuggestions []string) error {
+func Run(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, updateServices UpdateServicesFunc, updateEntities UpdateEntitiesFunc, updateFields UpdateFieldsFunc, targetFrameworkSuggestions []string) error {
 	model := NewModel(plan, request, planFunc, generate, update, targetFrameworkSuggestions)
 	model.updateServices = updateServices
 	model.updateEntities = updateEntities
+	model.updateFields = updateFields
 	_, err := tea.NewProgram(model).Run()
 	return err
 }
@@ -177,6 +197,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		if m.status == statusEditing {
+			if m.edit.mode == editModeFields {
+				return m.updateFieldsEdit(msg)
+			}
 			if m.edit.mode == editModeEntities {
 				return m.updateEntitiesEdit(msg)
 			}
@@ -406,7 +429,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.result = application.GenerateResult{}
 		m.err = nil
 		m.errContext = ""
-		m.message = "Services saved. Plan refreshed. Use enter on the Services step to edit entities; fields and value objects are upcoming."
+		m.message = "Services saved. Plan refreshed. Use enter on the Services step to edit entities and fields."
 		m.clampSelectedService()
 		m.clampFileCursor()
 		return m, nil
@@ -433,7 +456,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.result = application.GenerateResult{}
 		m.err = nil
 		m.errContext = ""
-		m.message = "Entities saved. Plan refreshed. Field and value-object editing is upcoming."
+		m.message = "Entities saved. Plan refreshed. Press f in the entity editor to edit fields."
+		m.clampSelectedService()
+		m.clampFileCursor()
+		return m, nil
+
+	case fieldsFinishedMsg:
+		if msg.err != nil {
+			m.status = statusEditing
+			m.edit.mode = editModeFields
+			m.err = msg.err
+			m.errContext = "Save"
+			m.message = ""
+			return m, nil
+		}
+		if msg.result.Saved && msg.result.PlanError != nil {
+			m.plan.Config = msg.result.Config
+			m.status = statusFailed
+			m.err = msg.result.PlanError
+			m.errContext = "Refresh after save"
+			m.message = "Fields saved, but the plan refresh failed. Press r to retry the refresh."
+			return m, nil
+		}
+		m.status = statusReady
+		m.plan = msg.result.Plan
+		m.result = application.GenerateResult{}
+		m.err = nil
+		m.errContext = ""
+		m.message = "Fields saved. Plan refreshed. Value-object editing is upcoming."
 		m.clampSelectedService()
 		m.clampFileCursor()
 		return m, nil
@@ -529,6 +579,21 @@ func (m *Model) startEntitiesEditing() {
 	}
 }
 
+func (m *Model) startFieldsEditing() {
+	entity := m.selectedEntitySummary()
+	m.edit.mode = editModeFields
+	m.err = nil
+	m.errContext = ""
+	m.message = ""
+	m.fieldsEdit = fieldsEditState{serviceName: m.entitiesEdit.serviceName, entityName: entity.Name, fields: make([]fieldEditItem, 0, len(entity.Fields))}
+	for _, field := range entity.Fields {
+		m.fieldsEdit.fields = append(m.fieldsEdit.fields, fieldEditItem{originalName: field.Name, name: newTextField(field.Name), typeName: newTextField(field.Type)})
+	}
+	if len(m.fieldsEdit.fields) == 0 {
+		m.fieldsEdit.fields = append(m.fieldsEdit.fields, fieldEditItem{name: newTextField(m.nextFieldPlaceholder()), typeName: newTextField("string")})
+	}
+}
+
 func (m Model) updateEntitiesEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.Type == tea.KeyRunes && m.entitiesEdit.renaming {
 		m.selectedEntityField().insert(msg.Runes)
@@ -581,6 +646,11 @@ func (m Model) updateEntitiesEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case "f":
+		if !m.entitiesEdit.renaming && len(m.entitiesEdit.entities) > 0 {
+			m.startFieldsEditing()
+		}
+		return m, nil
 	case "left":
 		if m.entitiesEdit.renaming {
 			m.selectedEntityField().move(-1)
@@ -599,6 +669,86 @@ func (m Model) updateEntitiesEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "delete":
 		if m.entitiesEdit.renaming {
 			m.selectedEntityField().delete()
+		}
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m Model) updateFieldsEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyRunes && (m.fieldsEdit.editingName || m.fieldsEdit.editingType) {
+		m.selectedFieldText().insert(msg.Runes)
+		return m, nil
+	}
+	switch msg.String() {
+	case "esc":
+		m.edit.mode = editModeEntities
+		m.err = nil
+		m.errContext = ""
+		return m, nil
+	case "enter":
+		if m.fieldsEdit.editingName || m.fieldsEdit.editingType {
+			m.fieldsEdit.editingName = false
+			m.fieldsEdit.editingType = false
+			return m, nil
+		}
+		m.status = statusSaving
+		m.err = nil
+		m.errContext = ""
+		return m, m.saveFieldsCmd()
+	case "up", "k":
+		if !m.fieldsEdit.editingName && !m.fieldsEdit.editingType {
+			m.moveFieldSelection(-1)
+		}
+		return m, nil
+	case "down", "j":
+		if !m.fieldsEdit.editingName && !m.fieldsEdit.editingType {
+			m.moveFieldSelection(1)
+		}
+		return m, nil
+	case "a":
+		if !m.fieldsEdit.editingName && !m.fieldsEdit.editingType {
+			m.fieldsEdit.fields = append(m.fieldsEdit.fields, fieldEditItem{name: newTextField(m.nextFieldPlaceholder()), typeName: newTextField("string")})
+			m.fieldsEdit.selected = len(m.fieldsEdit.fields) - 1
+		}
+		return m, nil
+	case "r":
+		if !m.fieldsEdit.editingName && !m.fieldsEdit.editingType && len(m.fieldsEdit.fields) > 0 {
+			m.fieldsEdit.editingName = true
+		}
+		return m, nil
+	case "t":
+		if !m.fieldsEdit.editingName && !m.fieldsEdit.editingType && len(m.fieldsEdit.fields) > 0 {
+			m.fieldsEdit.editingType = true
+		}
+		return m, nil
+	case "d":
+		if !m.fieldsEdit.editingName && !m.fieldsEdit.editingType && len(m.fieldsEdit.fields) > 1 {
+			selected := m.fieldsEdit.selected
+			m.fieldsEdit.fields = append(m.fieldsEdit.fields[:selected], m.fieldsEdit.fields[selected+1:]...)
+			if m.fieldsEdit.selected >= len(m.fieldsEdit.fields) {
+				m.fieldsEdit.selected = len(m.fieldsEdit.fields) - 1
+			}
+		}
+		return m, nil
+	case "left":
+		if m.fieldsEdit.editingName || m.fieldsEdit.editingType {
+			m.selectedFieldText().move(-1)
+		}
+		return m, nil
+	case "right":
+		if m.fieldsEdit.editingName || m.fieldsEdit.editingType {
+			m.selectedFieldText().move(1)
+		}
+		return m, nil
+	case "backspace":
+		if m.fieldsEdit.editingName || m.fieldsEdit.editingType {
+			m.selectedFieldText().backspace()
+		}
+		return m, nil
+	case "delete":
+		if m.fieldsEdit.editingName || m.fieldsEdit.editingType {
+			m.selectedFieldText().delete()
 		}
 		return m, nil
 	}
@@ -726,6 +876,23 @@ func (m Model) selectedServiceSummary() application.ServiceSummary {
 	return m.plan.Config.Services[selected]
 }
 
+func (m Model) selectedEntitySummary() application.EntitySummary {
+	service := m.selectedServiceSummary()
+	name := "Product"
+	if len(m.entitiesEdit.entities) > 0 {
+		name = m.entitiesEdit.entities[m.entitiesEdit.selected].string()
+	}
+	if m.entitiesEdit.selected < len(service.Entities) && service.Entities[m.entitiesEdit.selected].Name == name {
+		return service.Entities[m.entitiesEdit.selected]
+	}
+	for _, entity := range service.Entities {
+		if entity.Name == name {
+			return entity
+		}
+	}
+	return application.EntitySummary{Name: name, Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}}}
+}
+
 func (m *Model) moveEntitySelection(delta int) {
 	if len(m.entitiesEdit.entities) == 0 {
 		m.entitiesEdit.selected = 0
@@ -747,6 +914,47 @@ func (m *Model) selectedEntityField() *textField {
 		m.entitiesEdit.selected = 0
 	}
 	return &m.entitiesEdit.entities[m.entitiesEdit.selected]
+}
+
+func (m *Model) moveFieldSelection(delta int) {
+	if len(m.fieldsEdit.fields) == 0 {
+		m.fieldsEdit.selected = 0
+		return
+	}
+	m.fieldsEdit.selected += delta
+	if m.fieldsEdit.selected < 0 {
+		m.fieldsEdit.selected = 0
+	}
+	if m.fieldsEdit.selected >= len(m.fieldsEdit.fields) {
+		m.fieldsEdit.selected = len(m.fieldsEdit.fields) - 1
+	}
+}
+
+func (m *Model) selectedFieldText() *textField {
+	if len(m.fieldsEdit.fields) == 0 {
+		m.fieldsEdit.fields = append(m.fieldsEdit.fields, fieldEditItem{name: newTextField(m.nextFieldPlaceholder()), typeName: newTextField("string")})
+		m.fieldsEdit.selected = 0
+	}
+	if m.fieldsEdit.editingType {
+		return &m.fieldsEdit.fields[m.fieldsEdit.selected].typeName
+	}
+	return &m.fieldsEdit.fields[m.fieldsEdit.selected].name
+}
+
+func (m Model) nextFieldPlaceholder() string {
+	used := map[string]bool{}
+	for _, field := range m.fieldsEdit.fields {
+		used[field.name.string()] = true
+	}
+	if !used["Name"] {
+		return "Name"
+	}
+	for index := len(m.fieldsEdit.fields) + 1; ; index++ {
+		name := fmt.Sprintf("Field%d", index)
+		if !used[name] {
+			return name
+		}
+	}
 }
 
 func (m Model) nextEntityPlaceholder() string {
@@ -1093,6 +1301,11 @@ type entitiesFinishedMsg struct {
 	err    error
 }
 
+type fieldsFinishedMsg struct {
+	result application.UpdateFieldSettingsResult
+	err    error
+}
+
 func (m Model) planCmd() tea.Cmd {
 	return func() tea.Msg {
 		plan, err := m.planFunc(m.request)
@@ -1146,6 +1359,17 @@ func (m Model) saveEntitiesCmd() tea.Cmd {
 	return func() tea.Msg {
 		result, err := m.updateEntities(m.request, settings)
 		return entitiesFinishedMsg{result: result, err: err}
+	}
+}
+
+func (m Model) saveFieldsCmd() tea.Cmd {
+	settings := application.FieldSettings{ServiceName: m.fieldsEdit.serviceName, EntityName: m.fieldsEdit.entityName, Fields: make([]application.FieldSetting, 0, len(m.fieldsEdit.fields))}
+	for _, field := range m.fieldsEdit.fields {
+		settings.Fields = append(settings.Fields, application.FieldSetting{OriginalName: field.originalName, Name: field.name.string(), Type: field.typeName.string()})
+	}
+	return func() tea.Msg {
+		result, err := m.updateFields(m.request, settings)
+		return fieldsFinishedMsg{result: result, err: err}
 	}
 }
 
@@ -1210,7 +1434,7 @@ func (m Model) sourceStepCard() string {
 	fmt.Fprintln(&builder, sectionTitleStyle.Render("Source"))
 	fmt.Fprintf(&builder, "%s %s %s\n", labelStyle.Render("Source"), m.request.ConfigPath, dimStyle.Render("("+m.configSourceLabel()+")"))
 	if m.request.ConfigBootstrapped {
-		fmt.Fprintln(&builder, dimStyle.Render("Created starter config. Edit project, service, and basic entity settings incrementally; field editing comes later."))
+		fmt.Fprintln(&builder, dimStyle.Render("Created starter config. Edit project, service, entity, and basic field settings incrementally."))
 	}
 	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Product"), m.plan.Config.SolutionName)
 	if m.plan.Config.SolutionDescription != "" {
@@ -1221,7 +1445,7 @@ func (m Model) sourceStepCard() string {
 	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Mode"), m.plan.OutputAction)
 	fmt.Fprintln(&builder)
 	fmt.Fprintln(&builder, "Use this step to confirm where the JSON comes from and where generated files will be planned.")
-	fmt.Fprintln(&builder, dimStyle.Render("Project, service, and basic entity editing are available; fields and value objects are planned for later steps."))
+	fmt.Fprintln(&builder, dimStyle.Render("Project, service, entity, and basic field editing are available; value objects are planned for later steps."))
 	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 }
 
@@ -1260,6 +1484,10 @@ func (m Model) servicesStepCard() string {
 		m.renderEntitiesEditor(&builder)
 		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 	}
+	if (m.status == statusEditing && m.edit.mode == editModeFields) || (m.status == statusSaving && m.edit.mode == editModeFields) {
+		m.renderFieldsEditor(&builder)
+		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+	}
 	fmt.Fprintf(&builder, "%s %d services, %d entities, %d value objects\n", labelStyle.Render("Summary"), m.plan.Config.ServiceCount, m.plan.Config.EntityCount, m.plan.Config.ValueObjectCount)
 	if len(m.plan.Config.Services) > 0 {
 		for index, service := range m.plan.Config.Services {
@@ -1280,9 +1508,9 @@ func (m Model) servicesStepCard() string {
 	if m.busy() || m.postSaveRefreshFailed() {
 		fmt.Fprintln(&builder, busyStyle.Render("Service and entity editing is paused until the current operation finishes or the stale plan is refreshed."))
 	} else {
-		fmt.Fprintln(&builder, successStyle.Render("up/down choose service, enter edit selected service entities, e edit service list."))
+		fmt.Fprintln(&builder, successStyle.Render("up/down choose service, enter edit entities, e edit services."))
 	}
-	fmt.Fprintln(&builder, dimStyle.Render("Entity editing is name-only for now; fields and value objects are upcoming. New entities get Id Guid."))
+	fmt.Fprintln(&builder, dimStyle.Render("Entity fields can be edited from the entity editor; value objects are upcoming. New entities get Id Guid."))
 	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 }
 
@@ -1339,7 +1567,7 @@ func (m Model) footerCard() string {
 	case stepProject:
 		fmt.Fprintln(&builder, "Project: e edit settings, r refresh.")
 	case stepServices:
-		fmt.Fprintln(&builder, "Services: e edit services, r refresh.")
+		fmt.Fprintln(&builder, "Services: e edit services, enter edit entities, r refresh.")
 	case stepPreview:
 		fmt.Fprintln(&builder, readyHelp)
 	case stepGenerate:
@@ -1360,7 +1588,7 @@ func (m Model) configCard() string {
 	fmt.Fprintln(&builder, sectionTitleStyle.Render("Config"))
 	fmt.Fprintf(&builder, "%s %s %s\n", labelStyle.Render("Source"), m.request.ConfigPath, dimStyle.Render("("+m.configSourceLabel()+")"))
 	if m.request.ConfigBootstrapped {
-		fmt.Fprintln(&builder, dimStyle.Render("Created starter config. Edit project, service, and basic entity settings incrementally; field editing comes later."))
+		fmt.Fprintln(&builder, dimStyle.Render("Created starter config. Edit project, service, entity, and basic field settings incrementally."))
 	}
 	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Product"), m.plan.Config.SolutionName)
 	if m.plan.Config.SolutionDescription != "" {
@@ -1616,7 +1844,7 @@ func (m Model) renderSettingsEditor(builder *strings.Builder) {
 		return
 	}
 	fmt.Fprintln(builder, "Editing solution settings")
-	fmt.Fprintln(builder, "Use the Services step for service and entity editing. Field and value-object editing is upcoming.")
+	fmt.Fprintln(builder, "Use the Services step for service, entity, and basic field editing. Value-object editing is upcoming.")
 	if m.err != nil {
 		fmt.Fprintf(builder, "Save failed: %v\n", m.err)
 	}
@@ -1638,7 +1866,7 @@ func (m Model) renderServicesEditor(builder *strings.Builder) {
 		return
 	}
 	fmt.Fprintln(builder, "Editing services")
-	fmt.Fprintln(builder, "Press enter from the Services step to edit entities. Field and value-object editing is upcoming.")
+	fmt.Fprintln(builder, "Press enter from the Services step to edit entities and their fields. Value-object editing is upcoming.")
 	if m.err != nil {
 		fmt.Fprintf(builder, "Save failed: %v\n", m.err)
 	}
@@ -1670,7 +1898,7 @@ func (m Model) renderEntitiesEditor(builder *strings.Builder) {
 		return
 	}
 	fmt.Fprintf(builder, "Editing entities for %s\n", m.entitiesEdit.serviceName)
-	fmt.Fprintln(builder, "Field and value-object editing is upcoming. New entities get Id Guid.")
+	fmt.Fprintln(builder, "Press f to edit fields for the selected saved entity. New entities get Id Guid.")
 	if m.err != nil {
 		fmt.Fprintf(builder, "Save failed: %v\n", m.err)
 	}
@@ -1691,8 +1919,49 @@ func (m Model) renderEntitiesEditor(builder *strings.Builder) {
 		fmt.Fprintln(builder, "Left/right, backspace, and delete edit the selected entity name.")
 		return
 	}
-	fmt.Fprintln(builder, "Keys: up/down select, a add, r rename, d delete, enter save, esc cancel.")
+	fmt.Fprintln(builder, "Keys: up/down select, a add, r rename, d delete, f fields, enter save, esc cancel.")
 	fmt.Fprintln(builder, "Deletion keeps at least one entity locally; final validation runs before save.")
+}
+
+func (m Model) renderFieldsEditor(builder *strings.Builder) {
+	if m.status == statusSaving {
+		fmt.Fprintln(builder, "Saving fields...")
+		fmt.Fprintln(builder, "Save is in progress. Exit will be available after it finishes.")
+		return
+	}
+	fmt.Fprintf(builder, "Editing fields for %s/%s\n", m.fieldsEdit.serviceName, m.fieldsEdit.entityName)
+	fmt.Fprintln(builder, "Field details are name and type. Value-object validation rules are upcoming.")
+	if m.err != nil {
+		fmt.Fprintf(builder, "Save failed: %v\n", m.err)
+	}
+	for index, field := range m.fieldsEdit.fields {
+		cursor := " "
+		if index == m.fieldsEdit.selected {
+			cursor = ">"
+		}
+		name := field.name.string()
+		fieldType := field.typeName.string()
+		if index == m.fieldsEdit.selected && m.fieldsEdit.editingName {
+			name += "_"
+		}
+		if index == m.fieldsEdit.selected && m.fieldsEdit.editingType {
+			fieldType += "_"
+		}
+		fmt.Fprintf(builder, "%s %d. %s: %s\n", cursor, index+1, name, fieldType)
+	}
+	fmt.Fprintln(builder)
+	if m.fieldsEdit.editingName {
+		fmt.Fprintln(builder, "Rename mode: type the field name. Enter confirms the local rename. Esc returns to entities.")
+		fmt.Fprintln(builder, "Left/right, backspace, and delete edit the selected field name.")
+		return
+	}
+	if m.fieldsEdit.editingType {
+		fmt.Fprintln(builder, "Type mode: enter a scalar type such as string, Guid, int, decimal, bool, DateTime, double, or long.")
+		fmt.Fprintln(builder, "Enter confirms the local type. Esc returns to entities.")
+		return
+	}
+	fmt.Fprintln(builder, "Keys: up/down select, a add string field, r rename, t edit type, d delete, enter save, esc back.")
+	fmt.Fprintln(builder, "Deletion keeps at least one field locally; config validation still requires exactly one Id Guid field.")
 }
 
 func editCursor(focused bool) string {

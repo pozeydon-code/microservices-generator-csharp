@@ -79,8 +79,8 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	assertContains(t, view, "Summary 2 services, 3 entities, 3 value objects")
 	assertContains(t, view, "> ProductService: Product")
 	assertContains(t, view, "  OrderService: Order, OrderLine")
-	assertContains(t, view, "up/down choose service, enter edit selected service entities, e edit service list.")
-	assertContains(t, view, "Entity editing is name-only for now; fields and value objects are upcoming. New entities get Id Guid.")
+	assertContains(t, view, "up/down choose service, enter edit entities, e edit services.")
+	assertContains(t, view, "Entity fields can be edited from the entity editor; value objects are upcoming. New entities get Id Guid.")
 
 	model.currentStep = stepPreview
 	view = model.View()
@@ -121,7 +121,7 @@ func TestModelViewShowsBootstrappedConfigSource(t *testing.T) {
 	view := NewModel(plannedFilesPlan(1), application.GenerateRequest{ConfigPath: "starter.json", ConfigBootstrapped: true}, nil, nil, nil).View()
 
 	assertContains(t, view, "Source starter.json (starter config bootstrapped this run)")
-	assertContains(t, view, "Created starter config. Edit project, service, and basic entity settings incrementally; field editing comes later.")
+	assertContains(t, view, "Created starter config. Edit project, service, entity, and basic field settings incrementally.")
 }
 
 func TestModelDefaultsToSourceStep(t *testing.T) {
@@ -769,7 +769,7 @@ func TestModelUpdateEditsSolutionSettingsAndSaves(t *testing.T) {
 		t.Fatalf("expected editing name field, got %#v", model)
 	}
 	assertContains(t, model.View(), "Editing solution settings")
-	assertContains(t, model.View(), "Use the Services step for service and entity editing. Field and value-object editing is upcoming.")
+	assertContains(t, model.View(), "Use the Services step for service, entity, and basic field editing. Value-object editing is upcoming.")
 
 	for range len([]rune("CommercePlatform")) {
 		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyBackspace})
@@ -1149,7 +1149,7 @@ func TestModelUpdateEditsServicesAndSaves(t *testing.T) {
 	if cmd != nil || model.status != statusReady || model.plan.FileCount != 4 || model.plan.Config.ServiceNames[0] != "CatalogService" {
 		t.Fatalf("expected ready state with refreshed services plan, got cmd=%v model=%#v", cmd, model)
 	}
-	assertContains(t, model.View(), "Services saved. Plan refreshed. Use enter on the Services step to edit entities; fields and value objects are upcoming.")
+	assertContains(t, model.View(), "Services saved. Plan refreshed. Use enter on the Services step to edit entities and fields.")
 }
 
 func TestModelUpdateServicesEditCancelKeepsPlan(t *testing.T) {
@@ -1258,8 +1258,8 @@ func TestModelUpdateSelectsServiceAndEditsEntitiesAndSaves(t *testing.T) {
 		EntityCount:  3,
 		ServiceNames: []string{"ProductService", "OrderService"},
 		Services: []application.ServiceSummary{
-			{Name: "ProductService", EntityNames: []string{"Product"}},
-			{Name: "OrderService", EntityNames: []string{"Order", "OrderLine"}},
+			{Name: "ProductService", EntityNames: []string{"Product"}, Entities: []application.EntitySummary{{Name: "Product", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}}}},
+			{Name: "OrderService", EntityNames: []string{"Order", "OrderLine"}, Entities: []application.EntitySummary{{Name: "Order", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Number", Type: "string"}}}, {Name: "OrderLine", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Quantity", Type: "int"}}}}},
 		},
 	}
 	updatedPlan := plannedFilesPlan(4)
@@ -1296,7 +1296,7 @@ func TestModelUpdateSelectsServiceAndEditsEntitiesAndSaves(t *testing.T) {
 		t.Fatalf("expected entity edit mode for OrderService, got cmd=%v model=%#v", cmd, model)
 	}
 	assertContains(t, model.View(), "Editing entities for OrderService")
-	assertContains(t, model.View(), "Field and value-object editing is upcoming. New entities get Id Guid.")
+	assertContains(t, model.View(), "Press f to edit fields for the selected saved entity. New entities get Id Guid.")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	model = updated.(Model)
@@ -1348,7 +1348,7 @@ func TestModelUpdateSelectsServiceAndEditsEntitiesAndSaves(t *testing.T) {
 	if cmd != nil || model.status != statusReady || model.plan.FileCount != 4 || model.plan.Config.Services[1].EntityNames[0] != "Purchase" {
 		t.Fatalf("expected ready state with refreshed entity plan, got cmd=%v model=%#v", cmd, model)
 	}
-	assertContains(t, model.View(), "Entities saved. Plan refreshed. Field and value-object editing is upcoming.")
+	assertContains(t, model.View(), "Entities saved. Plan refreshed. Press f in the entity editor to edit fields.")
 }
 
 func TestModelUpdateEntitiesRenameInsertsShortcutRunes(t *testing.T) {
@@ -1467,6 +1467,208 @@ func TestModelUpdateEntitiesSaveSuccessWithRefreshFailureBlocksUntilRetry(t *tes
 	updated, editCmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if editCmd != nil || updated.(Model).status != statusFailed {
 		t.Fatalf("expected entity edit to be blocked after save refresh failure, got status=%v cmd=%v", updated.(Model).status, editCmd)
+	}
+	updated, retryCmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	model = updated.(Model)
+	if model.status != statusRefreshing || retryCmd == nil {
+		t.Fatalf("expected refresh retry command, got status=%v cmd=%v", model.status, retryCmd)
+	}
+	updated, _ = model.Update(retryCmd())
+	model = updated.(Model)
+	if retries != 1 || model.status != statusReady || model.plan.FileCount != 2 {
+		t.Fatalf("expected refresh retry to restore ready plan, retries=%d model=%#v", retries, model)
+	}
+}
+
+func TestModelUpdateOpensFieldsEditorAndSavesFieldChanges(t *testing.T) {
+	request := application.GenerateRequest{ConfigPath: "config.json", OutputDir: "/tmp/generated", Force: true}
+	plan := plannedFilesPlan(2)
+	plan.Config = application.ConfigSummary{
+		ServiceCount: 1,
+		EntityCount:  1,
+		Services:     []application.ServiceSummary{{Name: "ProductService", EntityNames: []string{"Product"}, Entities: []application.EntitySummary{{Name: "Product", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}}}}},
+	}
+	updatedPlan := plannedFilesPlan(4)
+	updatedPlan.Config = application.ConfigSummary{
+		ServiceCount: 1,
+		EntityCount:  1,
+		Services:     []application.ServiceSummary{{Name: "ProductService", EntityNames: []string{"Product"}, Entities: []application.EntitySummary{{Name: "Product", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Title", Type: "string"}, {Name: "Name", Type: "decimal"}}}}}},
+	}
+	var capturedSettings application.FieldSettings
+	model := modelOnStep(plan, stepServices)
+	model.request = request
+	model.updateFields = func(actual application.GenerateRequest, settings application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+		if actual != request {
+			t.Fatalf("expected request %#v, got %#v", request, actual)
+		}
+		capturedSettings = settings
+		return application.UpdateFieldSettingsResult{Saved: true, Plan: updatedPlan}, nil
+	}
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.edit.mode != editModeEntities {
+		t.Fatalf("expected entity editor, got cmd=%v model=%#v", cmd, model)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	model = updated.(Model)
+	if cmd != nil || model.edit.mode != editModeFields || model.fieldsEdit.entityName != "Product" {
+		t.Fatalf("expected fields editor, got cmd=%v model=%#v", cmd, model)
+	}
+	assertContains(t, model.View(), "Editing fields for ProductService/Product")
+	assertContains(t, model.View(), "Keys: up/down select, a add string field, r rename, t edit type, d delete, enter save, esc back.")
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	model = updated.(Model)
+	for range len([]rune("Name")) {
+		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		model = updated.(Model)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Title")})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.fieldsEdit.editingName || model.fieldsEdit.fields[1].name.string() != "Title" {
+		t.Fatalf("expected local field rename confirmation, got %#v", model.fieldsEdit)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	model = updated.(Model)
+	if model.fieldsEdit.selected != 2 || model.fieldsEdit.fields[2].name.string() != "Name" || model.fieldsEdit.fields[2].typeName.string() != "string" {
+		t.Fatalf("expected added string field selected, got %#v", model.fieldsEdit)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	model = updated.(Model)
+	for range len([]rune("string")) {
+		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		model = updated.(Model)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("decimal")})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyUp})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyUp})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	model = updated.(Model)
+	if len(model.fieldsEdit.fields) != 2 || model.fieldsEdit.fields[0].name.string() != "Title" {
+		t.Fatalf("expected Id field deleted locally, got %#v", model.fieldsEdit)
+	}
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.status != statusSaving || cmd == nil {
+		t.Fatalf("expected saving state and command, got status=%v cmd=%v", model.status, cmd)
+	}
+	assertContains(t, model.View(), "Saving fields...")
+	msg := cmd()
+	finished, ok := msg.(fieldsFinishedMsg)
+	if !ok {
+		t.Fatalf("expected fieldsFinishedMsg, got %#v", msg)
+	}
+	if finished.err != nil || finished.result.Plan.FileCount != 4 {
+		t.Fatalf("expected successful fields message, got %#v", finished)
+	}
+	wantFields := []application.FieldSetting{{OriginalName: "Name", Name: "Title", Type: "string"}, {Name: "Name", Type: "decimal"}}
+	if capturedSettings.ServiceName != "ProductService" || capturedSettings.EntityName != "Product" || !reflect.DeepEqual(capturedSettings.Fields, wantFields) {
+		t.Fatalf("expected captured field settings, got %#v", capturedSettings)
+	}
+	updated, cmd = model.Update(finished)
+	model = updated.(Model)
+	if cmd != nil || model.status != statusReady || model.plan.FileCount != 4 {
+		t.Fatalf("expected ready state with refreshed fields plan, got cmd=%v model=%#v", cmd, model)
+	}
+	assertContains(t, model.View(), "Fields saved. Plan refreshed. Value-object editing is upcoming.")
+}
+
+func TestModelUpdateFieldsEditCancelReturnsToEntitiesEditor(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{ServiceCount: 1, EntityCount: 1, Services: []application.ServiceSummary{{Name: "ProductService", EntityNames: []string{"Product"}, Entities: []application.EntitySummary{{Name: "Product", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}}}}}}}
+	model := modelOnStep(plan, stepServices)
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+
+	if cmd != nil || model.status != statusEditing || model.edit.mode != editModeEntities {
+		t.Fatalf("expected esc to return to entities editor, got cmd=%v model=%#v", cmd, model)
+	}
+}
+
+func TestModelUpdateFieldsRenameAndTypeInsertShortcutRunes(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{ServiceCount: 1, EntityCount: 1, Services: []application.ServiceSummary{{Name: "ProductService", EntityNames: []string{"Product"}, Entities: []application.EntitySummary{{Name: "Product", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}}}}}}}
+	model := modelOnStep(plan, stepServices)
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	model = updated.(Model)
+	for range len([]rune("Id")) {
+		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		model = updated.(Model)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	model = updated.(Model)
+	if len(model.fieldsEdit.fields) != 1 || model.fieldsEdit.fields[0].name.string() != "a" {
+		t.Fatalf("expected a to edit field name during rename, got %#v", model.fieldsEdit)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	model = updated.(Model)
+	for range len([]rune("Guid")) {
+		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		model = updated.(Model)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	model = updated.(Model)
+	if len(model.fieldsEdit.fields) != 1 || model.fieldsEdit.fields[0].typeName.string() != "d" {
+		t.Fatalf("expected d to edit field type during type edit, got %#v", model.fieldsEdit)
+	}
+}
+
+func TestModelUpdateFieldsSaveSuccessWithRefreshFailureBlocksUntilRetry(t *testing.T) {
+	refreshErr := errors.New("plan failed")
+	retries := 0
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{ServiceCount: 1, EntityCount: 1, Services: []application.ServiceSummary{{Name: "ProductService", EntityNames: []string{"Product"}, Entities: []application.EntitySummary{{Name: "Product", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}}}}}}}
+	savedConfig := application.ConfigSummary{ServiceCount: 1, EntityCount: 1, Services: []application.ServiceSummary{{Name: "ProductService", EntityNames: []string{"Product"}, Entities: []application.EntitySummary{{Name: "Product", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}}}}}}
+	refreshedPlan := plannedFilesPlan(2)
+	refreshedPlan.Config = savedConfig
+	model := modelOnStep(plan, stepServices)
+	model.planFunc = func(application.GenerateRequest) (application.GenerationPlan, error) {
+		retries++
+		return refreshedPlan, nil
+	}
+	model.updateFields = func(application.GenerateRequest, application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+		return application.UpdateFieldSettingsResult{Saved: true, Config: savedConfig, PlanError: refreshErr}, nil
+	}
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+
+	if model.status != statusFailed || model.err != refreshErr || model.errContext != "Refresh after save" || len(model.plan.Config.Services[0].Entities[0].Fields) != 2 {
+		t.Fatalf("expected fields refresh-after-save failure state, got %#v", model)
+	}
+	view := model.View()
+	assertContains(t, view, "Fields saved, but the plan refresh failed. Press r to retry the refresh.")
+	assertContains(t, view, "FAILED Refresh after save failed: plan failed")
+	updated, editCmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if editCmd != nil || updated.(Model).status != statusFailed {
+		t.Fatalf("expected edit to be blocked after fields save refresh failure, got status=%v cmd=%v", updated.(Model).status, editCmd)
 	}
 	updated, retryCmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	model = updated.(Model)

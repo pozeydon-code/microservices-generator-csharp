@@ -110,7 +110,7 @@ func TestRunTUIReturnsNonZeroForInvalidConfigBeforeStartingProgram(t *testing.T)
 	var stderr bytes.Buffer
 	programStarted := false
 	originalRunTUIProgram := runTUIProgram
-	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, updateServices tui.UpdateServicesFunc, updateEntities tui.UpdateEntitiesFunc, targetFrameworkSuggestions []string) error {
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, updateServices tui.UpdateServicesFunc, updateEntities tui.UpdateEntitiesFunc, updateFields tui.UpdateFieldsFunc, targetFrameworkSuggestions []string) error {
 		programStarted = true
 		return nil
 	}
@@ -145,9 +145,10 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 	generateCalled := false
 	updateCalled := false
 	updateEntitiesCalled := false
+	updateFieldsCalled := false
 	programStarted := false
 	originalRunTUIProgram := runTUIProgram
-	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, updateServices tui.UpdateServicesFunc, updateEntities tui.UpdateEntitiesFunc, targetFrameworkSuggestions []string) error {
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, updateServices tui.UpdateServicesFunc, updateEntities tui.UpdateEntitiesFunc, updateFields tui.UpdateFieldsFunc, targetFrameworkSuggestions []string) error {
 		programStarted = true
 		capturedPlan = plan
 		capturedRequest = request
@@ -184,6 +185,14 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 			t.Fatalf("expected updated plan from entity callback, got %#v", entityResult)
 		}
 		updateEntitiesCalled = true
+		fieldResult, err := updateFields(request, application.FieldSettings{ServiceName: "ProductService", EntityName: "Catalog", Fields: []application.FieldSetting{{OriginalName: "Id", Name: "Id", Type: "Guid"}, {OriginalName: "Name", Name: "Title", Type: "string"}}})
+		if err != nil {
+			t.Fatalf("expected field update action to succeed: %v", err)
+		}
+		if !fieldResult.Saved || fieldResult.PlanError != nil || fieldResult.Plan.Config.EntityCount != 1 || fieldResult.Plan.FileCount != 44 {
+			t.Fatalf("expected updated plan from field callback, got %#v", fieldResult)
+		}
+		updateFieldsCalled = true
 		return nil
 	}
 	t.Cleanup(func() { runTUIProgram = originalRunTUIProgram })
@@ -205,8 +214,8 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 	if len(capturedSuggestions) == 0 {
 		t.Fatal("expected target framework suggestions to be passed to TUI")
 	}
-	if !refreshCalled || !generateCalled || !updateCalled || !updateEntitiesCalled {
-		t.Fatalf("expected refresh, generation, settings, and entity actions to be passed to TUI, refresh=%t generate=%t update=%t updateEntities=%t", refreshCalled, generateCalled, updateCalled, updateEntitiesCalled)
+	if !refreshCalled || !generateCalled || !updateCalled || !updateEntitiesCalled || !updateFieldsCalled {
+		t.Fatalf("expected refresh, generation, settings, entity, and field actions to be passed to TUI, refresh=%t generate=%t update=%t updateEntities=%t updateFields=%t", refreshCalled, generateCalled, updateCalled, updateEntitiesCalled, updateFieldsCalled)
 	}
 	if stdout.String() != "" || stderr.String() != "" {
 		t.Fatalf("expected no CLI output around TUI, got stdout %q stderr %q", stdout.String(), stderr.String())
@@ -223,7 +232,7 @@ func TestRunTUINewCreatesStarterConfigAndStartsProgram(t *testing.T) {
 	var stderr bytes.Buffer
 	programStarted := false
 	originalRunTUIProgram := runTUIProgram
-	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, updateServices tui.UpdateServicesFunc, updateEntities tui.UpdateEntitiesFunc, targetFrameworkSuggestions []string) error {
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, updateServices tui.UpdateServicesFunc, updateEntities tui.UpdateEntitiesFunc, updateFields tui.UpdateFieldsFunc, targetFrameworkSuggestions []string) error {
 		programStarted = true
 		if !request.ConfigBootstrapped || request.ConfigPath != configPath || request.OutputDir != outputDir {
 			t.Fatalf("expected bootstrapped request for new config, got %#v", request)
@@ -264,7 +273,7 @@ func TestRunTUINewRefusesExistingConfig(t *testing.T) {
 	var stderr bytes.Buffer
 	programStarted := false
 	originalRunTUIProgram := runTUIProgram
-	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, updateServices tui.UpdateServicesFunc, updateEntities tui.UpdateEntitiesFunc, targetFrameworkSuggestions []string) error {
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, updateServices tui.UpdateServicesFunc, updateEntities tui.UpdateEntitiesFunc, updateFields tui.UpdateFieldsFunc, targetFrameworkSuggestions []string) error {
 		programStarted = true
 		return nil
 	}

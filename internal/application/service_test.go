@@ -77,8 +77,8 @@ func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T)
 		ValueObjectCount:    3,
 		ServiceNames:        []string{"ProductService", "OrderService"},
 		Services: []ServiceSummary{
-			{Name: "ProductService", EntityNames: []string{"Product"}},
-			{Name: "OrderService", EntityNames: []string{"Order", "OrderLine"}},
+			{Name: "ProductService", EntityNames: []string{"Product"}, Entities: []EntitySummary{{Name: "Product", Fields: []FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}}}},
+			{Name: "OrderService", EntityNames: []string{"Order", "OrderLine"}, Entities: []EntitySummary{{Name: "Order", Fields: []FieldSummary{}}, {Name: "OrderLine", Fields: []FieldSummary{}}}},
 		},
 	}
 	if !reflect.DeepEqual(plan.Config, expectedSummary) {
@@ -582,6 +582,126 @@ func TestServiceUpdateEntitySettingsReportsPostSavePlanError(t *testing.T) {
 	}
 	if result.Config.EntityCount != 1 || len(result.Config.Services) != 1 || !reflect.DeepEqual(result.Config.Services[0].EntityNames, []string{"Catalog"}) {
 		t.Fatalf("expected saved entity summary despite plan error, got %#v", result.Config)
+	}
+}
+
+func TestServiceUpdateFieldSettingsAddsRenamesDeletesAndPreservesTypes(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validPersistableConfig()},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       &fakeGenerator{files: []GeneratedFile{{Path: "README.md", Content: []byte("readme")}}},
+		OutputPlanner:   fakeOutputPlanner{plan: OutputPlan{OutputDir: "/planned/generated", Action: "create", Files: []OutputPlannedFile{{Path: "README.md", Action: "create"}}}},
+	})
+
+	result, err := service.UpdateFieldSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, FieldSettings{ServiceName: "ProductService", EntityName: "Product", Fields: []FieldSetting{{OriginalName: "Id", Name: "Id", Type: "Guid"}, {OriginalName: "Name", Name: "Title", Type: "ProductName"}, {Name: "Sku", Type: "string"}}})
+
+	if err != nil {
+		t.Fatalf("expected update success, got %v", err)
+	}
+	if !saver.called || saver.path != "microgen.json" {
+		t.Fatalf("expected config save at microgen.json, got called=%v path=%q", saver.called, saver.path)
+	}
+	fields := saver.cfg.Services[0].Entities[0].Fields
+	wantFields := []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Title", Type: "ProductName"}, {Name: "Sku", Type: "string"}}
+	if !reflect.DeepEqual(fields, wantFields) {
+		t.Fatalf("expected renamed/deleted/added fields with type preservation, got %#v", fields)
+	}
+	if !result.Saved || result.PlanError != nil || result.Plan.FileCount != 1 {
+		t.Fatalf("expected saved result with refreshed plan summary, got %#v", result)
+	}
+	gotSummaryFields := result.Config.Services[0].Entities[0].Fields
+	wantSummaryFields := []FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Title", Type: "ProductName"}, {Name: "Sku", Type: "string"}}
+	if !reflect.DeepEqual(gotSummaryFields, wantSummaryFields) {
+		t.Fatalf("expected field summary, got %#v", gotSummaryFields)
+	}
+}
+
+func TestServiceUpdateFieldSettingsRejectsInvalidFieldsWithoutSaving(t *testing.T) {
+	tests := []struct {
+		name    string
+		fields  []FieldSetting
+		wantErr string
+	}{
+		{name: "blank name", fields: []FieldSetting{{OriginalName: "Id", Name: "Id", Type: "Guid"}, {OriginalName: "Name", Name: "", Type: "ProductName"}}, wantErr: "services[0].entities[0].fields[1].name is required"},
+		{name: "duplicate name", fields: []FieldSetting{{OriginalName: "Id", Name: "Id", Type: "Guid"}, {OriginalName: "Name", Name: "Id", Type: "Guid"}}, wantErr: "duplicate field in entity Product name"},
+		{name: "invalid type", fields: []FieldSetting{{OriginalName: "Id", Name: "Id", Type: "Guid"}, {OriginalName: "Name", Name: "Name", Type: "unknown"}}, wantErr: "services[0].entities[0].fields[1].type must be one of"},
+		{name: "missing id", fields: []FieldSetting{{OriginalName: "Name", Name: "Name", Type: "ProductName"}}, wantErr: "services[0].entities[0].fields must contain exactly one Id field of type Guid"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			saver := &fakeConfigSaver{}
+			gen := &fakeGenerator{}
+			service := NewService(Ports{
+				ConfigLoader:    &fakeConfigLoader{cfg: validPersistableConfig()},
+				ConfigSaver:     saver,
+				ConfigValidator: specValidator{},
+				Generator:       gen,
+				OutputPlanner:   fakeOutputPlanner{},
+			})
+
+			_, err := service.UpdateFieldSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, FieldSettings{ServiceName: "ProductService", EntityName: "Product", Fields: tt.fields})
+
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+			if saver.called {
+				t.Fatal("expected invalid fields not to be saved")
+			}
+			if gen.called {
+				t.Fatal("expected invalid fields not to regenerate plan")
+			}
+		})
+	}
+}
+
+func TestServiceUpdateFieldSettingsRejectsDeletingLastFieldWithoutSaving(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	gen := &fakeGenerator{}
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validPersistableConfig()},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       gen,
+		OutputPlanner:   fakeOutputPlanner{},
+	})
+
+	_, err := service.UpdateFieldSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, FieldSettings{ServiceName: "ProductService", EntityName: "Product"})
+
+	if err == nil || !strings.Contains(err.Error(), "entities must keep at least one field") {
+		t.Fatalf("expected last field deletion error, got %v", err)
+	}
+	if saver.called {
+		t.Fatal("expected invalid field list not to be saved")
+	}
+	if gen.called {
+		t.Fatal("expected invalid field list not to regenerate plan")
+	}
+}
+
+func TestServiceUpdateFieldSettingsReportsPostSavePlanError(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	planErr := errors.New("plan failed")
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validPersistableConfig()},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       &fakeGenerator{err: planErr},
+		OutputPlanner:   fakeOutputPlanner{},
+	})
+
+	result, err := service.UpdateFieldSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, FieldSettings{ServiceName: "ProductService", EntityName: "Product", Fields: []FieldSetting{{OriginalName: "Id", Name: "Id", Type: "Guid"}, {OriginalName: "Name", Name: "Title", Type: "ProductName"}}})
+
+	if err != nil {
+		t.Fatalf("expected save success with plan error result, got %v", err)
+	}
+	if !saver.called || !result.Saved || !errors.Is(result.PlanError, planErr) {
+		t.Fatalf("expected saved result with plan error, got saver.called=%v result=%#v", saver.called, result)
+	}
+	if got := result.Config.Services[0].Entities[0].Fields[1]; got.Name != "Title" || got.Type != "ProductName" {
+		t.Fatalf("expected saved field summary despite plan error, got %#v", result.Config)
 	}
 }
 
