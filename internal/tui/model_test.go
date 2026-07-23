@@ -168,6 +168,29 @@ func TestModelGenerateStepShowsForceRequiredReadinessWarning(t *testing.T) {
 	assertContains(t, view, "Next Review output replacement; --force is required to write.")
 }
 
+func TestModelGenerateStepShowsPostGenerateImpactSummary(t *testing.T) {
+	plan := plannedFilesPlan(4)
+	plan.OutputDir = "/tmp/generated"
+	plan.Files = []application.PlannedFile{
+		{Path: "README.md", Action: "replace"},
+		{Path: "src/ProductService/Product.cs", Action: "unchanged"},
+		{Path: "src/ProductService/ProductEndpoint.cs", Action: "create"},
+		{Path: "tests/ProductService/ProductTests.cs", Action: "create"},
+	}
+	plan.DeletedFiles = []string{"src/ProductService/OldEndpoint.cs", "tests/ProductService/OldEndpointTests.cs"}
+	model := modelOnStep(plan, stepGenerate)
+	model.status = statusGenerated
+	model.result = application.GenerateResult{OutputDir: "/tmp/generated", Plan: plan}
+
+	view := model.View()
+
+	assertContains(t, view, "Generated 4 files written to /tmp/generated.")
+	assertContains(t, view, "Impact created=2, replaced=1, unchanged=1")
+	assertContains(t, view, "Cleanup deleted 2 previous generated file(s)")
+	assertContains(t, view, "Next cd /tmp/generated && dotnet build")
+	assertNotContains(t, view, "src/ProductService/OldEndpoint.cs")
+}
+
 func TestModelViewShowsPrimaryActionOnce(t *testing.T) {
 	view := stripANSI(NewModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil).View())
 
@@ -1229,6 +1252,29 @@ func TestModelUpdateServicesEditCancelKeepsPlan(t *testing.T) {
 	}
 }
 
+func TestModelUpdateServicesRenameAcceptsShortcutLetters(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{ServiceCount: 1, ServiceNames: []string{"ProductService"}}
+	model := modelOnStep(plan, stepServices)
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	model = updated.(Model)
+	for range len([]rune("ProductService")) {
+		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		model = updated.(Model)
+	}
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("rdgasService")})
+	model = updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("expected no command while typing service name")
+	}
+	if !model.servicesEdit.renaming || model.servicesEdit.services[0].string() != "rdgasService" {
+		t.Fatalf("expected shortcut letters to be inserted during rename, got %#v", model.servicesEdit)
+	}
+}
+
 func TestModelUpdateServicesEditDeleteKeepsOneServiceLocally(t *testing.T) {
 	plan := plannedFilesPlan(1)
 	plan.Config = application.ConfigSummary{ServiceCount: 1, ServiceNames: []string{"ProductService"}}
@@ -2175,7 +2221,8 @@ func TestModelUpdateRecordsGenerationSuccess(t *testing.T) {
 	view := updatedModel.View()
 	assertContains(t, view, "Microgen - GENERATED")
 	assertContains(t, view, "Primary: r Refresh")
-	assertContains(t, view, "Generated 3 files in /tmp/generated.")
+	assertContains(t, view, "Generated 3 files written to /tmp/generated.")
+	assertContains(t, view, "Next cd /tmp/generated && dotnet build")
 	assertContains(t, view, "WARNING existing warning")
 	assertContains(t, view, generatedHelp)
 	assertNotContains(t, view, readyHelp)

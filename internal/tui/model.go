@@ -1081,6 +1081,10 @@ func (m Model) updateValueObjectRulesEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateServicesEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyRunes && m.servicesEdit.renaming {
+		m.selectedServiceField().insert(msg.Runes)
+		return m, nil
+	}
 	switch msg.String() {
 	case "esc":
 		m.status = m.servicesEdit.returnStatus
@@ -1148,9 +1152,6 @@ func (m Model) updateServicesEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selectedServiceField().delete()
 		}
 		return m, nil
-	}
-	if msg.Type == tea.KeyRunes && m.servicesEdit.renaming {
-		m.selectedServiceField().insert(msg.Runes)
 	}
 	return m, nil
 }
@@ -2027,10 +2028,7 @@ func (m Model) generateStepCard() string {
 	case statusGenerating:
 		fmt.Fprintln(&builder, busyStyle.Render("Generating files. Please wait; exit is available after generation finishes."))
 	case statusGenerated:
-		fmt.Fprintln(&builder, successStyle.Render(fmt.Sprintf("Generated %d files in %s.", m.result.Plan.FileCount, m.result.OutputDir)))
-		if m.result.Warning != "" {
-			fmt.Fprintf(&builder, "%s %s\n", warningStyle.Render("WARNING"), warningStyle.Render(m.result.Warning))
-		}
+		m.renderPostGenerateSummary(&builder)
 	case statusFailed:
 		context := m.errContext
 		if context == "" {
@@ -2047,6 +2045,25 @@ func (m Model) generateStepCard() string {
 		fmt.Fprintf(&builder, "%s Review the Preview step before confirming writes.\n", labelStyle.Render("Before"))
 	}
 	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+}
+
+func (m Model) renderPostGenerateSummary(builder *strings.Builder) {
+	plan := m.result.Plan
+	outputDir := m.result.OutputDir
+	if outputDir == "" {
+		outputDir = plan.OutputDir
+	}
+	fmt.Fprintf(builder, "%s %d files written to %s.\n", successStyle.Render("Generated"), plan.FileCount, outputDir)
+	if len(plan.Files) > 0 {
+		fmt.Fprintf(builder, "%s %s\n", labelStyle.Render("Impact"), postGenerateImpactSummary(plan))
+	}
+	if len(plan.DeletedFiles) > 0 {
+		fmt.Fprintf(builder, "%s deleted %d previous generated file(s)\n", dangerStyle.Render("Cleanup"), len(plan.DeletedFiles))
+	}
+	fmt.Fprintf(builder, "%s cd %s && dotnet build\n", labelStyle.Render("Next"), outputDir)
+	if m.result.Warning != "" {
+		fmt.Fprintf(builder, "%s %s\n", warningStyle.Render("WARNING"), warningStyle.Render(m.result.Warning))
+	}
 }
 
 func (m Model) renderReadinessSummary(builder *strings.Builder) {
@@ -2220,10 +2237,7 @@ func (m Model) actionsCard() string {
 	case statusGenerating:
 		fmt.Fprintln(&builder, busyStyle.Render("Generating files. Please wait; exit is available after generation finishes."))
 	case statusGenerated:
-		fmt.Fprintln(&builder, successStyle.Render(fmt.Sprintf("Generated %d files in %s.", m.result.Plan.FileCount, m.result.OutputDir)))
-		if m.result.Warning != "" {
-			fmt.Fprintf(&builder, "%s %s\n", warningStyle.Render("WARNING"), warningStyle.Render(m.result.Warning))
-		}
+		m.renderPostGenerateSummary(&builder)
 	case statusSaving:
 		fmt.Fprintln(&builder, busyStyle.Render("Saving settings. Please wait; exit is available after save finishes."))
 	case statusFailed:
@@ -2658,11 +2672,15 @@ func yesNo(value bool) string {
 }
 
 func (m Model) impactSummary() string {
-	if len(m.plan.Files) == 0 {
+	return impactSummaryForPlan(m.plan)
+}
+
+func impactSummaryForPlan(plan application.GenerationPlan) string {
+	if len(plan.Files) == 0 {
 		return "none"
 	}
 	counts := make(map[string]int)
-	for _, file := range m.plan.Files {
+	for _, file := range plan.Files {
 		counts[file.Action]++
 	}
 	actions := make([]string, 0, len(counts))
@@ -2681,4 +2699,38 @@ func (m Model) impactSummary() string {
 		return "unchanged only"
 	}
 	return parts[0]
+}
+
+func postGenerateImpactSummary(plan application.GenerationPlan) string {
+	if len(plan.Files) == 0 {
+		return "none"
+	}
+	counts := make(map[string]int)
+	for _, file := range plan.Files {
+		counts[file.Action]++
+	}
+	labels := []struct {
+		action string
+		label  string
+	}{
+		{action: "create", label: "created"},
+		{action: "replace", label: "replaced"},
+		{action: "unchanged", label: "unchanged"},
+	}
+	parts := []string{}
+	for _, item := range labels {
+		if count := counts[item.action]; count > 0 {
+			parts = append(parts, fmt.Sprintf("%s=%d", item.label, count))
+			delete(counts, item.action)
+		}
+	}
+	unknownActions := make([]string, 0, len(counts))
+	for action := range counts {
+		unknownActions = append(unknownActions, action)
+	}
+	sort.Strings(unknownActions)
+	for _, action := range unknownActions {
+		parts = append(parts, fmt.Sprintf("%s=%d", action, counts[action]))
+	}
+	return strings.Join(parts, ", ")
 }
