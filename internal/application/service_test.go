@@ -363,6 +363,115 @@ func TestServiceUpdateSolutionSettingsReportsPostSavePlanError(t *testing.T) {
 	}
 }
 
+func TestServiceUpdateServiceSettingsAddsRenamesAndDeletesServices(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validConfig()},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       &fakeGenerator{files: []GeneratedFile{{Path: "README.md", Content: []byte("readme")}}},
+		OutputPlanner:   fakeOutputPlanner{plan: OutputPlan{OutputDir: "/planned/generated", Action: "create", Files: []OutputPlannedFile{{Path: "README.md", Action: "create"}}}},
+	})
+
+	result, err := service.UpdateServiceSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ServiceSettings{Services: []ServiceNameSetting{{OriginalName: "ProductService", Name: "CatalogService"}, {Name: "BillingService"}}})
+
+	if err != nil {
+		t.Fatalf("expected update success, got %v", err)
+	}
+	if !saver.called || saver.path != "microgen.json" {
+		t.Fatalf("expected config save at microgen.json, got called=%v path=%q", saver.called, saver.path)
+	}
+	if got := serviceNames(saver.cfg.Services); !reflect.DeepEqual(got, []string{"CatalogService", "BillingService"}) {
+		t.Fatalf("expected renamed/deleted/added services, got %#v", got)
+	}
+	if len(saver.cfg.Services[0].Entities) != 1 || saver.cfg.Services[0].Entities[0].Name != "Product" || len(saver.cfg.Services[0].ValueObjects) != 1 {
+		t.Fatalf("expected renamed service to preserve existing entities and value objects, got %#v", saver.cfg.Services[0])
+	}
+	billing := saver.cfg.Services[1]
+	if len(billing.Entities) != 1 || billing.Entities[0].Name != "Billing" {
+		t.Fatalf("expected new service default Billing entity, got %#v", billing)
+	}
+	fields := billing.Entities[0].Fields
+	if len(fields) != 1 || fields[0].Name != "Id" || fields[0].Type != "Guid" {
+		t.Fatalf("expected new service default Guid Id field, got %#v", fields)
+	}
+	if !result.Saved || result.PlanError != nil || result.Plan.FileCount != 1 || result.Config.ServiceCount != 2 || result.Config.EntityCount != 2 {
+		t.Fatalf("expected saved result with refreshed plan summary, got %#v", result)
+	}
+}
+
+func TestServiceUpdateServiceSettingsRejectsDeletingLastServiceWithoutSaving(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	gen := &fakeGenerator{}
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validPersistableConfig()},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       gen,
+		OutputPlanner:   fakeOutputPlanner{},
+	})
+
+	_, err := service.UpdateServiceSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ServiceSettings{})
+
+	if err == nil || !strings.Contains(err.Error(), "services must contain at least 1 item") {
+		t.Fatalf("expected service count validation error, got %v", err)
+	}
+	if saver.called {
+		t.Fatal("expected invalid service list not to be saved")
+	}
+	if gen.called {
+		t.Fatal("expected invalid service list not to regenerate plan")
+	}
+}
+
+func TestServiceUpdateServiceSettingsRejectsInvalidServiceNameWithoutSaving(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	gen := &fakeGenerator{}
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validPersistableConfig()},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       gen,
+		OutputPlanner:   fakeOutputPlanner{},
+	})
+
+	_, err := service.UpdateServiceSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ServiceSettings{ServiceNames: []string{"1BadService"}})
+
+	if err == nil || !strings.Contains(err.Error(), "services[0].name must be a valid C# identifier") {
+		t.Fatalf("expected service identifier validation error, got %v", err)
+	}
+	if saver.called {
+		t.Fatal("expected invalid service name not to be saved")
+	}
+	if gen.called {
+		t.Fatal("expected invalid service name not to regenerate plan")
+	}
+}
+
+func TestServiceUpdateServiceSettingsReportsPostSavePlanError(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	planErr := errors.New("plan failed")
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validPersistableConfig()},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       &fakeGenerator{err: planErr},
+		OutputPlanner:   fakeOutputPlanner{},
+	})
+
+	result, err := service.UpdateServiceSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ServiceSettings{Services: []ServiceNameSetting{{OriginalName: "ProductService", Name: "CatalogService"}, {Name: "OrderService"}}})
+
+	if err != nil {
+		t.Fatalf("expected save success with plan error result, got %v", err)
+	}
+	if !saver.called || !result.Saved || !errors.Is(result.PlanError, planErr) {
+		t.Fatalf("expected saved result with plan error, got saver.called=%v result=%#v", saver.called, result)
+	}
+	if result.Config.ServiceCount != 2 || result.Config.EntityCount != 2 || !reflect.DeepEqual(result.Config.ServiceNames, []string{"CatalogService", "OrderService"}) {
+		t.Fatalf("expected saved service summary despite plan error, got %#v", result.Config)
+	}
+}
+
 func TestDefaultServicePlanGenerationUsesRealPortsWithoutWriting(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "microgen.json")
 	if err := os.WriteFile(configPath, []byte(validJSONConfig), 0o644); err != nil {
@@ -560,6 +669,14 @@ func validPersistableConfig() spec.Config {
 			},
 		},
 	}
+}
+
+func serviceNames(services []spec.Service) []string {
+	names := make([]string, len(services))
+	for index, service := range services {
+		names[index] = service.Name
+	}
+	return names
 }
 
 const validJSONConfig = `{

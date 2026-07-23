@@ -110,7 +110,7 @@ func TestRunTUIReturnsNonZeroForInvalidConfigBeforeStartingProgram(t *testing.T)
 	var stderr bytes.Buffer
 	programStarted := false
 	originalRunTUIProgram := runTUIProgram
-	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, targetFrameworkSuggestions []string) error {
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, updateServices tui.UpdateServicesFunc, targetFrameworkSuggestions []string) error {
 		programStarted = true
 		return nil
 	}
@@ -146,7 +146,7 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 	updateCalled := false
 	programStarted := false
 	originalRunTUIProgram := runTUIProgram
-	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, targetFrameworkSuggestions []string) error {
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, updateServices tui.UpdateServicesFunc, targetFrameworkSuggestions []string) error {
 		programStarted = true
 		capturedPlan = plan
 		capturedRequest = request
@@ -214,7 +214,7 @@ func TestRunTUINewCreatesStarterConfigAndStartsProgram(t *testing.T) {
 	var stderr bytes.Buffer
 	programStarted := false
 	originalRunTUIProgram := runTUIProgram
-	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, targetFrameworkSuggestions []string) error {
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, updateServices tui.UpdateServicesFunc, targetFrameworkSuggestions []string) error {
 		programStarted = true
 		if !request.ConfigBootstrapped || request.ConfigPath != configPath || request.OutputDir != outputDir {
 			t.Fatalf("expected bootstrapped request for new config, got %#v", request)
@@ -255,7 +255,7 @@ func TestRunTUINewRefusesExistingConfig(t *testing.T) {
 	var stderr bytes.Buffer
 	programStarted := false
 	originalRunTUIProgram := runTUIProgram
-	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, targetFrameworkSuggestions []string) error {
+	runTUIProgram = func(plan application.GenerationPlan, request application.GenerateRequest, planFunc tui.PlanFunc, generate tui.GenerateFunc, update tui.UpdateSettingsFunc, updateServices tui.UpdateServicesFunc, targetFrameworkSuggestions []string) error {
 		programStarted = true
 		return nil
 	}

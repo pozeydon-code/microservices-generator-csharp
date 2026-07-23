@@ -70,7 +70,24 @@ type SolutionSettings struct {
 	TargetFramework     string
 }
 
+type ServiceSettings struct {
+	Services     []ServiceNameSetting
+	ServiceNames []string
+}
+
+type ServiceNameSetting struct {
+	OriginalName string
+	Name         string
+}
+
 type UpdateSolutionSettingsResult struct {
+	Saved     bool
+	Config    ConfigSummary
+	Plan      GenerationPlan
+	PlanError error
+}
+
+type UpdateServiceSettingsResult struct {
 	Saved     bool
 	Config    ConfigSummary
 	Plan      GenerationPlan
@@ -220,6 +237,86 @@ func (s Service) UpdateSolutionSettings(request GenerateRequest, settings Soluti
 	config := summarizeConfig(cfg)
 	plan, err := s.planGenerationFromConfig(request, cfg)
 	return UpdateSolutionSettingsResult{Saved: true, Config: config, Plan: plan, PlanError: err}, nil
+}
+
+func (s Service) UpdateServiceSettings(request GenerateRequest, settings ServiceSettings) (UpdateServiceSettingsResult, error) {
+	cfg, err := s.LoadConfig(request.ConfigPath)
+	if err != nil {
+		return UpdateServiceSettingsResult{}, err
+	}
+	cfg.Services = updatedServices(cfg.Services, normalizedServiceSettings(settings))
+	if cfg.SchemaVersion == 0 {
+		cfg.SchemaVersion = spec.ConfigSchemaVersion
+	}
+	if err := s.ValidateConfig(cfg); err != nil {
+		return UpdateServiceSettingsResult{}, err
+	}
+	if err := s.SaveConfig(request.ConfigPath, cfg); err != nil {
+		return UpdateServiceSettingsResult{}, err
+	}
+	config := summarizeConfig(cfg)
+	plan, err := s.planGenerationFromConfig(request, cfg)
+	return UpdateServiceSettingsResult{Saved: true, Config: config, Plan: plan, PlanError: err}, nil
+}
+
+func normalizedServiceSettings(settings ServiceSettings) []ServiceNameSetting {
+	if len(settings.Services) > 0 {
+		return settings.Services
+	}
+	services := make([]ServiceNameSetting, len(settings.ServiceNames))
+	for index, name := range settings.ServiceNames {
+		services[index] = ServiceNameSetting{Name: name}
+	}
+	return services
+}
+
+func updatedServices(existing []spec.Service, settings []ServiceNameSetting) []spec.Service {
+	services := make([]spec.Service, 0, len(settings))
+	used := make([]bool, len(existing))
+	for _, setting := range settings {
+		if setting.OriginalName != "" {
+			if service, ok := serviceByName(existing, used, setting.OriginalName); ok {
+				service.Name = setting.Name
+				services = append(services, service)
+				continue
+			}
+		}
+		if service, ok := serviceByName(existing, used, setting.Name); ok {
+			services = append(services, service)
+			continue
+		}
+		services = append(services, defaultServiceForName(setting.Name))
+	}
+	return services
+}
+
+func serviceByName(services []spec.Service, used []bool, name string) (spec.Service, bool) {
+	for index, service := range services {
+		if used[index] || service.Name != name {
+			continue
+		}
+		used[index] = true
+		return service, true
+	}
+	return spec.Service{}, false
+}
+
+func defaultServiceForName(name string) spec.Service {
+	entityName := strings.TrimSuffix(name, "Service")
+	if entityName == "" {
+		entityName = name
+	}
+	return spec.Service{
+		Name: name,
+		Entities: []spec.Entity{
+			{
+				Name: entityName,
+				Fields: []spec.Field{
+					{Name: "Id", Type: "Guid"},
+				},
+			},
+		},
+	}
 }
 
 func (s Service) planGenerationFromConfig(request GenerateRequest, cfg spec.Config) (GenerationPlan, error) {

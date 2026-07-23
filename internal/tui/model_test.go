@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -73,7 +74,8 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	view = model.View()
 	assertContains(t, view, "Summary 2 services, 3 entities, 3 value objects")
 	assertContains(t, view, "Services ProductService, OrderService")
-	assertContains(t, view, "Detailed service, entity, field, and value-object editing is upcoming and not available yet.")
+	assertContains(t, view, "e Edit service list: add, rename, or delete services.")
+	assertContains(t, view, "Entity, field, and value-object editing is upcoming.")
 
 	model.currentStep = stepPreview
 	view = model.View()
@@ -762,7 +764,7 @@ func TestModelUpdateEditsSolutionSettingsAndSaves(t *testing.T) {
 		t.Fatalf("expected editing name field, got %#v", model)
 	}
 	assertContains(t, model.View(), "Editing solution settings")
-	assertContains(t, model.View(), "Service, entity, field, and value-object editing is not available yet.")
+	assertContains(t, model.View(), "Use the Services step for service list editing. Entity, field, and value-object editing is upcoming.")
 
 	for range len([]rune("CommercePlatform")) {
 		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyBackspace})
@@ -1021,6 +1023,198 @@ func TestModelUpdateSaveSuccessWithRefreshFailureAllowsRetry(t *testing.T) {
 	}
 }
 
+func TestModelUpdateEditsServicesAndSaves(t *testing.T) {
+	request := application.GenerateRequest{ConfigPath: "config.json", OutputDir: "/tmp/generated", Force: true}
+	plan := plannedFilesPlan(2)
+	plan.Config = application.ConfigSummary{ServiceCount: 2, EntityCount: 2, ServiceNames: []string{"ProductService", "OrderService"}}
+	updatedPlan := plannedFilesPlan(4)
+	updatedPlan.Config = application.ConfigSummary{ServiceCount: 2, EntityCount: 2, ServiceNames: []string{"CatalogService", "Service3Service"}}
+	var capturedSettings application.ServiceSettings
+	model := NewModel(plan, request, nil, nil, nil)
+	model.currentStep = stepServices
+	model.updateServices = func(actual application.GenerateRequest, settings application.ServiceSettings) (application.UpdateServiceSettingsResult, error) {
+		if actual != request {
+			t.Fatalf("expected request %#v, got %#v", request, actual)
+		}
+		capturedSettings = settings
+		return application.UpdateServiceSettingsResult{Saved: true, Plan: updatedPlan}, nil
+	}
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	model = updated.(Model)
+	if cmd != nil || model.status != statusEditing || model.edit.mode != editModeServices {
+		t.Fatalf("expected services edit mode, got status=%v mode=%v cmd=%v", model.status, model.edit.mode, cmd)
+	}
+	assertContains(t, model.View(), "Editing services")
+	assertContains(t, model.View(), "Keys: up/down select, a add, r rename, d delete, enter save, esc cancel.")
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	model = updated.(Model)
+	for range len([]rune("ProductService")) {
+		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		model = updated.(Model)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("CatalogService")})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.servicesEdit.renaming || model.servicesEdit.services[0].string() != "CatalogService" {
+		t.Fatalf("expected local rename confirmation, got %#v", model.servicesEdit)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	model = updated.(Model)
+	if model.servicesEdit.selected != 2 || model.servicesEdit.services[2].string() != "Service3Service" {
+		t.Fatalf("expected added placeholder service selected, got %#v", model.servicesEdit)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyUp})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	model = updated.(Model)
+	if got := serviceEditNames(model.servicesEdit.services); !reflect.DeepEqual(got, []string{"CatalogService", "Service3Service"}) {
+		t.Fatalf("expected order service deleted, got %#v", got)
+	}
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.status != statusSaving || cmd == nil {
+		t.Fatalf("expected saving state and command, got status=%v cmd=%v", model.status, cmd)
+	}
+	assertContains(t, model.View(), "Saving services...")
+	msg := cmd()
+	finished, ok := msg.(servicesFinishedMsg)
+	if !ok {
+		t.Fatalf("expected servicesFinishedMsg, got %#v", msg)
+	}
+	if finished.err != nil || finished.result.Plan.FileCount != 4 {
+		t.Fatalf("expected successful services message, got %#v", finished)
+	}
+	expectedServices := []application.ServiceNameSetting{{OriginalName: "ProductService", Name: "CatalogService"}, {Name: "Service3Service"}}
+	if !reflect.DeepEqual(capturedSettings.Services, expectedServices) {
+		t.Fatalf("expected captured service settings, got %#v", capturedSettings.Services)
+	}
+	updated, cmd = model.Update(finished)
+	model = updated.(Model)
+	if cmd != nil || model.status != statusReady || model.plan.FileCount != 4 || model.plan.Config.ServiceNames[0] != "CatalogService" {
+		t.Fatalf("expected ready state with refreshed services plan, got cmd=%v model=%#v", cmd, model)
+	}
+	assertContains(t, model.View(), "Services saved. Plan refreshed. Entity, field, and value-object editing is upcoming.")
+}
+
+func TestModelUpdateServicesEditCancelKeepsPlan(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{ServiceCount: 1, ServiceNames: []string{"ProductService"}}
+	model := modelOnStep(plan, stepServices)
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+
+	if cmd != nil || model.status != statusReady || !reflect.DeepEqual(model.plan.Config.ServiceNames, []string{"ProductService"}) {
+		t.Fatalf("expected cancel to keep original services, got cmd=%v model=%#v", cmd, model)
+	}
+}
+
+func TestModelUpdateServicesEditDeleteKeepsOneServiceLocally(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{ServiceCount: 1, ServiceNames: []string{"ProductService"}}
+	model := modelOnStep(plan, stepServices)
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	model = updated.(Model)
+
+	if cmd != nil || len(model.servicesEdit.services) != 1 || model.servicesEdit.services[0].string() != "ProductService" {
+		t.Fatalf("expected last service deletion to be ignored locally, got cmd=%v services=%#v", cmd, model.servicesEdit.services)
+	}
+}
+
+func TestModelUpdateServicesSaveFailureKeepsEditorOpen(t *testing.T) {
+	saveErr := errors.New("invalid config")
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{ServiceCount: 1, ServiceNames: []string{"ProductService"}}
+	model := modelOnStep(plan, stepServices)
+	model.updateServices = func(application.GenerateRequest, application.ServiceSettings) (application.UpdateServiceSettingsResult, error) {
+		return application.UpdateServiceSettingsResult{}, saveErr
+	}
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.status != statusSaving || cmd == nil {
+		t.Fatalf("expected saving state and command, got status=%v cmd=%v", model.status, cmd)
+	}
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+	if model.status != statusEditing || model.edit.mode != editModeServices || model.err != saveErr {
+		t.Fatalf("expected failed services save to keep editor open, got %#v", model)
+	}
+	assertContains(t, model.View(), "Save failed: invalid config")
+}
+
+func TestModelUpdateServicesSaveSuccessWithRefreshFailureAllowsRetry(t *testing.T) {
+	refreshErr := errors.New("plan failed")
+	retries := 0
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{ServiceCount: 1, ServiceNames: []string{"ProductService"}}
+	savedConfig := application.ConfigSummary{ServiceCount: 2, EntityCount: 2, ServiceNames: []string{"CatalogService", "BillingService"}}
+	refreshedPlan := plannedFilesPlan(2)
+	refreshedPlan.Config = savedConfig
+	model := modelOnStep(plan, stepServices)
+	model.planFunc = func(application.GenerateRequest) (application.GenerationPlan, error) {
+		retries++
+		return refreshedPlan, nil
+	}
+	model.updateServices = func(application.GenerateRequest, application.ServiceSettings) (application.UpdateServiceSettingsResult, error) {
+		return application.UpdateServiceSettingsResult{Saved: true, Config: savedConfig, PlanError: refreshErr}, nil
+	}
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+
+	if model.status != statusFailed || model.err != refreshErr || model.errContext != "Refresh after save" || model.plan.Config.ServiceCount != 2 {
+		t.Fatalf("expected services refresh-after-save failure state, got %#v", model)
+	}
+	view := model.View()
+	assertContains(t, view, "Services saved, but the plan refresh failed. Press r to retry the refresh.")
+	assertContains(t, view, "FAILED Refresh after save failed: plan failed")
+	updated, editCmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	if editCmd != nil || updated.(Model).status != statusFailed {
+		t.Fatalf("expected edit to be blocked after services save refresh failure, got status=%v cmd=%v", updated.(Model).status, editCmd)
+	}
+	updated, retryCmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	model = updated.(Model)
+	if model.status != statusRefreshing || retryCmd == nil {
+		t.Fatalf("expected refresh retry command, got status=%v cmd=%v", model.status, retryCmd)
+	}
+	updated, _ = model.Update(retryCmd())
+	model = updated.(Model)
+	if retries != 1 || model.status != statusReady || model.plan.FileCount != 2 {
+		t.Fatalf("expected refresh retry to restore ready plan, retries=%d model=%#v", retries, model)
+	}
+}
+
+func TestModelUpdateBlocksServicesEditWhileBusy(t *testing.T) {
+	for _, status := range []modelStatus{statusRefreshing, statusGenerating, statusSaving} {
+		t.Run(fmt.Sprintf("status %d", status), func(t *testing.T) {
+			model := modelOnStep(plannedFilesPlan(1), stepServices)
+			model.status = status
+
+			updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+			updatedModel := updated.(Model)
+
+			if cmd != nil || updatedModel.status != status || updatedModel.edit.mode == editModeServices {
+				t.Fatalf("expected services edit to be ignored while busy, got status=%v mode=%v cmd=%v", updatedModel.status, updatedModel.edit.mode, cmd)
+			}
+		})
+	}
+}
+
 func TestModelUpdateBlocksQuitAndActionsWhileSavingOrEditing(t *testing.T) {
 	for _, msg := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune{'q'}}, {Type: tea.KeyEsc}, {Type: tea.KeyCtrlC}} {
 		model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil)
@@ -1129,6 +1323,14 @@ func plannedFilesPlan(count int) application.GenerationPlan {
 		files[index] = application.PlannedFile{Path: fmt.Sprintf("file-%02d.txt", index+1), Action: "create"}
 	}
 	return application.GenerationPlan{FileCount: count, Files: files}
+}
+
+func serviceEditNames(services []textField) []string {
+	names := make([]string, len(services))
+	for index, service := range services {
+		names[index] = service.string()
+	}
+	return names
 }
 
 func modelOnStep(plan application.GenerationPlan, step tuiStep) Model {
