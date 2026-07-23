@@ -77,8 +77,8 @@ func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T)
 		ValueObjectCount:    3,
 		ServiceNames:        []string{"ProductService", "OrderService"},
 		Services: []ServiceSummary{
-			{Name: "ProductService", EntityNames: []string{"Product"}, Entities: []EntitySummary{{Name: "Product", Fields: []FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}}}},
-			{Name: "OrderService", EntityNames: []string{"Order", "OrderLine"}, Entities: []EntitySummary{{Name: "Order", Fields: []FieldSummary{}}, {Name: "OrderLine", Fields: []FieldSummary{}}}},
+			{Name: "ProductService", EntityNames: []string{"Product"}, ValueObjectNames: []string{"ProductName"}, Entities: []EntitySummary{{Name: "Product", Fields: []FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}}}},
+			{Name: "OrderService", EntityNames: []string{"Order", "OrderLine"}, ValueObjectNames: []string{"OrderNumber", "Money"}, Entities: []EntitySummary{{Name: "Order", Fields: []FieldSummary{}}, {Name: "OrderLine", Fields: []FieldSummary{}}}},
 		},
 	}
 	if !reflect.DeepEqual(plan.Config, expectedSummary) {
@@ -705,6 +705,163 @@ func TestServiceUpdateFieldSettingsReportsPostSavePlanError(t *testing.T) {
 	}
 }
 
+func TestServiceUpdateValueObjectSettingsAddsRenamesDeletesAndPreservesDetails(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validConfigWithValueObjectsForEditing()},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       &fakeGenerator{files: []GeneratedFile{{Path: "README.md", Content: []byte("readme")}}},
+		OutputPlanner:   fakeOutputPlanner{plan: OutputPlan{OutputDir: "/planned/generated", Action: "create", Files: []OutputPlannedFile{{Path: "README.md", Action: "create"}}}},
+	})
+
+	result, err := service.UpdateValueObjectSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ValueObjectSettings{ServiceName: "ProductService", ValueObjects: []ValueObjectNameSetting{{OriginalName: "ProductCode", Name: "CatalogCode"}, {Name: "Sku"}}})
+
+	if err != nil {
+		t.Fatalf("expected update success, got %v", err)
+	}
+	if !saver.called || saver.path != "microgen.json" {
+		t.Fatalf("expected config save at microgen.json, got called=%v path=%q", saver.called, saver.path)
+	}
+	valueObjects := saver.cfg.Services[0].ValueObjects
+	if len(valueObjects) != 2 || valueObjects[0].Name != "CatalogCode" || valueObjects[1].Name != "Sku" {
+		t.Fatalf("expected renamed/deleted/added value objects, got %#v", valueObjects)
+	}
+	if valueObjects[0].Type != "string" || valueObjects[0].Validations.MinLength == nil || *valueObjects[0].Validations.MinLength != 2 || valueObjects[0].Validations.MaxLength == nil || *valueObjects[0].Validations.MaxLength != 20 {
+		t.Fatalf("expected renamed value object to preserve details, got %#v", valueObjects[0])
+	}
+	if valueObjects[1].Type != "string" || valueObjects[1].Validations.Required == nil || !*valueObjects[1].Validations.Required || valueObjects[1].Validations.MinLength == nil || *valueObjects[1].Validations.MinLength != 1 || valueObjects[1].Validations.MaxLength == nil || *valueObjects[1].Validations.MaxLength != 100 || valueObjects[1].Validations.ValidExample == nil || *valueObjects[1].Validations.ValidExample != "Sample" {
+		t.Fatalf("expected new value object to use generator-valid string defaults, got %#v", valueObjects[1])
+	}
+	if !result.Saved || result.PlanError != nil || result.Plan.FileCount != 1 {
+		t.Fatalf("expected saved result with refreshed plan summary, got %#v", result)
+	}
+	if !reflect.DeepEqual(result.Config.Services[0].ValueObjectNames, []string{"CatalogCode", "Sku"}) {
+		t.Fatalf("expected value object summary names, got %#v", result.Config.Services[0])
+	}
+}
+
+func TestServiceUpdateValueObjectSettingsSummarizesFieldReferences(t *testing.T) {
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validPersistableConfig()},
+		ConfigValidator: specValidator{},
+		Generator:       &fakeGenerator{},
+		OutputPlanner:   fakeOutputPlanner{},
+	})
+
+	plan, err := service.PlanGeneration(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"})
+
+	if err != nil {
+		t.Fatalf("expected plan success, got %v", err)
+	}
+	want := []ValueObjectReferenceSummary{{ValueObjectName: "ProductName", EntityName: "Product", FieldName: "Name"}}
+	if !reflect.DeepEqual(plan.Config.Services[0].ValueObjectReferences, want) {
+		t.Fatalf("expected value object field references, got %#v", plan.Config.Services[0].ValueObjectReferences)
+	}
+}
+
+func TestServiceUpdateValueObjectSettingsRejectsInvalidValueObjectsWithoutSaving(t *testing.T) {
+	tests := []struct {
+		name         string
+		valueObjects []ValueObjectNameSetting
+		wantErr      string
+	}{
+		{name: "blank name", valueObjects: []ValueObjectNameSetting{{OriginalName: "ProductCode", Name: ""}}, wantErr: "services[0].valueObjects[0].name is required"},
+		{name: "duplicate name", valueObjects: []ValueObjectNameSetting{{OriginalName: "ProductCode", Name: "ProductCode"}, {OriginalName: "LegacyCode", Name: "ProductCode"}}, wantErr: "duplicate value object in service ProductService name"},
+		{name: "colliding entity name", valueObjects: []ValueObjectNameSetting{{OriginalName: "ProductCode", Name: "Product"}}, wantErr: "services[0].valueObjects[0].name must not collide with entity \"Product\""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			saver := &fakeConfigSaver{}
+			gen := &fakeGenerator{}
+			service := NewService(Ports{
+				ConfigLoader:    &fakeConfigLoader{cfg: validConfigWithValueObjectsForEditing()},
+				ConfigSaver:     saver,
+				ConfigValidator: specValidator{},
+				Generator:       gen,
+				OutputPlanner:   fakeOutputPlanner{},
+			})
+
+			_, err := service.UpdateValueObjectSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ValueObjectSettings{ServiceName: "ProductService", ValueObjects: tt.valueObjects})
+
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+			if saver.called {
+				t.Fatal("expected invalid value objects not to be saved")
+			}
+			if gen.called {
+				t.Fatal("expected invalid value objects not to regenerate plan")
+			}
+		})
+	}
+}
+
+func TestServiceUpdateValueObjectSettingsRejectsReferencedRenameAndDeleteWithoutSaving(t *testing.T) {
+	tests := []struct {
+		name         string
+		valueObjects []ValueObjectNameSetting
+		wantErr      string
+	}{
+		{name: "referenced rename", valueObjects: []ValueObjectNameSetting{{OriginalName: "ProductName", Name: "CatalogName"}}, wantErr: "value object \"ProductName\" is referenced by entity fields and cannot be renamed"},
+		{name: "referenced delete", valueObjects: nil, wantErr: "value object \"ProductName\" is referenced by entity fields and cannot be deleted"},
+		{name: "referenced replacement", valueObjects: []ValueObjectNameSetting{{OriginalName: "LegacyName", Name: "ProductName"}}, wantErr: "value object \"ProductName\" is referenced by entity fields and cannot be renamed, deleted, or replaced"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			saver := &fakeConfigSaver{}
+			gen := &fakeGenerator{}
+			service := NewService(Ports{
+				ConfigLoader:    &fakeConfigLoader{cfg: validPersistableConfig()},
+				ConfigSaver:     saver,
+				ConfigValidator: specValidator{},
+				Generator:       gen,
+				OutputPlanner:   fakeOutputPlanner{},
+			})
+
+			_, err := service.UpdateValueObjectSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ValueObjectSettings{ServiceName: "ProductService", ValueObjects: tt.valueObjects})
+
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+			if saver.called {
+				t.Fatal("expected unsafe value object change not to be saved")
+			}
+			if gen.called {
+				t.Fatal("expected unsafe value object change not to regenerate plan")
+			}
+		})
+	}
+}
+
+func TestServiceUpdateValueObjectSettingsRejectsReplacingReferencedValueObjectIdentityWithoutSaving(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	gen := &fakeGenerator{}
+	cfg := validPersistableConfig()
+	cfg.Services[0].ValueObjects = append(cfg.Services[0].ValueObjects, spec.ValueObject{Name: "LegacyName", Type: "string"})
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: cfg},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       gen,
+		OutputPlanner:   fakeOutputPlanner{},
+	})
+
+	_, err := service.UpdateValueObjectSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ValueObjectSettings{ServiceName: "ProductService", ValueObjects: []ValueObjectNameSetting{{OriginalName: "LegacyName", Name: "ProductName"}}})
+
+	if err == nil || !strings.Contains(err.Error(), "value object \"ProductName\" is referenced by entity fields and cannot be renamed, deleted, or replaced") {
+		t.Fatalf("expected referenced value object replacement error, got %v", err)
+	}
+	if saver.called {
+		t.Fatal("expected referenced value object replacement not to be saved")
+	}
+	if gen.called {
+		t.Fatal("expected referenced value object replacement not to regenerate plan")
+	}
+}
+
 func TestDefaultServicePlanGenerationUsesRealPortsWithoutWriting(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "microgen.json")
 	if err := os.WriteFile(configPath, []byte(validJSONConfig), 0o644); err != nil {
@@ -916,6 +1073,19 @@ func validConfigWithEntities(names ...string) spec.Config {
 			},
 		}
 	}
+	return cfg
+}
+
+func validConfigWithValueObjectsForEditing() spec.Config {
+	cfg := validPersistableConfig()
+	minLength := 2
+	maxLength := 20
+	validExample := "Code"
+	cfg.Services[0].ValueObjects = []spec.ValueObject{
+		{Name: "ProductCode", Type: "string", Validations: spec.ValidationRules{MinLength: &minLength, MaxLength: &maxLength, ValidExample: &validExample}},
+		{Name: "LegacyCode", Type: "string", Validations: spec.ValidationRules{MinLength: &minLength, MaxLength: &maxLength, ValidExample: &validExample}},
+	}
+	cfg.Services[0].Entities[0].Fields[1].Type = "string"
 	return cfg
 }
 

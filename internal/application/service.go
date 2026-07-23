@@ -102,6 +102,16 @@ type FieldSetting struct {
 	Type         string
 }
 
+type ValueObjectSettings struct {
+	ServiceName  string
+	ValueObjects []ValueObjectNameSetting
+}
+
+type ValueObjectNameSetting struct {
+	OriginalName string
+	Name         string
+}
+
 type UpdateSolutionSettingsResult struct {
 	Saved     bool
 	Config    ConfigSummary
@@ -124,6 +134,13 @@ type UpdateEntitySettingsResult struct {
 }
 
 type UpdateFieldSettingsResult struct {
+	Saved     bool
+	Config    ConfigSummary
+	Plan      GenerationPlan
+	PlanError error
+}
+
+type UpdateValueObjectSettingsResult struct {
 	Saved     bool
 	Config    ConfigSummary
 	Plan      GenerationPlan
@@ -157,9 +174,17 @@ type ConfigSummary struct {
 }
 
 type ServiceSummary struct {
-	Name        string
-	EntityNames []string
-	Entities    []EntitySummary
+	Name                  string
+	EntityNames           []string
+	ValueObjectNames      []string
+	ValueObjectReferences []ValueObjectReferenceSummary
+	Entities              []EntitySummary
+}
+
+type ValueObjectReferenceSummary struct {
+	ValueObjectName string
+	EntityName      string
+	FieldName       string
 }
 
 type EntitySummary struct {
@@ -370,6 +395,34 @@ func (s Service) UpdateFieldSettings(request GenerateRequest, settings FieldSett
 	return UpdateFieldSettingsResult{Saved: true, Config: config, Plan: plan, PlanError: err}, nil
 }
 
+func (s Service) UpdateValueObjectSettings(request GenerateRequest, settings ValueObjectSettings) (UpdateValueObjectSettingsResult, error) {
+	cfg, err := s.LoadConfig(request.ConfigPath)
+	if err != nil {
+		return UpdateValueObjectSettingsResult{}, err
+	}
+	serviceIndex, ok := serviceIndexByName(cfg.Services, settings.ServiceName)
+	if !ok {
+		return UpdateValueObjectSettingsResult{}, fmt.Errorf("service %q was not found", settings.ServiceName)
+	}
+	service := cfg.Services[serviceIndex]
+	if err := validateSafeValueObjectReferenceChanges(service, settings.ValueObjects); err != nil {
+		return UpdateValueObjectSettingsResult{}, err
+	}
+	cfg.Services[serviceIndex].ValueObjects = updatedValueObjects(service.ValueObjects, settings.ValueObjects)
+	if cfg.SchemaVersion == 0 {
+		cfg.SchemaVersion = spec.ConfigSchemaVersion
+	}
+	if err := s.ValidateConfig(cfg); err != nil {
+		return UpdateValueObjectSettingsResult{}, err
+	}
+	if err := s.SaveConfig(request.ConfigPath, cfg); err != nil {
+		return UpdateValueObjectSettingsResult{}, err
+	}
+	config := summarizeConfig(cfg)
+	plan, err := s.planGenerationFromConfig(request, cfg)
+	return UpdateValueObjectSettingsResult{Saved: true, Config: config, Plan: plan, PlanError: err}, nil
+}
+
 func normalizedServiceSettings(settings ServiceSettings) []ServiceNameSetting {
 	if len(settings.Services) > 0 {
 		return settings.Services
@@ -494,11 +547,129 @@ func fieldByName(fields []spec.Field, used []bool, name string) (spec.Field, boo
 	return spec.Field{}, false
 }
 
+func updatedValueObjects(existing []spec.ValueObject, settings []ValueObjectNameSetting) []spec.ValueObject {
+	valueObjects := make([]spec.ValueObject, 0, len(settings))
+	used := make([]bool, len(existing))
+	for _, setting := range settings {
+		if setting.OriginalName != "" {
+			if valueObject, ok := valueObjectByName(existing, used, setting.OriginalName); ok {
+				valueObject.Name = setting.Name
+				valueObjects = append(valueObjects, valueObject)
+				continue
+			}
+		}
+		if valueObject, ok := valueObjectByName(existing, used, setting.Name); ok {
+			valueObjects = append(valueObjects, valueObject)
+			continue
+		}
+		valueObjects = append(valueObjects, defaultValueObjectForName(setting.Name))
+	}
+	return valueObjects
+}
+
+func valueObjectByName(valueObjects []spec.ValueObject, used []bool, name string) (spec.ValueObject, bool) {
+	for index, valueObject := range valueObjects {
+		if used[index] || valueObject.Name != name {
+			continue
+		}
+		used[index] = true
+		return valueObject, true
+	}
+	return spec.ValueObject{}, false
+}
+
+func validateSafeValueObjectReferenceChanges(service spec.Service, settings []ValueObjectNameSetting) error {
+	referenced := map[string]bool{}
+	for _, valueObject := range service.ValueObjects {
+		if serviceFieldsReferenceValueObject(service, valueObject.Name) {
+			referenced[valueObject.Name] = true
+		}
+	}
+	for valueObjectName := range referenced {
+		status := valueObjectIdentityStatusForSettings(settings, valueObjectName)
+		switch status {
+		case valueObjectIdentityPreserved:
+			continue
+		case valueObjectIdentityRenamed:
+			return fmt.Errorf("value object %q is referenced by entity fields and cannot be renamed", valueObjectName)
+		case valueObjectIdentityReplaced:
+			return fmt.Errorf("value object %q is referenced by entity fields and cannot be renamed, deleted, or replaced", valueObjectName)
+		default:
+			return fmt.Errorf("value object %q is referenced by entity fields and cannot be deleted", valueObjectName)
+		}
+	}
+	return nil
+}
+
+type valueObjectIdentityStatus int
+
+const (
+	valueObjectIdentityDeleted valueObjectIdentityStatus = iota
+	valueObjectIdentityPreserved
+	valueObjectIdentityRenamed
+	valueObjectIdentityReplaced
+)
+
+func valueObjectIdentityStatusForSetting(setting ValueObjectNameSetting, valueObjectName string) valueObjectIdentityStatus {
+	if setting.OriginalName == valueObjectName && setting.Name == valueObjectName {
+		return valueObjectIdentityPreserved
+	}
+	if setting.OriginalName == valueObjectName {
+		return valueObjectIdentityRenamed
+	}
+	if setting.Name == valueObjectName {
+		return valueObjectIdentityReplaced
+	}
+	return valueObjectIdentityDeleted
+}
+
+func valueObjectIdentityStatusForSettings(settings []ValueObjectNameSetting, valueObjectName string) valueObjectIdentityStatus {
+	status := valueObjectIdentityDeleted
+	for _, setting := range settings {
+		settingStatus := valueObjectIdentityStatusForSetting(setting, valueObjectName)
+		if settingStatus == valueObjectIdentityPreserved || settingStatus == valueObjectIdentityRenamed {
+			return settingStatus
+		}
+		if settingStatus == valueObjectIdentityReplaced {
+			status = valueObjectIdentityReplaced
+		}
+	}
+	return status
+}
+
+func serviceFieldsReferenceValueObject(service spec.Service, valueObjectName string) bool {
+	for _, entity := range service.Entities {
+		for _, field := range entity.Fields {
+			if field.Type == valueObjectName {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func defaultEntityForName(name string) spec.Entity {
 	return spec.Entity{
 		Name: name,
 		Fields: []spec.Field{
 			{Name: "Id", Type: "Guid"},
+		},
+	}
+}
+
+func defaultValueObjectForName(name string) spec.ValueObject {
+	required := true
+	minLength := 1
+	maxLength := 100
+	validExample := "Sample"
+	return spec.ValueObject{
+		Name: name,
+		Type: "string",
+		Validations: spec.ValidationRules{
+			Required:     &required,
+			MinLength:    &minLength,
+			MaxLength:    &maxLength,
+			ValidExample: &validExample,
 		},
 	}
 }
@@ -591,12 +762,21 @@ func summarizeConfig(cfg spec.Config) ConfigSummary {
 	}
 	for index, service := range cfg.Services {
 		summary.ServiceNames[index] = service.Name
-		summary.Services[index] = ServiceSummary{Name: service.Name, EntityNames: make([]string, len(service.Entities)), Entities: make([]EntitySummary, len(service.Entities))}
+		valueObjectNames := make([]string, len(service.ValueObjects))
+		valueObjectSet := map[string]bool{}
+		for valueObjectIndex, valueObject := range service.ValueObjects {
+			valueObjectNames[valueObjectIndex] = valueObject.Name
+			valueObjectSet[valueObject.Name] = true
+		}
+		summary.Services[index] = ServiceSummary{Name: service.Name, EntityNames: make([]string, len(service.Entities)), ValueObjectNames: valueObjectNames, Entities: make([]EntitySummary, len(service.Entities))}
 		for entityIndex, entity := range service.Entities {
 			summary.Services[index].EntityNames[entityIndex] = entity.Name
 			summary.Services[index].Entities[entityIndex] = EntitySummary{Name: entity.Name, Fields: make([]FieldSummary, len(entity.Fields))}
 			for fieldIndex, field := range entity.Fields {
 				summary.Services[index].Entities[entityIndex].Fields[fieldIndex] = FieldSummary{Name: field.Name, Type: field.Type}
+				if valueObjectSet[field.Type] {
+					summary.Services[index].ValueObjectReferences = append(summary.Services[index].ValueObjectReferences, ValueObjectReferenceSummary{ValueObjectName: field.Type, EntityName: entity.Name, FieldName: field.Name})
+				}
 			}
 		}
 		summary.EntityCount += len(service.Entities)

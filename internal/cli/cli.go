@@ -92,7 +92,7 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return ExitError
 	}
-	if err := runTUIProgram(plan, request, service.PlanGeneration, service.Generate, service.UpdateSolutionSettings, service.UpdateServiceSettings, service.UpdateEntitySettings, service.UpdateFieldSettings, service.TargetFrameworkSuggestions()); err != nil {
+	if err := runTUIProgram(plan, request, service.PlanGeneration, service.Generate, service.UpdateSolutionSettings, service.UpdateServiceSettings, service.UpdateEntitySettings, service.UpdateFieldSettings, service.UpdateValueObjectSettings, service.TargetFrameworkSuggestions()); err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return ExitError
 	}
