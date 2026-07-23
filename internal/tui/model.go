@@ -19,6 +19,7 @@ const (
 
 const readyHelp = "Navigate files: arrows/k/j/pgup/pgdown/home/end. Actions: g generate, e edit settings, r refresh, a filter."
 const generatedHelp = "Navigate files: arrows/k/j/pgup/pgdown/home/end. Actions: r refresh, a filter."
+const stepHelp = "Steps: tab/] next, shift+tab/[ previous."
 
 var (
 	border = lipgloss.Border{
@@ -62,6 +63,17 @@ const (
 	statusSaving
 )
 
+type tuiStep int
+
+const (
+	stepSource tuiStep = iota
+	stepProject
+	stepServices
+	stepPreview
+	stepGenerate
+	stepCount
+)
+
 type editField int
 
 const (
@@ -101,6 +113,7 @@ type Model struct {
 	fileOffset                 int
 	windowRows                 int
 	actionFilter               string
+	currentStep                tuiStep
 }
 
 func NewModel(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, targetFrameworkSuggestions ...[]string) Model {
@@ -108,7 +121,7 @@ func NewModel(plan application.GenerationPlan, request application.GenerateReque
 	if len(targetFrameworkSuggestions) > 0 {
 		suggestions = append([]string(nil), targetFrameworkSuggestions[0]...)
 	}
-	return Model{plan: plan, request: request, planFunc: planFunc, generate: generate, update: update, status: statusReady, targetFrameworkSuggestions: suggestions, windowRows: defaultFileWindowRows}
+	return Model{plan: plan, request: request, planFunc: planFunc, generate: generate, update: update, status: statusReady, targetFrameworkSuggestions: suggestions, windowRows: defaultFileWindowRows, currentStep: stepSource}
 }
 
 func Run(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, targetFrameworkSuggestions []string) error {
@@ -146,6 +159,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		switch key {
+		case "tab", "]":
+			if m.busy() {
+				return m, nil
+			}
+			m.moveStep(1)
+			return m, nil
+		case "shift+tab", "[":
+			if m.busy() {
+				return m, nil
+			}
+			m.moveStep(-1)
+			return m, nil
 		case "q", "esc", "ctrl+c":
 			if m.status == statusGenerating || m.status == statusSaving {
 				return m, nil
@@ -218,6 +243,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.status = statusGenerating
+			m.currentStep = stepGenerate
 			m.err = nil
 			m.errContext = ""
 			m.message = ""
@@ -226,6 +252,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.status == statusRefreshing || m.status == statusGenerating || m.status == statusSaving {
 				return m, nil
 			}
+			m.currentStep = stepProject
 			m.startEditing()
 			return m, nil
 		}
@@ -234,6 +261,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = statusFailed
 			m.err = msg.err
 			m.errContext = "Refresh"
+			m.currentStep = stepGenerate
 			return m, nil
 		}
 		m.status = statusReady
@@ -250,11 +278,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = statusFailed
 			m.err = msg.err
 			m.errContext = "Generation"
+			m.currentStep = stepGenerate
 			return m, nil
 		}
 		m.status = statusGenerated
 		m.result = msg.result
 		m.plan = msg.result.Plan
+		m.currentStep = stepGenerate
 		m.err = nil
 		m.errContext = ""
 		m.message = ""
@@ -287,6 +317,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+func (m Model) busy() bool {
+	return m.status == statusRefreshing || m.status == statusGenerating || m.status == statusSaving
+}
+
+func (m *Model) moveStep(delta int) {
+	next := int(m.currentStep) + delta
+	if next < 0 {
+		next = 0
+	}
+	if next >= int(stepCount) {
+		next = int(stepCount) - 1
+	}
+	m.currentStep = tuiStep(next)
+}
+
+func (step tuiStep) label() string {
+	switch step {
+	case stepSource:
+		return "Source"
+	case stepProject:
+		return "Project"
+	case stepServices:
+		return "Services"
+	case stepPreview:
+		return "Preview"
+	case stepGenerate:
+		return "Generate"
+	default:
+		return "Source"
+	}
 }
 
 func (m Model) postSaveRefreshFailed() bool {
@@ -638,20 +700,181 @@ func (m Model) saveSettingsCmd() tea.Cmd {
 func (m Model) View() string {
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "%s - %s\n", appTitleStyle.Render("Microgen"), m.statusBadge())
+	fmt.Fprintf(&builder, "%s\n", dimStyle.Render("Step-based generator dashboard"))
 	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Primary:"), m.primaryActionStyle().Render(m.primaryAction()))
 	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, m.configCard())
+	fmt.Fprintln(&builder, m.stepperCard())
 	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, m.outputPreviewCard())
-	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, m.plannedFilesCard())
-	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, m.currentStepPanel())
 	if m.message != "" {
-		fmt.Fprintln(&builder, successStyle.Render(m.message))
 		fmt.Fprintln(&builder)
+		fmt.Fprintln(&builder, successStyle.Render(m.message))
 	}
-	fmt.Fprintln(&builder, m.actionsCard())
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, m.footerCard())
 	return builder.String()
+}
+
+func (m Model) stepperCard() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Wizard"))
+	for step := stepSource; step < stepCount; step++ {
+		marker := " "
+		style := dimStyle
+		if step < m.currentStep {
+			marker = "x"
+			style = successStyle
+		}
+		if step == m.currentStep {
+			marker = ">"
+			style = readyStyle
+		}
+		fmt.Fprintf(&builder, "%s %d/%d %s\n", style.Render(marker), step+1, stepCount, style.Render(step.label()))
+	}
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Progress"), fmt.Sprintf("%d/%d", m.currentStep+1, stepCount))
+	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+}
+
+func (m Model) currentStepPanel() string {
+	if m.postSaveRefreshFailed() {
+		return strings.Join([]string{m.projectStepCard(), m.generateStepCard()}, "\n\n")
+	}
+	switch m.currentStep {
+	case stepProject:
+		return m.projectStepCard()
+	case stepServices:
+		return m.servicesStepCard()
+	case stepPreview:
+		return strings.Join([]string{m.outputPreviewCard(), m.plannedFilesCard()}, "\n\n")
+	case stepGenerate:
+		return m.generateStepCard()
+	default:
+		return m.sourceStepCard()
+	}
+}
+
+func (m Model) sourceStepCard() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Source"))
+	fmt.Fprintf(&builder, "%s %s %s\n", labelStyle.Render("Source"), m.request.ConfigPath, dimStyle.Render("("+m.configSourceLabel()+")"))
+	if m.request.ConfigBootstrapped {
+		fmt.Fprintln(&builder, dimStyle.Render("Created starter config. Edit settings incrementally; service/entity/field editing comes later."))
+	}
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Product"), m.plan.Config.SolutionName)
+	if m.plan.Config.SolutionDescription != "" {
+		fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Description"), m.plan.Config.SolutionDescription)
+	}
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Target"), m.plan.Config.TargetFramework)
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Output"), m.plan.OutputDir)
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Mode"), m.plan.OutputAction)
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, "Use this step to confirm where the JSON comes from and where generated files will be planned.")
+	fmt.Fprintln(&builder, dimStyle.Render("Full from-scratch config editing is planned for later steps."))
+	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+}
+
+func (m Model) projectStepCard() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Project"))
+	if m.status == statusEditing || m.status == statusSaving {
+		m.renderSettingsEditor(&builder)
+		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+	}
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Solution"), m.plan.Config.SolutionName)
+	if m.plan.Config.SolutionDescription != "" {
+		fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Description"), m.plan.Config.SolutionDescription)
+	}
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Target"), m.plan.Config.TargetFramework)
+	if m.plan.Config.SolutionFormat != "" {
+		fmt.Fprintf(&builder, "%s .%s\n", labelStyle.Render("Format"), m.plan.Config.SolutionFormat)
+	}
+	fmt.Fprintln(&builder)
+	if m.busy() || m.postSaveRefreshFailed() {
+		fmt.Fprintln(&builder, busyStyle.Render("Project editing is paused until the current operation finishes or the stale plan is refreshed."))
+	} else {
+		fmt.Fprintln(&builder, successStyle.Render("e Edit solution name, description, or target framework."))
+	}
+	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+}
+
+func (m Model) servicesStepCard() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Services"))
+	fmt.Fprintf(&builder, "%s %d services, %d entities, %d value objects\n", labelStyle.Render("Summary"), m.plan.Config.ServiceCount, m.plan.Config.EntityCount, m.plan.Config.ValueObjectCount)
+	if len(m.plan.Config.ServiceNames) > 0 {
+		fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Services"), strings.Join(m.plan.Config.ServiceNames, ", "))
+	}
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, warningStyle.Render("Detailed service, entity, field, and value-object editing is upcoming and not available yet."))
+	fmt.Fprintln(&builder, dimStyle.Render("This step is a read-only summary in the current slice."))
+	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+}
+
+func (m Model) generateStepCard() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Generate"))
+	switch m.status {
+	case statusGenerating:
+		fmt.Fprintln(&builder, busyStyle.Render("Generating files. Please wait; exit is available after generation finishes."))
+	case statusGenerated:
+		fmt.Fprintln(&builder, successStyle.Render(fmt.Sprintf("Generated %d files in %s.", m.result.Plan.FileCount, m.result.OutputDir)))
+		if m.result.Warning != "" {
+			fmt.Fprintf(&builder, "%s %s\n", warningStyle.Render("WARNING"), warningStyle.Render(m.result.Warning))
+		}
+	case statusFailed:
+		context := m.errContext
+		if context == "" {
+			context = "Generation"
+		}
+		fmt.Fprintf(&builder, "%s %s failed: %v\n", dangerStyle.Render("FAILED"), context, m.err)
+		if m.errContext == "Refresh after save" {
+			fmt.Fprintln(&builder, dangerStyle.Render("r Retry plan refresh. Other actions stay locked until refresh succeeds."))
+		} else {
+			fmt.Fprintln(&builder, dangerStyle.Render("g Retry generation, or r refresh the plan first."))
+		}
+	default:
+		fmt.Fprintf(&builder, "%s Generate %d planned file(s) into %s.\n", successStyle.Render("g"), m.plan.FileCount, m.plan.OutputDir)
+		fmt.Fprintf(&builder, "%s Review the Preview step before confirming writes.\n", labelStyle.Render("Before"))
+	}
+	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+}
+
+func (m Model) footerCard() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Shortcuts"))
+	if m.status == statusRefreshing {
+		fmt.Fprintln(&builder, busyStyle.Render("Refreshing plan. Please wait; editing, filtering, and generation are paused."))
+		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+	}
+	if m.status == statusGenerating {
+		fmt.Fprintln(&builder, busyStyle.Render("Generating files. Please wait; exit is available after generation finishes."))
+		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+	}
+	if m.status == statusSaving {
+		fmt.Fprintln(&builder, busyStyle.Render("Saving settings. Please wait; exit is available after save finishes."))
+		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+	}
+	if m.postSaveRefreshFailed() {
+		fmt.Fprintln(&builder, "Keys: r retry refresh | q/esc/ctrl+c quit")
+		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+	}
+	fmt.Fprintln(&builder, stepHelp)
+	switch m.currentStep {
+	case stepProject:
+		fmt.Fprintln(&builder, "Project: e edit settings, r refresh.")
+	case stepPreview:
+		fmt.Fprintln(&builder, readyHelp)
+	case stepGenerate:
+		if m.status == statusGenerated {
+			fmt.Fprintln(&builder, generatedHelp)
+		} else {
+			fmt.Fprintln(&builder, "Generate: g generate, r refresh.")
+		}
+	default:
+		fmt.Fprintln(&builder, "Actions: r refresh. Move to Project to edit or Generate to write files.")
+	}
+	fmt.Fprintln(&builder, "Exit: q/esc/ctrl+c")
+	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 }
 
 func (m Model) configCard() string {

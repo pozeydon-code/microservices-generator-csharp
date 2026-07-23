@@ -77,9 +77,11 @@ microgen tui --new --config <path> --output <dir> [--force]
 
 `microgen tui` opens a terminal UI over the same planning and generation core. Use existing JSON with `--config <path>`, or start from scratch with `--new --config <path>` and a required `--output <dir>`. The starter config includes schema/generation defaults, solution metadata, and one service/entity with `Guid` identity plus `string` name fields so the generator can plan immediately; the TUI confirms that the starter config was created and can be edited incrementally.
 
-The TUI shows a status header, primary action, and grouped sections for config, output preview, planned files, and actions before anything is written. When existing generated output is present, the impact summary compares planned files with on-disk generated files and counts `create`, `replace`, and `unchanged` file actions. If replacing a verified generated directory would remove previously generated files that are no longer in the new plan, the preview shows a concise danger summary with sample paths; this is reporting only and does not change writer behavior. If all planned files are unchanged, the preview says that no generated file content changes were detected.
+The TUI is organized as a step-based dashboard: `Source`, `Project`, `Services`, `Preview`, and `Generate`. Use `tab` or `]` to move forward and `shift+tab` or `[` to move backward. `Source` confirms the JSON config source and output path, `Project` edits solution metadata and target framework, `Services` shows a read-only service/entity/value-object summary, `Preview` shows impact and planned files, and `Generate` focuses final confirmation/status/result.
 
-Use `up`/`down`, `k`/`j`, `pgup`/`pgdown`, `home`, and `end` to inspect planned files, `a` to cycle the planned-file action filter, `r` to refresh the plan from disk, `e` to edit solution name, description, or target framework, `g` to generate, and `q`, `esc`, or `ctrl+c` to quit. Target framework editing shows installed .NET SDK major-version suggestions first when `dotnet --list-sdks` is available; otherwise it falls back to a known newest-first list. You can also type a major or TFM manually, such as `6`, `7`, `net10.0`, or `net11.0`. Exit is blocked while saving settings or generating files. Service, entity, field, and value-object editing is not supported yet.
+When existing generated output is present, the `Preview` impact summary compares planned files with on-disk generated files and counts `create`, `replace`, and `unchanged` file actions. If replacing a verified generated directory would remove previously generated files that are no longer in the new plan, the preview shows a concise danger summary with sample paths; this is reporting only and does not change writer behavior. If all planned files are unchanged, the preview says that no generated file content changes were detected.
+
+Use `up`/`down`, `k`/`j`, `pgup`/`pgdown`, `home`, and `end` to inspect planned files on the `Preview` step, `a` to cycle the planned-file action filter, `r` to refresh the plan from disk, `e` to edit solution name, description, or target framework, `g` to generate, and `q`, `esc`, or `ctrl+c` to quit. In edit mode, `tab` and `shift+tab` move between fields instead of changing dashboard steps. Target framework editing shows installed .NET SDK major-version suggestions first when `dotnet --list-sdks` is available; otherwise it falls back to a known newest-first list. You can also type a major or TFM manually, such as `6`, `7`, `net10.0`, or `net11.0`. Exit is blocked while saving settings or generating files. Service, entity, field, and value-object editing is not supported yet.
 
 ## Config convention
 
@@ -197,7 +199,7 @@ The workflow uses pinned Go and .NET SDK versions. GitHub Actions are referenced
 ## Current limitations
 
 - Nested/composed Value Objects are a later slice; this generator remains CLI-first with a TUI adapter.
-- The TUI can edit solution metadata and target framework. Service, entity, field, and value-object editing remains future work.
+- The TUI can edit solution metadata and target framework. The Services step is currently read-only; service, entity, field, and value-object editing remains future work.
 - Request idempotency is not generated; add idempotency keys or operation IDs at the API edge when required.
 - Production telemetry exporters are deployment-specific; generated code provides logging/problem-details hooks but no vendor exporter.
 - JSON is the only input format.
