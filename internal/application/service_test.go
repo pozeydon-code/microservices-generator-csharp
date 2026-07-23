@@ -76,6 +76,10 @@ func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T)
 		EntityCount:         3,
 		ValueObjectCount:    3,
 		ServiceNames:        []string{"ProductService", "OrderService"},
+		Services: []ServiceSummary{
+			{Name: "ProductService", EntityNames: []string{"Product"}},
+			{Name: "OrderService", EntityNames: []string{"Order", "OrderLine"}},
+		},
 	}
 	if !reflect.DeepEqual(plan.Config, expectedSummary) {
 		t.Fatalf("expected config summary %#v, got %#v", expectedSummary, plan.Config)
@@ -472,6 +476,115 @@ func TestServiceUpdateServiceSettingsReportsPostSavePlanError(t *testing.T) {
 	}
 }
 
+func TestServiceUpdateEntitySettingsAddsRenamesAndDeletesEntities(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validConfigWithEntities("Product", "Legacy")},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       &fakeGenerator{files: []GeneratedFile{{Path: "README.md", Content: []byte("readme")}}},
+		OutputPlanner:   fakeOutputPlanner{plan: OutputPlan{OutputDir: "/planned/generated", Action: "create", Files: []OutputPlannedFile{{Path: "README.md", Action: "create"}}}},
+	})
+
+	result, err := service.UpdateEntitySettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, EntitySettings{ServiceName: "ProductService", Entities: []EntityNameSetting{{OriginalName: "Product", Name: "Catalog"}, {Name: "Inventory"}}})
+
+	if err != nil {
+		t.Fatalf("expected update success, got %v", err)
+	}
+	if !saver.called || saver.path != "microgen.json" {
+		t.Fatalf("expected config save at microgen.json, got called=%v path=%q", saver.called, saver.path)
+	}
+	entities := saver.cfg.Services[0].Entities
+	if len(entities) != 2 || entities[0].Name != "Catalog" || entities[1].Name != "Inventory" {
+		t.Fatalf("expected renamed/deleted/added entities, got %#v", entities)
+	}
+	if len(entities[0].Fields) != 2 || entities[0].Fields[1].Name != "Name" || entities[0].Fields[1].Type != "ProductName" {
+		t.Fatalf("expected renamed entity to preserve existing fields, got %#v", entities[0].Fields)
+	}
+	fields := entities[1].Fields
+	if len(fields) != 1 || fields[0].Name != "Id" || fields[0].Type != "Guid" {
+		t.Fatalf("expected new entity default Guid Id field, got %#v", fields)
+	}
+	if !result.Saved || result.PlanError != nil || result.Plan.FileCount != 1 || result.Config.EntityCount != 2 {
+		t.Fatalf("expected saved result with refreshed plan summary, got %#v", result)
+	}
+	if len(result.Config.Services) != 1 || !reflect.DeepEqual(result.Config.Services[0].EntityNames, []string{"Catalog", "Inventory"}) {
+		t.Fatalf("expected service entity summary, got %#v", result.Config.Services)
+	}
+}
+
+func TestServiceUpdateEntitySettingsRejectsInvalidEntityNameWithoutSaving(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	gen := &fakeGenerator{}
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validPersistableConfig()},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       gen,
+		OutputPlanner:   fakeOutputPlanner{},
+	})
+
+	_, err := service.UpdateEntitySettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, EntitySettings{ServiceName: "ProductService", Entities: []EntityNameSetting{{OriginalName: "Product", Name: "1Bad"}}})
+
+	if err == nil || !strings.Contains(err.Error(), "services[0].entities[0].name must be a valid C# identifier") {
+		t.Fatalf("expected entity identifier validation error, got %v", err)
+	}
+	if saver.called {
+		t.Fatal("expected invalid entity name not to be saved")
+	}
+	if gen.called {
+		t.Fatal("expected invalid entity name not to regenerate plan")
+	}
+}
+
+func TestServiceUpdateEntitySettingsRejectsDeletingLastEntityWithoutSaving(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	gen := &fakeGenerator{}
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validPersistableConfig()},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       gen,
+		OutputPlanner:   fakeOutputPlanner{},
+	})
+
+	_, err := service.UpdateEntitySettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, EntitySettings{ServiceName: "ProductService"})
+
+	if err == nil || !strings.Contains(err.Error(), "services must keep at least one entity") {
+		t.Fatalf("expected last entity deletion error, got %v", err)
+	}
+	if saver.called {
+		t.Fatal("expected invalid entity list not to be saved")
+	}
+	if gen.called {
+		t.Fatal("expected invalid entity list not to regenerate plan")
+	}
+}
+
+func TestServiceUpdateEntitySettingsReportsPostSavePlanError(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	planErr := errors.New("plan failed")
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validPersistableConfig()},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       &fakeGenerator{err: planErr},
+		OutputPlanner:   fakeOutputPlanner{},
+	})
+
+	result, err := service.UpdateEntitySettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, EntitySettings{ServiceName: "ProductService", Entities: []EntityNameSetting{{OriginalName: "Product", Name: "Catalog"}}})
+
+	if err != nil {
+		t.Fatalf("expected save success with plan error result, got %v", err)
+	}
+	if !saver.called || !result.Saved || !errors.Is(result.PlanError, planErr) {
+		t.Fatalf("expected saved result with plan error, got saver.called=%v result=%#v", saver.called, result)
+	}
+	if result.Config.EntityCount != 1 || len(result.Config.Services) != 1 || !reflect.DeepEqual(result.Config.Services[0].EntityNames, []string{"Catalog"}) {
+		t.Fatalf("expected saved entity summary despite plan error, got %#v", result.Config)
+	}
+}
+
 func TestDefaultServicePlanGenerationUsesRealPortsWithoutWriting(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "microgen.json")
 	if err := os.WriteFile(configPath, []byte(validJSONConfig), 0o644); err != nil {
@@ -669,6 +782,21 @@ func validPersistableConfig() spec.Config {
 			},
 		},
 	}
+}
+
+func validConfigWithEntities(names ...string) spec.Config {
+	cfg := validPersistableConfig()
+	cfg.Services[0].Entities = make([]spec.Entity, len(names))
+	for index, name := range names {
+		cfg.Services[0].Entities[index] = spec.Entity{
+			Name: name,
+			Fields: []spec.Field{
+				{Name: "Id", Type: "Guid"},
+				{Name: "Name", Type: "ProductName"},
+			},
+		}
+	}
+	return cfg
 }
 
 func serviceNames(services []spec.Service) []string {

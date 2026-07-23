@@ -80,6 +80,16 @@ type ServiceNameSetting struct {
 	Name         string
 }
 
+type EntitySettings struct {
+	ServiceName string
+	Entities    []EntityNameSetting
+}
+
+type EntityNameSetting struct {
+	OriginalName string
+	Name         string
+}
+
 type UpdateSolutionSettingsResult struct {
 	Saved     bool
 	Config    ConfigSummary
@@ -88,6 +98,13 @@ type UpdateSolutionSettingsResult struct {
 }
 
 type UpdateServiceSettingsResult struct {
+	Saved     bool
+	Config    ConfigSummary
+	Plan      GenerationPlan
+	PlanError error
+}
+
+type UpdateEntitySettingsResult struct {
 	Saved     bool
 	Config    ConfigSummary
 	Plan      GenerationPlan
@@ -117,6 +134,12 @@ type ConfigSummary struct {
 	EntityCount         int
 	ValueObjectCount    int
 	ServiceNames        []string
+	Services            []ServiceSummary
+}
+
+type ServiceSummary struct {
+	Name        string
+	EntityNames []string
 }
 
 type PlannedFile struct {
@@ -259,6 +282,33 @@ func (s Service) UpdateServiceSettings(request GenerateRequest, settings Service
 	return UpdateServiceSettingsResult{Saved: true, Config: config, Plan: plan, PlanError: err}, nil
 }
 
+func (s Service) UpdateEntitySettings(request GenerateRequest, settings EntitySettings) (UpdateEntitySettingsResult, error) {
+	cfg, err := s.LoadConfig(request.ConfigPath)
+	if err != nil {
+		return UpdateEntitySettingsResult{}, err
+	}
+	serviceIndex, ok := serviceIndexByName(cfg.Services, settings.ServiceName)
+	if !ok {
+		return UpdateEntitySettingsResult{}, fmt.Errorf("service %q was not found", settings.ServiceName)
+	}
+	if len(settings.Entities) == 0 {
+		return UpdateEntitySettingsResult{}, errors.New("services must keep at least one entity")
+	}
+	cfg.Services[serviceIndex].Entities = updatedEntities(cfg.Services[serviceIndex].Entities, settings.Entities)
+	if cfg.SchemaVersion == 0 {
+		cfg.SchemaVersion = spec.ConfigSchemaVersion
+	}
+	if err := s.ValidateConfig(cfg); err != nil {
+		return UpdateEntitySettingsResult{}, err
+	}
+	if err := s.SaveConfig(request.ConfigPath, cfg); err != nil {
+		return UpdateEntitySettingsResult{}, err
+	}
+	config := summarizeConfig(cfg)
+	plan, err := s.planGenerationFromConfig(request, cfg)
+	return UpdateEntitySettingsResult{Saved: true, Config: config, Plan: plan, PlanError: err}, nil
+}
+
 func normalizedServiceSettings(settings ServiceSettings) []ServiceNameSetting {
 	if len(settings.Services) > 0 {
 		return settings.Services
@@ -301,6 +351,55 @@ func serviceByName(services []spec.Service, used []bool, name string) (spec.Serv
 	return spec.Service{}, false
 }
 
+func serviceIndexByName(services []spec.Service, name string) (int, bool) {
+	for index, service := range services {
+		if service.Name == name {
+			return index, true
+		}
+	}
+	return 0, false
+}
+
+func updatedEntities(existing []spec.Entity, settings []EntityNameSetting) []spec.Entity {
+	entities := make([]spec.Entity, 0, len(settings))
+	used := make([]bool, len(existing))
+	for _, setting := range settings {
+		if setting.OriginalName != "" {
+			if entity, ok := entityByName(existing, used, setting.OriginalName); ok {
+				entity.Name = setting.Name
+				entities = append(entities, entity)
+				continue
+			}
+		}
+		if entity, ok := entityByName(existing, used, setting.Name); ok {
+			entities = append(entities, entity)
+			continue
+		}
+		entities = append(entities, defaultEntityForName(setting.Name))
+	}
+	return entities
+}
+
+func entityByName(entities []spec.Entity, used []bool, name string) (spec.Entity, bool) {
+	for index, entity := range entities {
+		if used[index] || entity.Name != name {
+			continue
+		}
+		used[index] = true
+		return entity, true
+	}
+	return spec.Entity{}, false
+}
+
+func defaultEntityForName(name string) spec.Entity {
+	return spec.Entity{
+		Name: name,
+		Fields: []spec.Field{
+			{Name: "Id", Type: "Guid"},
+		},
+	}
+}
+
 func defaultServiceForName(name string) spec.Service {
 	entityName := strings.TrimSuffix(name, "Service")
 	if entityName == "" {
@@ -309,12 +408,7 @@ func defaultServiceForName(name string) spec.Service {
 	return spec.Service{
 		Name: name,
 		Entities: []spec.Entity{
-			{
-				Name: entityName,
-				Fields: []spec.Field{
-					{Name: "Id", Type: "Guid"},
-				},
-			},
+			defaultEntityForName(entityName),
 		},
 	}
 }
@@ -390,9 +484,14 @@ func summarizeConfig(cfg spec.Config) ConfigSummary {
 		SolutionFormat:      cfg.SolutionFormat(),
 		ServiceCount:        len(cfg.Services),
 		ServiceNames:        make([]string, len(cfg.Services)),
+		Services:            make([]ServiceSummary, len(cfg.Services)),
 	}
 	for index, service := range cfg.Services {
 		summary.ServiceNames[index] = service.Name
+		summary.Services[index] = ServiceSummary{Name: service.Name, EntityNames: make([]string, len(service.Entities))}
+		for entityIndex, entity := range service.Entities {
+			summary.Services[index].EntityNames[entityIndex] = entity.Name
+		}
 		summary.EntityCount += len(service.Entities)
 		summary.ValueObjectCount += len(service.ValueObjects)
 	}
