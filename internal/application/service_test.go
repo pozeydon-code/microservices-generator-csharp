@@ -84,9 +84,45 @@ func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T)
 	if !reflect.DeepEqual(plan.Config, expectedSummary) {
 		t.Fatalf("expected config summary %#v, got %#v", expectedSummary, plan.Config)
 	}
+	expectedReadiness := ReadinessSummary{ProjectPresent: true, ServiceCount: 2, EntityCount: 3, FieldCount: 2, ValueObjectCount: 3, OutputForceRequired: true, Hints: []string{"Review output replacement; --force is required to write."}}
+	if !reflect.DeepEqual(plan.Readiness, expectedReadiness) {
+		t.Fatalf("expected readiness summary %#v, got %#v", expectedReadiness, plan.Readiness)
+	}
 	expectedFiles := []PlannedFile{{Path: "README.md", Action: "replace"}, {Path: "src/ProductService/Product.cs", Action: "unchanged"}}
 	if !reflect.DeepEqual(plan.Files, expectedFiles) {
 		t.Fatalf("expected planned files %#v, got %#v", expectedFiles, plan.Files)
+	}
+}
+
+func TestServicePlanGenerationDerivesStarterReadinessHints(t *testing.T) {
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: starterConfig()},
+		ConfigValidator: specValidator{},
+		Generator:       &fakeGenerator{files: []GeneratedFile{{Path: "README.md", Content: []byte("readme")}}},
+		OutputPlanner:   fakeOutputPlanner{plan: OutputPlan{OutputDir: "/abs/generated", Action: "create", Files: []OutputPlannedFile{{Path: "README.md", Action: "create"}}}},
+	})
+
+	plan, err := service.PlanGeneration(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"})
+
+	if err != nil {
+		t.Fatalf("expected starter plan, got %v", err)
+	}
+	expected := ReadinessSummary{
+		ProjectPresent:      true,
+		ServiceCount:        1,
+		EntityCount:         1,
+		FieldCount:          2,
+		ValueObjectCount:    0,
+		OutputForceRequired: false,
+		Hints: []string{
+			"Rename the starter project.",
+			"Rename the starter service.",
+			"Rename the starter entity and add domain fields.",
+			"Review the output preview before generating.",
+		},
+	}
+	if !reflect.DeepEqual(plan.Readiness, expected) {
+		t.Fatalf("expected starter readiness %#v, got %#v", expected, plan.Readiness)
 	}
 }
 

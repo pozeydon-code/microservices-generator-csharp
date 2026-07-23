@@ -2022,6 +2022,7 @@ func (m Model) servicesStepCard() string {
 func (m Model) generateStepCard() string {
 	var builder strings.Builder
 	fmt.Fprintln(&builder, sectionTitleStyle.Render("Generate"))
+	m.renderReadinessSummary(&builder)
 	switch m.status {
 	case statusGenerating:
 		fmt.Fprintln(&builder, busyStyle.Render("Generating files. Please wait; exit is available after generation finishes."))
@@ -2046,6 +2047,31 @@ func (m Model) generateStepCard() string {
 		fmt.Fprintf(&builder, "%s Review the Preview step before confirming writes.\n", labelStyle.Render("Before"))
 	}
 	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+}
+
+func (m Model) renderReadinessSummary(builder *strings.Builder) {
+	if m.postSaveRefreshFailed() {
+		fmt.Fprintln(builder, dangerStyle.Render("Readiness is stale. Saved settings need a successful plan refresh before generation."))
+		fmt.Fprintln(builder)
+		return
+	}
+	readiness := m.plan.Readiness
+	if m.status == statusGenerated {
+		readiness = m.result.Plan.Readiness
+	}
+	project := "no"
+	if readiness.ProjectPresent {
+		project = "yes"
+	}
+	force := "no"
+	if readiness.OutputForceRequired {
+		force = "yes"
+	}
+	fmt.Fprintf(builder, "%s project=%s, services=%d, entities=%d, fields=%d, value objects=%d, force required=%s\n", labelStyle.Render("Readiness"), project, readiness.ServiceCount, readiness.EntityCount, readiness.FieldCount, readiness.ValueObjectCount, force)
+	for _, hint := range readiness.Hints {
+		fmt.Fprintf(builder, "%s %s\n", labelStyle.Render("Next"), hint)
+	}
+	fmt.Fprintln(builder)
 }
 
 func (m Model) footerCard() string {

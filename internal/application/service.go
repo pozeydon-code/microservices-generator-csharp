@@ -165,6 +165,7 @@ type UpdateValueObjectSettingsResult struct {
 
 type GenerationPlan struct {
 	Config         ConfigSummary
+	Readiness      ReadinessSummary
 	OutputDir      string
 	OutputAction   string
 	ForceRequired  bool
@@ -232,6 +233,16 @@ type EntitySummary struct {
 type FieldSummary struct {
 	Name string
 	Type string
+}
+
+type ReadinessSummary struct {
+	ProjectPresent      bool
+	ServiceCount        int
+	EntityCount         int
+	FieldCount          int
+	ValueObjectCount    int
+	OutputForceRequired bool
+	Hints               []string
 }
 
 type PlannedFile struct {
@@ -822,8 +833,10 @@ func (s Service) planGenerationFromConfig(request GenerateRequest, cfg spec.Conf
 		return GenerationPlan{}, err
 	}
 
+	configSummary := summarizeConfig(cfg)
 	plan := GenerationPlan{
-		Config:         summarizeConfig(cfg),
+		Config:         configSummary,
+		Readiness:      readinessSummary(configSummary, outputPlan.ForceRequired),
 		OutputDir:      outputPlan.OutputDir,
 		OutputAction:   outputPlan.Action,
 		ForceRequired:  outputPlan.ForceRequired,
@@ -905,6 +918,47 @@ func summarizeConfig(cfg spec.Config) ConfigSummary {
 	return summary
 }
 
+func readinessSummary(summary ConfigSummary, outputForceRequired bool) ReadinessSummary {
+	readiness := ReadinessSummary{
+		ProjectPresent:      strings.TrimSpace(summary.SolutionName) != "",
+		ServiceCount:        summary.ServiceCount,
+		EntityCount:         summary.EntityCount,
+		ValueObjectCount:    summary.ValueObjectCount,
+		OutputForceRequired: outputForceRequired,
+	}
+	for _, service := range summary.Services {
+		for _, entity := range service.Entities {
+			readiness.FieldCount += len(entity.Fields)
+		}
+	}
+	if summary.SolutionName == "StarterPlatform" {
+		readiness.Hints = append(readiness.Hints, "Rename the starter project.")
+	}
+	if len(summary.Services) == 1 && summary.Services[0].Name == "CatalogService" {
+		readiness.Hints = append(readiness.Hints, "Rename the starter service.")
+	}
+	if hasStarterEntity(summary) {
+		readiness.Hints = append(readiness.Hints, "Rename the starter entity and add domain fields.")
+	}
+	if outputForceRequired {
+		readiness.Hints = append(readiness.Hints, "Review output replacement; --force is required to write.")
+	} else {
+		readiness.Hints = append(readiness.Hints, "Review the output preview before generating.")
+	}
+	return readiness
+}
+
+func hasStarterEntity(summary ConfigSummary) bool {
+	if len(summary.Services) != 1 || len(summary.Services[0].Entities) != 1 {
+		return false
+	}
+	entity := summary.Services[0].Entities[0]
+	if entity.Name != "Product" || len(entity.Fields) != 2 {
+		return false
+	}
+	return entity.Fields[0] == (FieldSummary{Name: "Id", Type: "Guid"}) && entity.Fields[1] == (FieldSummary{Name: "Name", Type: "string"})
+}
+
 func summarizeValueObject(valueObject spec.ValueObject) ValueObjectSummary {
 	rules := summarizeValidationRules(valueObject.Validations)
 	return ValueObjectSummary{Name: valueObject.Name, Type: valueObject.Type, Validations: rules, RulesLabel: compactRulesLabel(rules)}
@@ -984,6 +1038,7 @@ func (s Service) Generate(request GenerateRequest) (GenerateResult, error) {
 	plan.OutputAction = result.OutputAction
 	plan.ForceRequired = result.ForceRequired
 	plan.ForceUsed = result.ForceUsed
+	plan.Readiness = readinessSummary(plan.Config, result.ForceRequired)
 	return GenerateResult{Plan: plan, OutputDir: result.OutputDir, Warning: result.Warning}, nil
 }
 

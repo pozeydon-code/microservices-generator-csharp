@@ -30,6 +30,15 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 				{Name: "OrderService", EntityNames: []string{"Order", "OrderLine"}, ValueObjectNames: []string{"OrderNumber", "Money"}},
 			},
 		},
+		Readiness: application.ReadinessSummary{
+			ProjectPresent:      true,
+			ServiceCount:        2,
+			EntityCount:         3,
+			FieldCount:          2,
+			ValueObjectCount:    3,
+			OutputForceRequired: true,
+			Hints:               []string{"Review output replacement; --force is required to write."},
+		},
 		OutputDir:      "/tmp/generated",
 		OutputAction:   "replace",
 		ForceRequired:  true,
@@ -102,11 +111,61 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 
 	model.currentStep = stepGenerate
 	view = model.View()
+	assertContains(t, view, "Readiness project=yes, services=2, entities=3, fields=2, value objects=3, force required=yes")
+	assertContains(t, view, "Next Review output replacement; --force is required to write.")
 	assertContains(t, view, "Generate 6 planned file(s) into /tmp/generated.")
 	assertContains(t, view, "Review the Preview step before confirming writes.")
 	if strings.Contains(view, "tests/ProductService/ProductService.Domain.Tests/ProductTests.cs") {
 		t.Fatalf("expected file preview to be truncated, got view %q", view)
 	}
+}
+
+func TestModelGenerateStepShowsStarterReadinessGuidance(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.OutputDir = "/tmp/generated"
+	plan.Readiness = application.ReadinessSummary{
+		ProjectPresent:   true,
+		ServiceCount:     1,
+		EntityCount:      1,
+		FieldCount:       2,
+		ValueObjectCount: 0,
+		Hints: []string{
+			"Rename the starter project.",
+			"Rename the starter service.",
+			"Rename the starter entity and add domain fields.",
+			"Review the output preview before generating.",
+		},
+	}
+
+	view := modelOnStep(plan, stepGenerate).View()
+
+	assertContains(t, view, "Readiness project=yes, services=1, entities=1, fields=2, value objects=0, force required=no")
+	assertContains(t, view, "Next Rename the starter project.")
+	assertContains(t, view, "Next Rename the starter service.")
+	assertContains(t, view, "Next Rename the starter entity and add domain fields.")
+}
+
+func TestModelGenerateStepShowsConfiguredMultiServiceReadiness(t *testing.T) {
+	plan := plannedFilesPlan(4)
+	plan.OutputDir = "/tmp/generated"
+	plan.Readiness = application.ReadinessSummary{ProjectPresent: true, ServiceCount: 3, EntityCount: 5, FieldCount: 12, ValueObjectCount: 4, Hints: []string{"Review the output preview before generating."}}
+
+	view := modelOnStep(plan, stepGenerate).View()
+
+	assertContains(t, view, "Readiness project=yes, services=3, entities=5, fields=12, value objects=4, force required=no")
+	assertContains(t, view, "Next Review the output preview before generating.")
+}
+
+func TestModelGenerateStepShowsForceRequiredReadinessWarning(t *testing.T) {
+	plan := plannedFilesPlan(4)
+	plan.OutputDir = "/tmp/generated"
+	plan.ForceRequired = true
+	plan.Readiness = application.ReadinessSummary{ProjectPresent: true, ServiceCount: 1, EntityCount: 1, FieldCount: 2, OutputForceRequired: true, Hints: []string{"Review output replacement; --force is required to write."}}
+
+	view := modelOnStep(plan, stepGenerate).View()
+
+	assertContains(t, view, "Readiness project=yes, services=1, entities=1, fields=2, value objects=0, force required=yes")
+	assertContains(t, view, "Next Review output replacement; --force is required to write.")
 }
 
 func TestModelViewShowsPrimaryActionOnce(t *testing.T) {
@@ -993,8 +1052,10 @@ func TestModelUpdateSaveSuccessWithRefreshFailureAllowsRetry(t *testing.T) {
 	assertContains(t, view, "Target net9.0")
 	assertContains(t, view, "Settings saved, but the plan refresh failed. Press r to retry the refresh.")
 	assertContains(t, view, "FAILED Refresh after save failed: plan failed")
+	assertContains(t, view, "Readiness is stale. Saved settings need a successful plan refresh before generation.")
 	assertContains(t, view, "r Retry plan refresh. Other actions stay locked until refresh succeeds.")
 	assertContains(t, view, "Keys: r retry refresh | q/esc/ctrl+c quit")
+	assertNotContains(t, view, "Readiness project=yes")
 	assertNotContains(t, view, "Save failed")
 	assertNotContains(t, view, "Esc cancels")
 	assertNotContains(t, view, "g to retry generation")
