@@ -76,6 +76,8 @@ const (
 	stepSource tuiStep = iota
 	stepProject
 	stepServices
+	stepEntities
+	stepValueObjects
 	stepPreview
 	stepGenerate
 	stepCount
@@ -87,6 +89,8 @@ const (
 	screenOverview workspaceScreen = iota
 	screenProject
 	screenServices
+	screenEntities
+	screenValueObjects
 	screenPreview
 	screenGenerate
 	screenCount
@@ -358,15 +362,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.status == statusGenerating || m.status == statusSaving {
 				return m, nil
 			}
-			if key == "esc" && m.activeScreen() != screenOverview {
-				m.openScreen(screenOverview)
-				return m, nil
+			if key == "esc" {
+				switch m.activeScreen() {
+				case screenEntities:
+					m.openScreen(screenServices)
+					m.serviceContext = serviceResourceEntities
+					return m, nil
+				case screenValueObjects:
+					m.openScreen(screenServices)
+					m.serviceContext = serviceResourceValueObjects
+					return m, nil
+				case screenServices, screenProject, screenPreview, screenGenerate:
+					m.openScreen(screenOverview)
+					return m, nil
+				}
 			}
 			return m, tea.Quit
 		case "?":
 			m.helpOpen = true
 			return m, nil
-		case "1", "2", "3", "4", "5":
+		case "1", "2", "3", "4", "5", "6", "7":
 			if m.busy() {
 				return m, nil
 			}
@@ -378,6 +393,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.activeScreen() == screenServices {
 				m.moveSelectedServiceResource(-1)
+				return m, nil
+			}
+			if m.activeScreen() == screenEntities {
+				m.selectedEntity -= 1
+				m.clampServiceResourceSelection()
+				return m, nil
+			}
+			if m.activeScreen() == screenValueObjects {
+				m.selectedValueObject -= 1
+				m.clampServiceResourceSelection()
 				return m, nil
 			}
 			if m.activeScreen() != screenPreview {
@@ -392,6 +417,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.activeScreen() == screenServices {
 				m.moveSelectedServiceResource(1)
+				return m, nil
+			}
+			if m.activeScreen() == screenEntities {
+				m.selectedEntity += 1
+				m.clampServiceResourceSelection()
+				return m, nil
+			}
+			if m.activeScreen() == screenValueObjects {
+				m.selectedValueObject += 1
+				m.clampServiceResourceSelection()
 				return m, nil
 			}
 			if m.activeScreen() != screenPreview {
@@ -494,6 +529,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.activeScreen() == screenServices {
 				m.startServicesEditing()
+			} else if m.activeScreen() == screenEntities {
+				m.startEntitiesEditing()
+			} else if m.activeScreen() == screenValueObjects {
+				m.startValueObjectsEditing()
 			} else {
 				m.openScreen(screenProject)
 				m.startEditing()
@@ -515,6 +554,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
+			if m.activeScreen() == screenEntities {
+				m.startEntitiesEditing()
+				return m, nil
+			}
+			if m.activeScreen() == screenValueObjects {
+				m.startValueObjectsEditing()
+				return m, nil
+			}
 			if m.selectedScreen != m.activeScreen() {
 				m.openScreen(m.selectedScreen)
 			}
@@ -525,6 +572,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.activeScreen() == screenServices {
 				m.startValueObjectsEditing()
+			}
+			return m, nil
+		case "f":
+			if m.activeScreen() == screenEntities {
+				m.startEntitiesEditing()
+				m.startFieldsEditing()
+			}
+			return m, nil
+		case "o":
+			if m.activeScreen() == screenValueObjects {
+				m.startValueObjectsEditing()
+				if len(m.valueObjectsEdit.valueObjects) > 0 {
+					m.valueObjectsEdit.rulesOpen = true
+					m.valueObjectsEdit.focusedRule = valueObjectRuleFieldType
+				}
 			}
 			return m, nil
 		}
@@ -617,7 +679,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.result = application.GenerateResult{}
 		m.err = nil
 		m.errContext = ""
-		m.message = "Services saved. Plan refreshed. Use enter on the Services step to edit entities and fields."
+		m.message = "Services saved. Plan refreshed. Use the Entities and Value Objects routes for resource editing."
 		m.clampSelectedService()
 		m.clampFileCursor()
 		return m, nil
@@ -644,7 +706,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.result = application.GenerateResult{}
 		m.err = nil
 		m.errContext = ""
-		m.message = "Entities saved. Plan refreshed. Press f in the entity editor to edit fields."
+		m.message = "Entities saved. Plan refreshed. Press f in the Entities editor to edit fields."
 		m.clampSelectedService()
 		m.clampFileCursor()
 		return m, nil
@@ -671,7 +733,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.result = application.GenerateResult{}
 		m.err = nil
 		m.errContext = ""
-		m.message = "Fields saved. Plan refreshed. Value-object names can be edited from the Services step."
+		m.message = "Fields saved. Plan refreshed. Value-object names can be edited from the Value Objects route."
 		m.clampSelectedService()
 		m.clampFileCursor()
 		return m, nil
@@ -698,7 +760,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.result = application.GenerateResult{}
 		m.err = nil
 		m.errContext = ""
-		m.message = "Value objects saved. Plan refreshed. Basic type and rules can be edited from the value objects editor."
+		m.message = "Value objects saved. Plan refreshed. Basic type and rules can be edited from the Value Objects route."
 		m.clampSelectedService()
 		m.clampFileCursor()
 		return m, nil
@@ -747,6 +809,10 @@ func screenForStep(step tuiStep) workspaceScreen {
 		return screenProject
 	case stepServices:
 		return screenServices
+	case stepEntities:
+		return screenEntities
+	case stepValueObjects:
+		return screenValueObjects
 	case stepPreview:
 		return screenPreview
 	case stepGenerate:
@@ -762,6 +828,10 @@ func stepForScreen(screen workspaceScreen) tuiStep {
 		return stepProject
 	case screenServices:
 		return stepServices
+	case screenEntities:
+		return stepEntities
+	case screenValueObjects:
+		return stepValueObjects
 	case screenPreview:
 		return stepPreview
 	case screenGenerate:
@@ -777,6 +847,10 @@ func (screen workspaceScreen) label() string {
 		return "Project"
 	case screenServices:
 		return "Services"
+	case screenEntities:
+		return "Entities"
+	case screenValueObjects:
+		return "Value Objects"
 	case screenPreview:
 		return "Preview"
 	case screenGenerate:
@@ -798,6 +872,14 @@ func (m *Model) openScreen(screen workspaceScreen) {
 	m.screen = screen
 	m.selectedScreen = screen
 	m.currentStep = stepForScreen(screen)
+	switch screen {
+	case screenServices:
+		m.serviceContext = serviceResourceServices
+	case screenEntities:
+		m.serviceContext = serviceResourceEntities
+	case screenValueObjects:
+		m.serviceContext = serviceResourceValueObjects
+	}
 }
 
 func (m *Model) moveRouteSelection(delta int) {
@@ -867,7 +949,7 @@ func (m *Model) startServicesEditing() {
 }
 
 func (m *Model) startEntitiesEditing() {
-	m.openScreen(screenServices)
+	m.openScreen(screenEntities)
 	returnStatus := m.status
 	m.status = statusEditing
 	m.err = nil
@@ -907,7 +989,7 @@ func (m *Model) startFieldsEditing() {
 }
 
 func (m *Model) startValueObjectsEditing() {
-	m.openScreen(screenServices)
+	m.openScreen(screenValueObjects)
 	returnStatus := m.status
 	service := m.selectedServiceSummary()
 	m.status = statusEditing
@@ -986,6 +1068,8 @@ func (m Model) updateEntitiesEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = m.entitiesEdit.returnStatus
 		m.err = nil
 		m.errContext = ""
+		m.openScreen(screenServices)
+		m.serviceContext = serviceResourceEntities
 		return m, nil
 	case "enter":
 		if m.entitiesEdit.renaming {
@@ -1158,6 +1242,8 @@ func (m Model) updateValueObjectsEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = m.valueObjectsEdit.returnStatus
 		m.err = nil
 		m.errContext = ""
+		m.openScreen(screenServices)
+		m.serviceContext = serviceResourceValueObjects
 		return m, nil
 	case "enter":
 		if m.valueObjectsEdit.renaming {
@@ -1237,6 +1323,9 @@ func (m Model) updateValueObjectRulesEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = m.valueObjectsEdit.returnStatus
 		m.err = nil
 		m.errContext = ""
+		m.valueObjectsEdit.rulesOpen = false
+		m.valueObjectsEdit.editingRule = false
+		m.openScreen(screenValueObjects)
 		return m, nil
 	case "b":
 		if !m.valueObjectsEdit.editingRule {
@@ -2233,15 +2322,25 @@ func (m Model) navigationRail() string {
 }
 
 func (m Model) compactNavigation() string {
-	parts := make([]string, 0, int(screenCount))
+	lines := []string{"Navigation "}
 	for screen := screenOverview; screen < screenCount; screen++ {
-		label := fmt.Sprintf("%d:%s", screen+1, screen.label())
+		plainLabel := fmt.Sprintf("%d:%s", screen+1, screen.label())
+		label := plainLabel
 		if screen == m.activeScreen() {
 			label = readyStyle.Render("[" + label + "]")
 		}
-		parts = append(parts, label)
+		separator := ""
+		if lines[len(lines)-1] != "Navigation " {
+			separator = "  "
+		}
+		candidate := lines[len(lines)-1] + separator + label
+		if m.windowWidth > 0 && lipgloss.Width(candidate) > m.windowWidth && lines[len(lines)-1] != "Navigation " {
+			lines = append(lines, strings.Repeat(" ", len("Navigation "))+label)
+			continue
+		}
+		lines[len(lines)-1] = candidate
 	}
-	return dimStyle.Render("Navigation ") + strings.Join(parts, "  ")
+	return dimStyle.Render(strings.Join(lines, "\n"))
 }
 
 func (m Model) workspaceContent() string {
@@ -2253,6 +2352,10 @@ func (m Model) workspaceContent() string {
 		return m.projectStepCard()
 	case screenServices:
 		return m.servicesStepCard()
+	case screenEntities:
+		return m.entitiesWorkspace()
+	case screenValueObjects:
+		return m.valueObjectsWorkspace()
 	case screenPreview:
 		return strings.Join([]string{m.outputPreviewCard(), m.plannedFilesCard()}, "\n\n")
 	case screenGenerate:
@@ -2266,12 +2369,14 @@ func (m Model) helpOverlay() string {
 	var builder strings.Builder
 	fmt.Fprintln(&builder, cardStyle.Render(strings.Join([]string{
 		sectionTitleStyle.Render("Help"),
-		"Global: 1-5 open screens | up/down select route | enter open | h/l or left/right switch",
+		"Global: 1-7 open screens | up/down select route/resource | enter open | h/l or left/right switch",
 		"Global: ? close help | esc back | q/ctrl+c quit",
 		"Overview: r refresh | g generate",
 		"Project: e edit settings | r refresh",
 		"Services: tab or left/right switch Services/Entities/Value Objects | up/down select | enter open",
-		"Services actions: e service list | f fields from entity editor | v value objects | a/r/d edit resources",
+		"Entities: up/down select | enter/e edit | f fields | a/r/d in editor",
+		"Value Objects: up/down select | enter/e edit | o rules | a/r/d in editor",
+		"Services actions: e service list | enter Entities/Value Objects context | v value objects",
 		"Preview: arrows/k/j inspect files | a filter | r refresh | g generate",
 		"Generate: g generate | r refresh",
 	}, "\n")))
@@ -2414,24 +2519,220 @@ func (m Model) servicesWorkspace() string {
 	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Selected service:"), m.selectedServiceSummary().Name)
 	fmt.Fprintf(&builder, "%s\n", m.serviceContextTabs())
 
-	serviceList := cardStyle.Render(m.servicesResourceList())
-	detail := cardStyle.Render(m.serviceDetail())
-	if m.layout == layoutWide {
-		available := m.windowWidth - 30
-		if available < 60 {
-			available = 60
+	fmt.Fprintln(&builder, m.resourceColumns(m.servicesResourceList(), m.serviceDetail()))
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) resourceColumns(list, detail string) string {
+	listCard := cardStyle.Render(list)
+	detailCard := cardStyle.Render(detail)
+	if m.layout != layoutWide {
+		return listCard + "\n\n" + detailCard
+	}
+	available := m.windowWidth - 30
+	if available < 60 {
+		available = 60
+	}
+	listWidth := available / 3
+	detailWidth := available - listWidth - 2
+	listCard = cardStyle.Width(listWidth).Render(list)
+	detailCard = cardStyle.Width(detailWidth).Render(detail)
+	return lipgloss.JoinHorizontal(lipgloss.Top, listCard, "  ", detailCard)
+}
+
+func (m Model) entitiesWorkspace() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Entities"))
+	fmt.Fprintf(&builder, "%s Services > Entities\n", dimStyle.Render("Breadcrumb:"))
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Selected service:"), m.selectedServiceSummary().Name)
+	if (m.status == statusEditing && m.edit.mode == editModeEntities) || (m.status == statusSaving && m.edit.mode == editModeEntities) || (m.status == statusEditing && m.edit.mode == editModeFields) || (m.status == statusSaving && m.edit.mode == editModeFields) {
+		if m.edit.mode == editModeFields {
+			m.renderFieldsEditor(&builder)
+		} else {
+			m.renderEntitiesEditor(&builder)
 		}
-		listWidth := available / 3
-		detailWidth := available - listWidth - 2
-		serviceList = cardStyle.Width(listWidth).Render(m.servicesResourceList())
-		detail = cardStyle.Width(detailWidth).Render(m.serviceDetail())
-		fmt.Fprintln(&builder, lipgloss.JoinHorizontal(lipgloss.Top, serviceList, "  ", detail))
+		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+	}
+	fmt.Fprintln(&builder, m.resourceColumns(m.entitiesResourceList(), m.entityDetail()))
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) valueObjectsWorkspace() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Value Objects"))
+	fmt.Fprintf(&builder, "%s Services > Value Objects\n", dimStyle.Render("Breadcrumb:"))
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Selected service:"), m.selectedServiceSummary().Name)
+	if (m.status == statusEditing && m.edit.mode == editModeValueObjects) || (m.status == statusSaving && m.edit.mode == editModeValueObjects) {
+		m.renderValueObjectsEditor(&builder)
+		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+	}
+	fmt.Fprintln(&builder, m.resourceColumns(m.valueObjectsResourceList(), m.valueObjectDetail()))
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) entitiesResourceList() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Entity list"))
+	entities := m.serviceEntitySummaries()
+	if len(entities) == 0 {
+		fmt.Fprintln(&builder, dimStyle.Render("No entities configured."))
+		return strings.TrimRight(builder.String(), "\n")
+	}
+	for index, entity := range entities {
+		row := fmt.Sprintf("  %s (%d fields)", entity.Name, len(entity.Fields))
+		if index == m.selectedEntity {
+			row = selectedRowStyle.Render(fmt.Sprintf("> %s (%d fields)", entity.Name, len(entity.Fields)))
+		}
+		fmt.Fprintln(&builder, row)
+	}
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, dimStyle.Render("up/down select | enter/e edit"))
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) entityDetail() string {
+	entities := m.serviceEntitySummaries()
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Entity detail"))
+	if len(entities) == 0 {
+		fmt.Fprintln(&builder, dimStyle.Render("No entity selected."))
+		return strings.TrimRight(builder.String(), "\n")
+	}
+	entity := entities[clampInt(m.selectedEntity, 0, len(entities)-1)]
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Entity:"), entity.Name)
+	fmt.Fprintf(&builder, "%s %d\n", labelStyle.Render("Field count:"), len(entity.Fields))
+	fmt.Fprintln(&builder, labelStyle.Render("Fields"))
+	if len(entity.Fields) == 0 {
+		fmt.Fprintln(&builder, dimStyle.Render("  No fields configured."))
 	} else {
-		fmt.Fprintln(&builder, serviceList)
-		fmt.Fprintln(&builder)
-		fmt.Fprintln(&builder, detail)
+		for _, field := range entity.Fields {
+			fmt.Fprintf(&builder, "  %s: %s\n", field.Name, field.Type)
+		}
+	}
+	fmt.Fprintln(&builder, labelStyle.Render("Referenced value objects"))
+	references := m.entityValueObjectReferences(entity)
+	if len(references) == 0 {
+		fmt.Fprintln(&builder, dimStyle.Render("  None"))
+	} else {
+		for _, reference := range references {
+			fmt.Fprintf(&builder, "  %s\n", reference)
+		}
+	}
+	fmt.Fprintln(&builder)
+	if m.busy() || m.postSaveRefreshFailed() {
+		fmt.Fprintln(&builder, busyStyle.Render("Editing is paused until the current operation finishes or the stale plan is refreshed."))
+	} else {
+		fmt.Fprintln(&builder, successStyle.Render("Enter/e edit entity | f edit fields"))
+		fmt.Fprintln(&builder, dimStyle.Render("a/r/d add, rename, or delete in editor"))
 	}
 	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) valueObjectsResourceList() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Value object list"))
+	valueObjects := m.serviceValueObjectSummaries()
+	if len(valueObjects) == 0 {
+		fmt.Fprintln(&builder, dimStyle.Render("No value objects configured."))
+		return strings.TrimRight(builder.String(), "\n")
+	}
+	for index, valueObject := range valueObjects {
+		row := fmt.Sprintf("  %s: %s", valueObject.Name, valueObject.Type)
+		if index == m.selectedValueObject {
+			row = selectedRowStyle.Render(fmt.Sprintf("> %s: %s", valueObject.Name, valueObject.Type))
+		}
+		fmt.Fprintln(&builder, row)
+	}
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, dimStyle.Render("up/down select | enter/e edit"))
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) valueObjectDetail() string {
+	valueObjects := m.serviceValueObjectSummaries()
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Value object detail"))
+	if len(valueObjects) == 0 {
+		fmt.Fprintln(&builder, dimStyle.Render("No value object selected."))
+		return strings.TrimRight(builder.String(), "\n")
+	}
+	valueObject := valueObjects[clampInt(m.selectedValueObject, 0, len(valueObjects)-1)]
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Value object:"), valueObject.Name)
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Type:"), valueObject.Type)
+	rules := valueObject.RulesLabel
+	if rules == "" {
+		rules = rulesLabelForEdit(valueObject.Type, valueObjectRuleEditStateFromSummary(valueObject.Validations))
+	}
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Validation rules:"), rules)
+	fmt.Fprintln(&builder, labelStyle.Render("Referencing fields"))
+	references := m.valueObjectFieldReferences(valueObject.Name)
+	if len(references) == 0 {
+		fmt.Fprintln(&builder, dimStyle.Render("  None"))
+	} else {
+		for _, reference := range references {
+			fmt.Fprintf(&builder, "  %s\n", reference)
+		}
+	}
+	fmt.Fprintln(&builder)
+	if m.busy() || m.postSaveRefreshFailed() {
+		fmt.Fprintln(&builder, busyStyle.Render("Editing is paused until the current operation finishes or the stale plan is refreshed."))
+	} else {
+		fmt.Fprintln(&builder, successStyle.Render("Enter/e edit value object | o edit rules"))
+		fmt.Fprintln(&builder, dimStyle.Render("a/r/d add, rename, or delete in editor"))
+	}
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) entityValueObjectReferences(entity application.EntitySummary) []string {
+	service := m.selectedServiceSummary()
+	valueObjectNames := make(map[string]bool)
+	for _, valueObject := range m.serviceValueObjectSummaries() {
+		valueObjectNames[valueObject.Name] = true
+	}
+	seen := make(map[string]bool)
+	references := make([]string, 0)
+	for _, field := range entity.Fields {
+		if valueObjectNames[field.Type] && !seen[field.Type] {
+			seen[field.Type] = true
+			references = append(references, field.Type)
+		}
+	}
+	for _, reference := range service.ValueObjectReferences {
+		if reference.EntityName == entity.Name && !seen[reference.ValueObjectName] {
+			seen[reference.ValueObjectName] = true
+			references = append(references, reference.ValueObjectName)
+		}
+	}
+	sort.Strings(references)
+	return references
+}
+
+func (m Model) valueObjectFieldReferences(valueObjectName string) []string {
+	service := m.selectedServiceSummary()
+	seen := make(map[string]bool)
+	references := make([]string, 0)
+	for _, reference := range service.ValueObjectReferences {
+		if reference.ValueObjectName == valueObjectName {
+			label := fmt.Sprintf("%s.%s", reference.EntityName, reference.FieldName)
+			if !seen[label] {
+				seen[label] = true
+				references = append(references, label)
+			}
+		}
+	}
+	for _, entity := range m.serviceEntitySummaries() {
+		for _, field := range entity.Fields {
+			if field.Type == valueObjectName {
+				label := fmt.Sprintf("%s.%s", entity.Name, field.Name)
+				if !seen[label] {
+					seen[label] = true
+					references = append(references, label)
+				}
+			}
+		}
+	}
+	sort.Strings(references)
+	return references
 }
 
 func (m Model) serviceContextTabs() string {
@@ -2620,6 +2921,10 @@ func (m Model) footerCard() string {
 	case screenServices:
 		fmt.Fprintln(&builder, "Services: tab/left/right context; up/down select; enter open.")
 		fmt.Fprintln(&builder, "Actions: e services; f fields; v value objects; a/r/d in editors; r refresh.")
+	case screenEntities:
+		fmt.Fprintln(&builder, "Entities: up/down select; enter/e edit; f fields; a/r/d in editor; r refresh.")
+	case screenValueObjects:
+		fmt.Fprintln(&builder, "Value Objects: up/down select; enter/e edit; o rules; a/r/d in editor; r refresh.")
 	case screenPreview:
 		fmt.Fprintln(&builder, readyHelp)
 	case screenGenerate:
@@ -2629,7 +2934,7 @@ func (m Model) footerCard() string {
 			fmt.Fprintln(&builder, "Generate: g generate, r refresh.")
 		}
 	default:
-		fmt.Fprintln(&builder, "Overview: r refresh, 2 Project, 3 Services, 4 Preview, 5 Generate.")
+		fmt.Fprintln(&builder, "Overview: r refresh, 2 Project, 3 Services, 4 Entities, 5 Value Objects, 6 Preview, 7 Generate.")
 	}
 	fmt.Fprintln(&builder, "Back: esc | Exit: q/ctrl+c")
 	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
@@ -2893,7 +3198,7 @@ func (m Model) renderSettingsEditor(builder *strings.Builder) {
 		return
 	}
 	fmt.Fprintln(builder, "Editing solution settings")
-	fmt.Fprintln(builder, "Use the Services step for service, entity, basic field, and value-object name editing.")
+	fmt.Fprintln(builder, "Use the Services, Entities, and Value Objects routes for resource editing.")
 	if m.err != nil {
 		fmt.Fprintf(builder, "Save failed: %v\n", m.err)
 	}
@@ -2915,7 +3220,7 @@ func (m Model) renderServicesEditor(builder *strings.Builder) {
 		return
 	}
 	fmt.Fprintln(builder, "Editing services")
-	fmt.Fprintln(builder, "Press enter from the Services step to edit entities and their fields, or v to edit value objects.")
+	fmt.Fprintln(builder, "Press enter from Services to open Entities; use the Value Objects route for value objects.")
 	if m.err != nil {
 		fmt.Fprintf(builder, "Save failed: %v\n", m.err)
 	}
@@ -2978,8 +3283,9 @@ func (m Model) renderFieldsEditor(builder *strings.Builder) {
 		fmt.Fprintln(builder, "Save is in progress. Exit will be available after it finishes.")
 		return
 	}
+	fmt.Fprintln(builder, dimStyle.Render("Breadcrumb: Services > Entities > Fields"))
 	fmt.Fprintf(builder, "Editing fields for %s/%s\n", m.fieldsEdit.serviceName, m.fieldsEdit.entityName)
-	fmt.Fprintln(builder, "Field details are name and type. Value-object validation rules are edited from the value objects editor.")
+	fmt.Fprintln(builder, "Field details are name and type. Value Object Rules are edited from the Value Objects route.")
 	if m.err != nil {
 		fmt.Fprintf(builder, "Save failed: %v\n", m.err)
 	}
@@ -3067,6 +3373,7 @@ func (m Model) renderValueObjectRulesEditor(builder *strings.Builder) {
 		return
 	}
 	valueObject := m.valueObjectsEdit.valueObjects[m.valueObjectsEdit.selected]
+	fmt.Fprintln(builder, dimStyle.Render("Breadcrumb: Services > Value Objects > Rules"))
 	fmt.Fprintf(builder, "Editing rules for %s/%s\n", m.valueObjectsEdit.serviceName, valueObject.name.string())
 	fmt.Fprintln(builder, "Basic rules map directly to the current JSON spec; no advanced rule DSL is available.")
 	if m.err != nil {

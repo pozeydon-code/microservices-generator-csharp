@@ -66,8 +66,10 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	assertContains(t, view, "1:Overview")
 	assertContains(t, view, "2:Project")
 	assertContains(t, view, "3:Services")
-	assertContains(t, view, "4:Preview")
-	assertContains(t, view, "5:Generate")
+	assertContains(t, view, "4:Entities")
+	assertContains(t, view, "5:Value Objects")
+	assertContains(t, view, "6:Preview")
+	assertContains(t, view, "7:Generate")
 	assertNotContains(t, view, "Wizard")
 	assertNotContains(t, view, "Progress 1/5")
 	assertContains(t, view, "Source")
@@ -332,13 +334,13 @@ func TestModelUpdateEntersNestedServicesEditorsAndBacksToWorkspace(t *testing.T)
 	}
 	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	model = updated.(Model)
-	if cmd != nil || model.status != statusReady || model.activeScreen() != screenServices || model.serviceContext != serviceResourceEntities {
-		t.Fatalf("expected fields editor to back to Services workspace, got status=%v screen=%v context=%v cmd=%v", model.status, model.activeScreen(), model.serviceContext, cmd)
+	if cmd != nil || model.status != statusReady || model.activeScreen() != screenEntities || model.serviceContext != serviceResourceEntities {
+		t.Fatalf("expected fields editor to back to Entities workspace, got status=%v screen=%v context=%v cmd=%v", model.status, model.activeScreen(), model.serviceContext, cmd)
 	}
 }
 
 func TestModelUpdateNumericShortcutsOpenCompatibilityRoutes(t *testing.T) {
-	for key, want := range map[rune]workspaceScreen{'1': screenOverview, '2': screenProject, '3': screenServices, '4': screenPreview, '5': screenGenerate} {
+	for key, want := range map[rune]workspaceScreen{'1': screenOverview, '2': screenProject, '3': screenServices, '4': screenEntities, '5': screenValueObjects, '6': screenPreview, '7': screenGenerate} {
 		t.Run(fmt.Sprintf("route %c", key), func(t *testing.T) {
 			model := NewModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil)
 			updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
@@ -466,6 +468,128 @@ func TestModelViewServicesWorkspaceUsesResponsiveResourceLayout(t *testing.T) {
 	}
 }
 
+func TestModelViewDedicatedResourceRoutesUseResponsiveListDetailLayout(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{Services: []application.ServiceSummary{{
+		Name:                  "CatalogService",
+		Entities:              []application.EntitySummary{{Name: "Product", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "ProductName"}}}},
+		ValueObjects:          []application.ValueObjectSummary{{Name: "ProductName", Type: "string", RulesLabel: "required, min=3"}},
+		ValueObjectReferences: []application.ValueObjectReferenceSummary{{ValueObjectName: "ProductName", EntityName: "Product", FieldName: "Name"}},
+	}}}
+
+	for _, width := range []int{120, 90, 60} {
+		t.Run(fmt.Sprintf("entities width %d", width), func(t *testing.T) {
+			model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+			model.openScreen(screenEntities)
+			updated, cmd := model.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+			model = updated.(Model)
+			if cmd != nil {
+				t.Fatal("expected no command from window size")
+			}
+			view := stripANSI(model.View())
+			assertContains(t, view, "Services > Entities")
+			assertContains(t, view, "Entity list")
+			assertContains(t, view, "Entity detail")
+			assertContains(t, view, "Field count: 2")
+			assertContains(t, view, "Name: ProductName")
+			assertContains(t, view, "Referenced value objects")
+			assertContains(t, view, "Enter/e edit entity | f edit fields")
+		})
+		t.Run(fmt.Sprintf("value objects width %d", width), func(t *testing.T) {
+			model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+			model.openScreen(screenValueObjects)
+			updated, cmd := model.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+			model = updated.(Model)
+			if cmd != nil {
+				t.Fatal("expected no command from window size")
+			}
+			view := stripANSI(model.View())
+			assertContains(t, view, "Services > Value Objects")
+			assertContains(t, view, "Value object list")
+			assertContains(t, view, "Value object detail")
+			assertContains(t, view, "Type: string")
+			assertContains(t, view, "Validation rules: required, min=3")
+			assertContains(t, view, "Referencing fields")
+			assertContains(t, view, "Product.Name")
+			assertContains(t, view, "Enter/e edit value object | o edit rules")
+		})
+	}
+}
+
+func TestModelUpdatePromotesServicesContextsAndNestedEditorsToDedicatedRoutes(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{Services: []application.ServiceSummary{{
+		Name:         "CatalogService",
+		Entities:     []application.EntitySummary{{Name: "Product", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}}}},
+		ValueObjects: []application.ValueObjectSummary{{Name: "ProductName", Type: "string"}},
+	}}}
+	model := modelOnStep(plan, stepServices)
+	model.serviceContext = serviceResourceEntities
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenEntities || model.status != statusEditing {
+		t.Fatalf("expected Services Entities context to open dedicated entity route, got screen=%v status=%v cmd=%v", model.screen, model.status, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenEntities || model.edit.mode != editModeFields {
+		t.Fatalf("expected entity fields editor on dedicated route, got screen=%v mode=%v cmd=%v", model.screen, model.edit.mode, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenEntities || model.edit.mode != editModeEntities || model.status != statusReady {
+		t.Fatalf("expected Fields esc to return to Entities route, got screen=%v mode=%v status=%v cmd=%v", model.screen, model.edit.mode, model.status, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenServices || model.serviceContext != serviceResourceEntities {
+		t.Fatalf("expected Entities esc to return to Services context, got screen=%v context=%v cmd=%v", model.screen, model.serviceContext, cmd)
+	}
+
+	model.serviceContext = serviceResourceValueObjects
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenValueObjects || model.status != statusEditing {
+		t.Fatalf("expected Services Value Objects context to open dedicated route, got screen=%v status=%v cmd=%v", model.screen, model.status, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	model = updated.(Model)
+	if cmd != nil || !model.valueObjectsEdit.rulesOpen {
+		t.Fatalf("expected rules editor on dedicated Value Objects route, got rulesOpen=%v cmd=%v", model.valueObjectsEdit.rulesOpen, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenValueObjects || model.status != statusReady || model.valueObjectsEdit.rulesOpen {
+		t.Fatalf("expected Rules esc to return to Value Objects route, got screen=%v status=%v rulesOpen=%v cmd=%v", model.screen, model.status, model.valueObjectsEdit.rulesOpen, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenServices || model.serviceContext != serviceResourceValueObjects {
+		t.Fatalf("expected Value Objects esc to return to Services context, got screen=%v context=%v cmd=%v", model.screen, model.serviceContext, cmd)
+	}
+}
+
+func TestModelUpdateKeepsDedicatedRoutesLockedAfterSaveRefreshFailure(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{Services: []application.ServiceSummary{{Name: "CatalogService", Entities: []application.EntitySummary{{Name: "Product"}}}}}
+	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+	model.openScreen(screenEntities)
+	model.status = statusFailed
+	model.errContext = "Refresh after save"
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.status != statusFailed || model.screen != screenEntities {
+		t.Fatalf("expected stale entity route to stay locked, got status=%v screen=%v cmd=%v", model.status, model.screen, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'4'}})
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenEntities || model.status != statusFailed {
+		t.Fatalf("expected stale numeric navigation to stay locked, got status=%v screen=%v cmd=%v", model.status, model.screen, cmd)
+	}
+}
+
 func TestModelUpdateNavigatesSteps(t *testing.T) {
 	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
 
@@ -479,15 +603,30 @@ func TestModelUpdateNavigatesSteps(t *testing.T) {
 	if cmd != nil || model.currentStep != stepServices {
 		t.Fatalf("expected ] to move to services step, got step=%v cmd=%v", model.currentStep, cmd)
 	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	model = updated.(Model)
+	if cmd != nil || model.currentStep != stepEntities {
+		t.Fatalf("expected ] to move to entities step, got step=%v cmd=%v", model.currentStep, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	model = updated.(Model)
+	if cmd != nil || model.currentStep != stepValueObjects {
+		t.Fatalf("expected ] to move to value objects step, got step=%v cmd=%v", model.currentStep, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	model = updated.(Model)
+	if cmd != nil || model.currentStep != stepPreview {
+		t.Fatalf("expected ] to move to preview step, got step=%v cmd=%v", model.currentStep, cmd)
+	}
 	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	model = updated.(Model)
-	if cmd != nil || model.currentStep != stepProject {
-		t.Fatalf("expected shift+tab to move back to project step, got step=%v cmd=%v", model.currentStep, cmd)
+	if cmd != nil || model.currentStep != stepValueObjects {
+		t.Fatalf("expected shift+tab to move back to value objects step, got step=%v cmd=%v", model.currentStep, cmd)
 	}
 	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'['}})
 	model = updated.(Model)
-	if cmd != nil || model.currentStep != stepSource {
-		t.Fatalf("expected [ to move back to source step, got step=%v cmd=%v", model.currentStep, cmd)
+	if cmd != nil || model.currentStep != stepEntities {
+		t.Fatalf("expected [ to move back to entities step, got step=%v cmd=%v", model.currentStep, cmd)
 	}
 }
 
@@ -1100,7 +1239,7 @@ func TestModelUpdateEditsSolutionSettingsAndSaves(t *testing.T) {
 		t.Fatalf("expected editing name field, got %#v", model)
 	}
 	assertContains(t, model.View(), "Editing solution settings")
-	assertContains(t, model.View(), "Use the Services step for service, entity, basic field, and value-object name editing.")
+	assertContains(t, model.View(), "Use the Services, Entities, and Value Objects routes for resource editing.")
 
 	for range len([]rune("CommercePlatform")) {
 		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyBackspace})
@@ -1482,7 +1621,7 @@ func TestModelUpdateEditsServicesAndSaves(t *testing.T) {
 	if cmd != nil || model.status != statusReady || model.plan.FileCount != 4 || model.plan.Config.ServiceNames[0] != "CatalogService" {
 		t.Fatalf("expected ready state with refreshed services plan, got cmd=%v model=%#v", cmd, model)
 	}
-	assertContains(t, model.View(), "Services saved. Plan refreshed. Use enter on the Services step to edit entities and fields.")
+	assertContains(t, model.View(), "Services saved. Plan refreshed. Use the Entities and Value Objects routes for resource editing.")
 }
 
 func TestModelUpdateServicesEditCancelKeepsPlan(t *testing.T) {
@@ -1708,7 +1847,7 @@ func TestModelUpdateSelectsServiceAndEditsEntitiesAndSaves(t *testing.T) {
 	if cmd != nil || model.status != statusReady || model.plan.FileCount != 4 || model.plan.Config.Services[1].EntityNames[0] != "Purchase" {
 		t.Fatalf("expected ready state with refreshed entity plan, got cmd=%v model=%#v", cmd, model)
 	}
-	assertContains(t, model.View(), "Entities saved. Plan refreshed. Press f in the entity editor to edit fields.")
+	assertContains(t, model.View(), "Entities saved. Plan refreshed. Press f in the Entities editor to edit fields.")
 }
 
 func TestModelUpdateEntitiesRenameInsertsShortcutRunes(t *testing.T) {
@@ -1942,7 +2081,7 @@ func TestModelUpdateOpensFieldsEditorAndSavesFieldChanges(t *testing.T) {
 	if cmd != nil || model.status != statusReady || model.plan.FileCount != 4 {
 		t.Fatalf("expected ready state with refreshed fields plan, got cmd=%v model=%#v", cmd, model)
 	}
-	assertContains(t, model.View(), "Fields saved. Plan refreshed. Value-object names can be edited from the Services step.")
+	assertContains(t, model.View(), "Fields saved. Plan refreshed. Value-object names can be edited from the Value Objects route.")
 }
 
 func TestModelUpdateFieldsEditCancelReturnsToServicesWorkspace(t *testing.T) {
@@ -1956,8 +2095,8 @@ func TestModelUpdateFieldsEditCancelReturnsToServicesWorkspace(t *testing.T) {
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	model = updated.(Model)
 
-	if cmd != nil || model.status != statusReady || model.activeScreen() != screenServices || model.serviceContext != serviceResourceEntities {
-		t.Fatalf("expected esc to return to Services workspace, got cmd=%v model=%#v", cmd, model)
+	if cmd != nil || model.status != statusReady || model.activeScreen() != screenEntities || model.serviceContext != serviceResourceEntities {
+		t.Fatalf("expected esc to return to Entities workspace, got cmd=%v model=%#v", cmd, model)
 	}
 }
 
@@ -2127,7 +2266,7 @@ func TestModelUpdateOpensValueObjectsEditorAndSavesChanges(t *testing.T) {
 	if cmd != nil || model.status != statusReady || model.plan.FileCount != 4 || model.plan.Config.Services[0].ValueObjectNames[0] != "CatalogName" {
 		t.Fatalf("expected ready state with refreshed value objects plan, got cmd=%v model=%#v", cmd, model)
 	}
-	assertContains(t, model.View(), "Value objects saved. Plan refreshed. Basic type and rules can be edited from the value objects editor.")
+	assertContains(t, model.View(), "Value objects saved. Plan refreshed. Basic type and rules can be edited from the Value Objects route.")
 }
 
 func TestModelUpdateValueObjectsEditCancelKeepsPlan(t *testing.T) {
