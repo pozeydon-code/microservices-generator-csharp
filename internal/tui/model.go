@@ -119,6 +119,8 @@ const (
 	wizardMenu wizardScreen = iota
 	wizardProject
 	wizardServices
+	wizardEntities
+	wizardFields
 	wizardResult
 )
 
@@ -294,6 +296,8 @@ type Model struct {
 	wizardBackScreen           wizardScreen
 	wizardSelection            int
 	wizardServiceSelection     int
+	wizardEntitySelection      int
+	wizardFieldSelection       int
 	wizardResultSelection      int
 }
 
@@ -894,8 +898,22 @@ func (m Model) updateWizard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.message = ""
 			return m, m.planCmd()
 		case "esc":
-			if m.wizardScreen == wizardServices && m.wizardBackScreen == wizardProject {
-				m.enterWizardProject()
+			switch m.wizardScreen {
+			case wizardFields:
+				m.enterWizardEntities()
+				return m, nil
+			case wizardEntities:
+				m.enterWizardServices()
+				return m, nil
+			case wizardServices:
+				if m.wizardBackScreen == wizardProject {
+					m.enterWizardProject()
+				} else {
+					m.enterWizardMenu()
+				}
+				return m, nil
+			case wizardProject:
+				m.enterWizardMenu()
 				return m, nil
 			}
 			m.enterWizardMenu()
@@ -910,8 +928,13 @@ func (m Model) updateWizard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.status == statusEditing {
-		if m.edit.mode == editModeServices {
+		switch m.edit.mode {
+		case editModeServices:
 			return m.updateServicesEdit(msg)
+		case editModeEntities:
+			return m.updateEntitiesEdit(msg)
+		case editModeFields:
+			return m.updateFieldsEdit(msg)
 		}
 		return m.updateEdit(msg)
 	}
@@ -939,6 +962,40 @@ func (m Model) updateWizard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.enterWizardMenu()
 			}
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		}
+		return m, nil
+	}
+	if m.wizardScreen == wizardEntities {
+		switch key {
+		case "up", "k":
+			m.wizardEntitySelection = clampInt(m.wizardEntitySelection-1, 0, m.wizardEntityOptionCount()-1)
+			m.selectedEntity = clampInt(m.wizardEntitySelection, 0, len(m.serviceEntitySummaries())-1)
+		case "down", "j":
+			m.wizardEntitySelection = clampInt(m.wizardEntitySelection+1, 0, m.wizardEntityOptionCount()-1)
+			if m.wizardEntitySelection < len(m.serviceEntitySummaries()) {
+				m.selectedEntity = m.wizardEntitySelection
+			}
+		case "enter":
+			return m.selectWizardEntity()
+		case "esc":
+			m.enterWizardServices()
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		}
+		return m, nil
+	}
+	if m.wizardScreen == wizardFields {
+		switch key {
+		case "up", "k":
+			m.wizardFieldSelection = clampInt(m.wizardFieldSelection-1, 0, m.wizardFieldOptionCount()-1)
+		case "down", "j":
+			m.wizardFieldSelection = clampInt(m.wizardFieldSelection+1, 0, m.wizardFieldOptionCount()-1)
+		case "enter":
+			return m.selectWizardField()
+		case "esc":
+			m.enterWizardEntities()
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		}
@@ -996,12 +1053,12 @@ func (m Model) selectWizardOption() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) selectWizardService() (tea.Model, tea.Cmd) {
-	serviceCount := len(m.plan.Config.Services)
+	serviceCount := len(m.serviceSummaries())
 	switch {
 	case m.wizardServiceSelection < serviceCount:
 		m.selectedService = m.wizardServiceSelection
 		m.clampSelectedService()
-		m.message = fmt.Sprintf("Selected %s. Entity and field configuration will continue here.", m.selectedServiceSummary().Name)
+		m.enterWizardEntities()
 	case m.wizardServiceSelection == m.wizardServiceAddOption():
 		m.startServicesEditing()
 		m.servicesEdit.services = append(m.servicesEdit.services, newTextField(m.nextServicePlaceholder()))
@@ -1013,6 +1070,47 @@ func (m Model) selectWizardService() (tea.Model, tea.Cmd) {
 	case m.wizardServiceSelection == m.wizardServiceAdvancedOption():
 		m.enterAdvancedWorkspace()
 		m.openScreen(screenServices)
+	}
+	return m, nil
+}
+
+func (m Model) selectWizardEntity() (tea.Model, tea.Cmd) {
+	entityCount := len(m.serviceEntitySummaries())
+	switch {
+	case m.wizardEntitySelection < entityCount:
+		m.selectedEntity = m.wizardEntitySelection
+		m.enterWizardFields()
+	case m.wizardEntitySelection == m.wizardEntityAddOption():
+		m.startEntitiesEditing()
+		m.entitiesEdit.entities = append(m.entitiesEdit.entities, newTextField(m.nextEntityPlaceholder()))
+		m.entitiesEdit.original = append(m.entitiesEdit.original, "")
+		m.entitiesEdit.selected = len(m.entitiesEdit.entities) - 1
+		m.selectedEntity = m.entitiesEdit.selected
+		m.entitiesEdit.renaming = true
+	case m.wizardEntitySelection == m.wizardEntityEditOption():
+		m.startEntitiesEditing()
+	case m.wizardEntitySelection == m.wizardEntityAdvancedOption():
+		m.enterAdvancedWorkspace()
+		m.openScreen(screenEntities)
+	}
+	return m, nil
+}
+
+func (m Model) selectWizardField() (tea.Model, tea.Cmd) {
+	fieldCount := len(m.selectedEntitySummary().Fields)
+	switch {
+	case m.wizardFieldSelection < fieldCount:
+		m.startWizardFieldsEditing()
+		m.fieldsEdit.selected = m.wizardFieldSelection
+	case m.wizardFieldSelection == m.wizardFieldAddOption():
+		m.startWizardFieldsEditing()
+		m.fieldsEdit.fields = append(m.fieldsEdit.fields, fieldEditItem{name: newTextField(m.nextFieldPlaceholder()), typeName: newTextField("string")})
+		m.fieldsEdit.selected = len(m.fieldsEdit.fields) - 1
+	case m.wizardFieldSelection == m.wizardFieldEditOption():
+		m.startWizardFieldsEditing()
+	case m.wizardFieldSelection == m.wizardFieldAdvancedOption():
+		m.enterAdvancedWorkspace()
+		m.openScreen(screenEntities)
 	}
 	return m, nil
 }
@@ -1046,8 +1144,45 @@ func (m *Model) enterWizardServices() {
 	m.helpOpen = false
 }
 
+func (m *Model) enterWizardEntities() {
+	m.mode = modeWizard
+	m.returnToWizard = false
+	m.guidedWorkspace = false
+	m.wizardScreen = wizardEntities
+	m.wizardBackScreen = wizardServices
+	m.clampSelectedService()
+	entities := m.serviceEntitySummaries()
+	m.wizardEntitySelection = clampInt(m.selectedEntity, 0, len(entities)+2)
+	if len(entities) > 0 {
+		m.selectedEntity = clampInt(m.wizardEntitySelection, 0, len(entities)-1)
+	}
+	m.serviceContext = serviceResourceEntities
+	m.helpOpen = false
+}
+
+func (m *Model) enterWizardFields() {
+	m.mode = modeWizard
+	m.returnToWizard = false
+	m.guidedWorkspace = false
+	m.wizardScreen = wizardFields
+	m.wizardBackScreen = wizardEntities
+	m.entitiesEdit.serviceName = m.selectedServiceSummary().Name
+	m.entitiesEdit.returnStatus = m.status
+	m.selectedEntity = clampInt(m.selectedEntity, 0, len(m.serviceEntitySummaries())-1)
+	m.wizardFieldSelection = 0
+	m.serviceContext = serviceResourceEntities
+	m.helpOpen = false
+}
+
+func (m *Model) startWizardFieldsEditing() {
+	m.status = statusEditing
+	m.entitiesEdit.returnStatus = statusReady
+	m.entitiesEdit.serviceName = m.selectedServiceSummary().Name
+	m.startFieldsEditing()
+}
+
 func (m Model) wizardServiceAddOption() int {
-	return len(m.plan.Config.Services)
+	return len(m.serviceSummaries())
 }
 
 func (m Model) wizardServiceEditOption() int {
@@ -1060,6 +1195,38 @@ func (m Model) wizardServiceAdvancedOption() int {
 
 func (m Model) wizardServiceOptionCount() int {
 	return m.wizardServiceAdvancedOption() + 1
+}
+
+func (m Model) wizardEntityAddOption() int {
+	return len(m.serviceEntitySummaries())
+}
+
+func (m Model) wizardEntityEditOption() int {
+	return m.wizardEntityAddOption() + 1
+}
+
+func (m Model) wizardEntityAdvancedOption() int {
+	return m.wizardEntityAddOption() + 2
+}
+
+func (m Model) wizardEntityOptionCount() int {
+	return m.wizardEntityAdvancedOption() + 1
+}
+
+func (m Model) wizardFieldAddOption() int {
+	return len(m.selectedEntitySummary().Fields)
+}
+
+func (m Model) wizardFieldEditOption() int {
+	return m.wizardFieldAddOption() + 1
+}
+
+func (m Model) wizardFieldAdvancedOption() int {
+	return m.wizardFieldAddOption() + 2
+}
+
+func (m Model) wizardFieldOptionCount() int {
+	return m.wizardFieldAdvancedOption() + 1
 }
 
 func (m *Model) enterWizardWorkspace(screen workspaceScreen) {
@@ -1321,6 +1488,10 @@ func (m *Model) startFieldsEditing() {
 	}
 	if len(m.fieldsEdit.fields) == 0 {
 		m.fieldsEdit.fields = append(m.fieldsEdit.fields, fieldEditItem{name: newTextField(m.nextFieldPlaceholder()), typeName: newTextField("string")})
+	}
+	if m.mode == modeWizard {
+		m.wizardScreen = wizardFields
+		m.wizardBackScreen = wizardEntities
 	}
 }
 
@@ -2673,6 +2844,12 @@ func (m Model) wizardView() string {
 	if m.wizardScreen == wizardServices {
 		return m.wizardServicesView()
 	}
+	if m.wizardScreen == wizardEntities {
+		return m.wizardEntitiesView()
+	}
+	if m.wizardScreen == wizardFields {
+		return m.wizardFieldsView()
+	}
 
 	fmt.Fprintln(&builder, dimStyle.Render("Breadcrumb: Wizard / Menu  |  Progress: 1/1"))
 	fmt.Fprintln(&builder)
@@ -2754,11 +2931,89 @@ func (m Model) wizardServicesView() string {
 	return strings.TrimRight(builder.String(), "\n")
 }
 
+func (m Model) wizardEntitiesView() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, dimStyle.Render("Breadcrumb: Project > Services > Entities  |  Progress: 3/4"))
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Selected service:"), truncateWizardText(m.selectedServiceSummary().Name, m.wizardContentWidth()-18))
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, m.wizardPromptStyle().Render("Which entity should we configure?"))
+	fmt.Fprintln(&builder)
+	if (m.status == statusEditing || m.status == statusSaving) && m.edit.mode == editModeEntities {
+		fmt.Fprintln(&builder, sectionTitleStyle.Render("Edit entities"))
+		m.renderEntitiesEditor(&builder)
+		fmt.Fprintln(&builder)
+		fmt.Fprintln(&builder, m.wizardFooter("up/down or j/k select | enter confirm/save | esc back"))
+		return strings.TrimRight(builder.String(), "\n")
+	}
+	for option := 0; option < m.wizardEntityOptionCount(); option++ {
+		fmt.Fprintln(&builder, m.wizardEntityOption(option))
+	}
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, m.wizardEntityDetail())
+	if m.err != nil {
+		fmt.Fprintf(&builder, "%s %v\n", dangerStyle.Render("Operation failed:"), m.err)
+	}
+	if m.postSaveRefreshFailed() {
+		fmt.Fprintln(&builder, dangerStyle.Render("The saved entities have a stale plan."))
+		fmt.Fprintln(&builder, "Press r to retry the refresh before continuing.")
+	}
+	if m.message != "" {
+		fmt.Fprintln(&builder, successStyle.Render(m.message))
+	}
+	fmt.Fprintln(&builder)
+	footer := "up/down or j/k select | enter open | esc back"
+	if m.postSaveRefreshFailed() {
+		footer += " | r retry refresh"
+	}
+	fmt.Fprintln(&builder, m.wizardFooter(footer))
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) wizardFieldsView() string {
+	var builder strings.Builder
+	service := truncateWizardText(m.selectedServiceSummary().Name, m.wizardContentWidth()-10)
+	entity := truncateWizardText(m.selectedEntitySummary().Name, m.wizardContentWidth()-10)
+	fmt.Fprintf(&builder, "%s\n", dimStyle.Render(fmt.Sprintf("Breadcrumb: Project > Services > Entities > Fields  |  Progress: 4/4  |  %s/%s", service, entity)))
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, m.wizardPromptStyle().Render("Which field should we configure?"))
+	fmt.Fprintln(&builder)
+	if (m.status == statusEditing || m.status == statusSaving) && m.edit.mode == editModeFields {
+		fmt.Fprintln(&builder, sectionTitleStyle.Render("Edit fields"))
+		m.renderFieldsEditor(&builder)
+		fmt.Fprintln(&builder)
+		fmt.Fprintln(&builder, m.wizardFooter("up/down or j/k select | enter confirm/save | esc back"))
+		return strings.TrimRight(builder.String(), "\n")
+	}
+	for option := 0; option < m.wizardFieldOptionCount(); option++ {
+		fmt.Fprintln(&builder, m.wizardFieldOption(option))
+	}
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, m.wizardFieldDetail())
+	if m.err != nil {
+		fmt.Fprintf(&builder, "%s %v\n", dangerStyle.Render("Operation failed:"), m.err)
+	}
+	if m.postSaveRefreshFailed() {
+		fmt.Fprintln(&builder, dangerStyle.Render("The saved fields have a stale plan."))
+		fmt.Fprintln(&builder, "Press r to retry the refresh before continuing.")
+	}
+	if m.message != "" {
+		fmt.Fprintln(&builder, successStyle.Render(m.message))
+	}
+	fmt.Fprintln(&builder)
+	footer := "up/down or j/k select | enter open | esc back"
+	if m.postSaveRefreshFailed() {
+		footer += " | r retry refresh"
+	}
+	fmt.Fprintln(&builder, m.wizardFooter(footer))
+	return strings.TrimRight(builder.String(), "\n")
+}
+
 func (m Model) wizardServiceOption(option int) string {
 	label := ""
+	services := m.serviceSummaries()
 	switch {
-	case option < len(m.plan.Config.Services):
-		label = truncateWizardText(m.plan.Config.Services[option].Name, m.wizardContentWidth()-4)
+	case option < len(services):
+		label = truncateWizardText(services[option].Name, m.wizardContentWidth()-4)
 	case option == m.wizardServiceAddOption():
 		label = "Add service"
 	case option == m.wizardServiceEditOption():
@@ -2767,6 +3022,38 @@ func (m Model) wizardServiceOption(option int) string {
 		label = "Advanced configuration"
 	}
 	return m.wizardOptionAt(option, m.wizardServiceSelection, label)
+}
+
+func (m Model) wizardEntityOption(option int) string {
+	entities := m.serviceEntitySummaries()
+	label := ""
+	switch {
+	case option < len(entities):
+		label = fmt.Sprintf("%s (%d fields)", truncateWizardText(entities[option].Name, maxInt(m.wizardContentWidth()-18, 4)), len(entities[option].Fields))
+	case option == m.wizardEntityAddOption():
+		label = "Add entity"
+	case option == m.wizardEntityEditOption():
+		label = "Edit entities"
+	default:
+		label = "Advanced configuration"
+	}
+	return m.wizardOptionAt(option, m.wizardEntitySelection, label)
+}
+
+func (m Model) wizardFieldOption(option int) string {
+	fields := m.selectedEntitySummary().Fields
+	label := ""
+	switch {
+	case option < len(fields):
+		label = fmt.Sprintf("%s: %s", truncateWizardText(fields[option].Name, m.wizardContentWidth()/2), truncateWizardText(fields[option].Type, m.wizardContentWidth()/2))
+	case option == m.wizardFieldAddOption():
+		label = "Add field"
+	case option == m.wizardFieldEditOption():
+		label = "Edit fields"
+	default:
+		label = "Advanced configuration"
+	}
+	return m.wizardOptionAt(option, m.wizardFieldSelection, label)
 }
 
 func (m Model) wizardOptionAt(option, selected int, label string) string {
@@ -2779,7 +3066,8 @@ func (m Model) wizardOptionAt(option, selected int, label string) string {
 func (m Model) wizardServiceDetail() string {
 	var builder strings.Builder
 	fmt.Fprintln(&builder, sectionTitleStyle.Render("Selected service"))
-	if m.wizardServiceSelection >= len(m.plan.Config.Services) {
+	services := m.serviceSummaries()
+	if m.wizardServiceSelection >= len(services) {
 		switch m.wizardServiceSelection {
 		case m.wizardServiceAddOption():
 			fmt.Fprintln(&builder, "Create a service with a default Id Guid entity.")
@@ -2790,7 +3078,7 @@ func (m Model) wizardServiceDetail() string {
 		}
 		return strings.TrimRight(builder.String(), "\n")
 	}
-	service := m.plan.Config.Services[m.wizardServiceSelection]
+	service := services[m.wizardServiceSelection]
 	fieldCount := 0
 	for _, entity := range service.Entities {
 		fieldCount += len(entity.Fields)
@@ -2798,6 +3086,80 @@ func (m Model) wizardServiceDetail() string {
 	fmt.Fprintf(&builder, "%s\n", truncateWizardText(service.Name, m.wizardContentWidth()))
 	fmt.Fprintf(&builder, "Entities: %d | Fields: %d | Value objects: %d", len(service.Entities), fieldCount, len(service.ValueObjects))
 	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) wizardEntityDetail() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Selected entity"))
+	entities := m.serviceEntitySummaries()
+	if m.wizardEntitySelection >= len(entities) {
+		switch m.wizardEntitySelection {
+		case m.wizardEntityAddOption():
+			fmt.Fprintln(&builder, "Create an entity with a default Id Guid field.")
+		case m.wizardEntityEditOption():
+			fmt.Fprintln(&builder, "Rename or remove entities using the existing editor.")
+		default:
+			fmt.Fprintln(&builder, "Open the Advanced workspace for the full entity and field routes.")
+		}
+		return strings.TrimRight(builder.String(), "\n")
+	}
+	entity := entities[m.wizardEntitySelection]
+	fmt.Fprintf(&builder, "%s\n", truncateWizardText(entity.Name, m.wizardContentWidth()))
+	fmt.Fprintf(&builder, "Field count: %d\n", len(entity.Fields))
+	if len(entity.Fields) == 0 {
+		fmt.Fprintln(&builder, "Fields: none configured")
+	} else {
+		fmt.Fprintln(&builder, "Fields:")
+		for _, field := range entity.Fields {
+			fmt.Fprintf(&builder, "  %s: %s\n", truncateWizardText(field.Name, m.wizardContentWidth()/2), truncateWizardText(field.Type, m.wizardContentWidth()/2))
+		}
+	}
+	references := m.entityValueObjectReferences(entity)
+	if len(references) == 0 {
+		fmt.Fprintln(&builder, "Referenced value objects: none")
+	} else {
+		fmt.Fprintf(&builder, "Referenced value objects: %s", truncateWizardText(strings.Join(references, ", "), m.wizardContentWidth()-28))
+	}
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) wizardFieldDetail() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Selected field"))
+	fields := m.selectedEntitySummary().Fields
+	if m.wizardFieldSelection >= len(fields) {
+		switch m.wizardFieldSelection {
+		case m.wizardFieldAddOption():
+			fmt.Fprintln(&builder, "Add a string field to the selected entity.")
+		case m.wizardFieldEditOption():
+			fmt.Fprintln(&builder, "Open the existing field editor for this entity.")
+		default:
+			fmt.Fprintln(&builder, "Open the Advanced workspace for fields and Value Objects.")
+		}
+		return strings.TrimRight(builder.String(), "\n")
+	}
+	field := fields[m.wizardFieldSelection]
+	fmt.Fprintf(&builder, "Name: %s\n", truncateWizardText(field.Name, m.wizardContentWidth()-6))
+	fmt.Fprintf(&builder, "Type: %s\n", truncateWizardText(field.Type, m.wizardContentWidth()-6))
+	if valueObject, ok := m.wizardValueObject(field.Type); ok {
+		rules := valueObject.RulesLabel
+		if rules == "" {
+			rules = rulesLabelForEdit(valueObject.Type, valueObjectRuleEditStateFromSummary(valueObject.Validations))
+		}
+		fmt.Fprintf(&builder, "Value object: %s | Rules: %s", truncateWizardText(valueObject.Name, m.wizardContentWidth()/3), truncateWizardText(rules, m.wizardContentWidth()/2))
+	} else {
+		fmt.Fprintln(&builder, "Hint: scalar field")
+	}
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) wizardValueObject(fieldType string) (application.ValueObjectSummary, bool) {
+	for _, valueObject := range m.serviceValueObjectSummaries() {
+		if valueObject.Name == fieldType {
+			return valueObject, true
+		}
+	}
+	return application.ValueObjectSummary{}, false
 }
 
 func (m Model) wizardFooter(controls string) string {

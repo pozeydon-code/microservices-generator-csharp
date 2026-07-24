@@ -361,10 +361,243 @@ func TestWizardServicesSelectsServiceAndPreparesContext(t *testing.T) {
 	model = updated.(Model)
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
-	if cmd != nil || model.selectedService != 1 || model.wizardScreen != wizardServices {
-		t.Fatalf("expected selected service context, got service=%d screen=%v cmd=%v", model.selectedService, model.wizardScreen, cmd)
+	if cmd != nil || model.selectedService != 1 || model.wizardScreen != wizardEntities {
+		t.Fatalf("expected selected service to route to entities, got service=%d screen=%v cmd=%v", model.selectedService, model.wizardScreen, cmd)
 	}
-	assertContains(t, model.View(), "Selected OrderService")
+	assertContains(t, model.View(), "Selected service: OrderService")
+}
+
+func TestWizardEntitiesSelectionRoutesToFieldsAndBack(t *testing.T) {
+	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
+	model.enterWizardEntities()
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.wizardScreen != wizardFields || model.selectedEntity != 0 {
+		t.Fatalf("expected entity selection to route to fields, got screen=%v entity=%d cmd=%v", model.wizardScreen, model.selectedEntity, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.wizardScreen != wizardEntities {
+		t.Fatalf("expected fields esc to return to entities, got screen=%v cmd=%v", model.wizardScreen, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.wizardScreen != wizardServices {
+		t.Fatalf("expected entities esc to return to services, got screen=%v cmd=%v", model.wizardScreen, cmd)
+	}
+}
+
+func TestWizardEntityAndFieldListsExposeAddEditAdvancedEntries(t *testing.T) {
+	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
+	model.enterWizardEntities()
+	view := stripANSI(model.View())
+	assertContains(t, view, "Product (2 fields)")
+	assertContains(t, view, "Add entity")
+	assertContains(t, view, "Edit entities")
+	assertContains(t, view, "Advanced configuration")
+
+	for range model.wizardEntityAddOption() {
+		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model = updated.(Model)
+	}
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.status != statusEditing || model.edit.mode != editModeEntities || !model.entitiesEdit.renaming {
+		t.Fatalf("expected add entity editor, got status=%v mode=%v renaming=%v cmd=%v", model.status, model.edit.mode, model.entitiesEdit.renaming, cmd)
+	}
+
+	model = NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
+	model.enterWizardFields()
+	view = stripANSI(model.View())
+	assertContains(t, view, "Id: Guid")
+	assertContains(t, view, "Add field")
+	assertContains(t, view, "Edit fields")
+	assertContains(t, view, "Advanced configuration")
+	for range model.wizardFieldAddOption() {
+		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model = updated.(Model)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.status != statusEditing || model.edit.mode != editModeFields || len(model.fieldsEdit.fields) != 3 {
+		t.Fatalf("expected add field editor, got status=%v mode=%v fields=%d cmd=%v", model.status, model.edit.mode, len(model.fieldsEdit.fields), cmd)
+	}
+
+	model = NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
+	model.enterWizardFields()
+	for range model.wizardFieldEditOption() {
+		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model = updated.(Model)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.status != statusEditing || model.edit.mode != editModeFields || model.fieldsEdit.selected != 0 {
+		t.Fatalf("expected edit field editor, got status=%v mode=%v selected=%d cmd=%v", model.status, model.edit.mode, model.fieldsEdit.selected, cmd)
+	}
+}
+
+func TestWizardGuidedViewsShowEntityAndFieldDetailsWithoutWorkspaceRail(t *testing.T) {
+	plan := wizardPlan()
+	plan.Config.Services[0].Entities[0].Fields[1] = application.FieldSummary{Name: "Name", Type: "ProductName"}
+	plan.Config.Services[0].ValueObjects[0].RulesLabel = "required, minLength=3"
+	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+	model.enterWizardEntities()
+	view := stripANSI(model.View())
+	assertContains(t, view, "Breadcrumb: Project > Services > Entities")
+	assertContains(t, view, "Selected service: ProductService")
+	assertContains(t, view, "Field count: 2")
+	assertContains(t, view, "Name: ProductName")
+	assertContains(t, view, "Referenced value objects: ProductName")
+	assertNotContains(t, view, "Navigation")
+
+	model.enterWizardFields()
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	view = stripANSI(model.View())
+	assertContains(t, view, "Breadcrumb: Project > Services > Entities > Fields")
+	assertContains(t, view, "ProductService/Product")
+	assertContains(t, view, "Name: Name")
+	assertContains(t, view, "Value object: ProductName")
+	assertContains(t, view, "Rules: required, minLength=3")
+	assertNotContains(t, view, "Navigation")
+}
+
+func TestWizardEntitySaveSuccessUsesExistingCallback(t *testing.T) {
+	plan := wizardPlan()
+	var captured application.EntitySettings
+	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+	model.updateEntities = func(_ application.GenerateRequest, settings application.EntitySettings) (application.UpdateEntitySettingsResult, error) {
+		captured = settings
+		return application.UpdateEntitySettingsResult{Saved: true, Plan: plan}, nil
+	}
+	model.enterWizardEntities()
+	for range model.wizardEntityEditOption() {
+		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model = updated.(Model)
+	}
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd == nil || model.status != statusSaving {
+		t.Fatalf("expected entity save command, got status=%v cmd=%v", model.status, cmd)
+	}
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+	if model.status != statusReady || model.wizardScreen != wizardEntities || len(captured.Entities) != 1 {
+		t.Fatalf("expected entity save to return to guided list, got status=%v screen=%v settings=%#v", model.status, model.wizardScreen, captured)
+	}
+}
+
+func TestWizardFieldSaveFailureKeepsExistingEditor(t *testing.T) {
+	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
+	model.updateFields = func(_ application.GenerateRequest, _ application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+		return application.UpdateFieldSettingsResult{}, errors.New("field write failed")
+	}
+	model.enterWizardFields()
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+	if model.status != statusEditing || model.edit.mode != editModeFields || model.err == nil {
+		t.Fatalf("expected failed field save to keep editor, got status=%v mode=%v err=%v", model.status, model.edit.mode, model.err)
+	}
+	assertContains(t, model.View(), "field write failed")
+}
+
+func TestWizardFieldSaveSuccessUsesExistingCallback(t *testing.T) {
+	plan := wizardPlan()
+	var captured application.FieldSettings
+	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+	model.updateFields = func(_ application.GenerateRequest, settings application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+		captured = settings
+		return application.UpdateFieldSettingsResult{Saved: true, Plan: plan}, nil
+	}
+	model.enterWizardFields()
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd == nil || model.status != statusSaving {
+		t.Fatalf("expected field save command, got status=%v cmd=%v", model.status, cmd)
+	}
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+	if model.status != statusReady || model.wizardScreen != wizardFields || captured.ServiceName != "ProductService" || captured.EntityName != "Product" {
+		t.Fatalf("expected field save to return to guided list, got status=%v screen=%v settings=%#v", model.status, model.wizardScreen, captured)
+	}
+}
+
+func TestWizardFieldStaleRefreshLocksUntilRetry(t *testing.T) {
+	plan := wizardPlan()
+	model := NewModel(plan, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
+		return plan, nil
+	}, nil, nil)
+	model.updateFields = func(_ application.GenerateRequest, _ application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+		return application.UpdateFieldSettingsResult{Saved: true, Config: plan.Config, PlanError: errors.New("field plan failed")}, nil
+	}
+	model.enterWizardFields()
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+	if !model.postSaveRefreshFailed() || model.wizardScreen != wizardFields {
+		t.Fatalf("expected stale field lock, got status=%v screen=%v context=%q", model.status, model.wizardScreen, model.errContext)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	model = updated.(Model)
+	if cmd == nil || model.status != statusRefreshing {
+		t.Fatalf("expected stale retry command, got status=%v cmd=%v", model.status, cmd)
+	}
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+	if model.status != statusReady || model.postSaveRefreshFailed() || model.wizardScreen != wizardFields {
+		t.Fatalf("expected retry to unlock field step, got status=%v stale=%v screen=%v", model.status, model.postSaveRefreshFailed(), model.wizardScreen)
+	}
+}
+
+func TestWizardEntityStaleRefreshLocksUntilRetry(t *testing.T) {
+	plan := wizardPlan()
+	model := NewModel(plan, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
+		return plan, nil
+	}, nil, nil)
+	model.updateEntities = func(_ application.GenerateRequest, _ application.EntitySettings) (application.UpdateEntitySettingsResult, error) {
+		return application.UpdateEntitySettingsResult{Saved: true, Config: plan.Config, PlanError: errors.New("entity plan failed")}, nil
+	}
+	model.enterWizardEntities()
+	for range model.wizardEntityEditOption() {
+		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model = updated.(Model)
+	}
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+	if !model.postSaveRefreshFailed() || model.wizardScreen != wizardEntities {
+		t.Fatalf("expected stale entity lock, got status=%v screen=%v context=%q", model.status, model.wizardScreen, model.errContext)
+	}
+	selection := model.wizardEntitySelection
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	if cmd != nil || model.wizardEntitySelection != selection {
+		t.Fatalf("expected stale lock to pause selection, got selection=%d cmd=%v", model.wizardEntitySelection, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	model = updated.(Model)
+	if cmd == nil || model.status != statusRefreshing {
+		t.Fatalf("expected stale retry command, got status=%v cmd=%v", model.status, cmd)
+	}
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+	if model.status != statusReady || model.postSaveRefreshFailed() || model.wizardScreen != wizardEntities {
+		t.Fatalf("expected retry to unlock entity step, got status=%v stale=%v screen=%v", model.status, model.postSaveRefreshFailed(), model.wizardScreen)
+	}
 }
 
 func TestWizardServicesAddServiceUsesExistingEditorCallback(t *testing.T) {
