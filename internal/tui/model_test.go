@@ -70,6 +70,7 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	assertContains(t, view, "5:Value Objects")
 	assertContains(t, view, "6:Preview")
 	assertContains(t, view, "7:Generate")
+	assertContains(t, view, "8:Result")
 	assertNotContains(t, view, "Wizard")
 	assertNotContains(t, view, "Progress 1/5")
 	assertContains(t, view, "Source")
@@ -340,7 +341,7 @@ func TestModelUpdateEntersNestedServicesEditorsAndBacksToWorkspace(t *testing.T)
 }
 
 func TestModelUpdateNumericShortcutsOpenCompatibilityRoutes(t *testing.T) {
-	for key, want := range map[rune]workspaceScreen{'1': screenOverview, '2': screenProject, '3': screenServices, '4': screenEntities, '5': screenValueObjects, '6': screenPreview, '7': screenGenerate} {
+	for key, want := range map[rune]workspaceScreen{'1': screenOverview, '2': screenProject, '3': screenServices, '4': screenEntities, '5': screenValueObjects, '6': screenPreview, '7': screenGenerate, '8': screenResult} {
 		t.Run(fmt.Sprintf("route %c", key), func(t *testing.T) {
 			model := NewModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil)
 			updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
@@ -2656,6 +2657,144 @@ func TestModelUpdateRecordsGenerationFailureAndAllowsRetry(t *testing.T) {
 	if retries != 1 {
 		t.Fatalf("expected one retry, got %d", retries)
 	}
+}
+
+func TestModelUpdatePreviewGenerateResultWorkflow(t *testing.T) {
+	request := application.GenerateRequest{ConfigPath: "config.json", OutputDir: "/tmp/generated"}
+	plan := plannedFilesPlan(2)
+	plan.OutputDir = request.OutputDir
+	model := NewModel(plan, request, nil, func(actual application.GenerateRequest) (application.GenerateResult, error) {
+		if actual != request {
+			t.Fatalf("expected request %#v, got %#v", request, actual)
+		}
+		return application.GenerateResult{OutputDir: request.OutputDir, Plan: plan}, nil
+	}, nil)
+	model.openScreen(screenPreview)
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenGenerate || model.status != statusReady {
+		t.Fatalf("expected Preview to continue to Generate without writing, got screen=%v status=%v cmd=%v", model.screen, model.status, cmd)
+	}
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	model = updated.(Model)
+	if cmd == nil || model.screen != screenGenerate || model.status != statusGenerating {
+		t.Fatalf("expected Generate confirmation to start writing, got screen=%v status=%v cmd=%v", model.screen, model.status, cmd)
+	}
+	updated, cmd = model.Update(cmd())
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenResult || model.currentStep != stepResult || model.status != statusGenerated {
+		t.Fatalf("expected successful generation to open Result, got screen=%v step=%v status=%v cmd=%v", model.screen, model.currentStep, model.status, cmd)
+	}
+	assertContains(t, model.View(), "Result")
+	assertContains(t, model.View(), "2 files written to /tmp/generated")
+}
+
+func TestModelUpdateResultFailureBackAndRetry(t *testing.T) {
+	generationErr := errors.New("write failed")
+	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
+		return application.GenerateResult{}, generationErr
+	}, nil)
+
+	updated, cmd := model.Update(generationFinishedMsg{err: generationErr})
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenResult || model.status != statusFailed {
+		t.Fatalf("expected generation failure Result state, got screen=%v status=%v cmd=%v", model.screen, model.status, cmd)
+	}
+	assertContains(t, model.View(), "FAILED Generation failed: write failed")
+	assertContains(t, model.View(), "esc back to Generate")
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenGenerate {
+		t.Fatalf("expected Result esc to return Generate, got screen=%v cmd=%v", model.screen, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	model = updated.(Model)
+	if cmd == nil || model.status != statusGenerating || model.screen != screenGenerate {
+		t.Fatalf("expected retry to start from Generate, got screen=%v status=%v cmd=%v", model.screen, model.status, cmd)
+	}
+}
+
+func TestModelUpdateBlocksStaleAndForceUnsafeGeneration(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(*Model)
+		message string
+		status  modelStatus
+	}{
+		{
+			name: "stale plan",
+			prepare: func(model *Model) {
+				model.status = statusFailed
+				model.errContext = "Refresh after save"
+			},
+			message: "Readiness is stale. Saved settings need a successful plan refresh before generation.",
+			status:  statusFailed,
+		},
+		{
+			name: "force confirmation",
+			prepare: func(model *Model) {
+				model.plan.ForceRequired = true
+			},
+			message: "Generation is locked until --force is confirmed",
+			status:  statusReady,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
+				t.Fatal("generation should remain blocked")
+				return application.GenerateResult{}, nil
+			}, nil)
+			model.openScreen(screenGenerate)
+			tt.prepare(&model)
+
+			updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+			model = updated.(Model)
+			if cmd != nil || model.status != tt.status {
+				t.Fatalf("expected blocked generation without command, got status=%v cmd=%v", model.status, cmd)
+			}
+			assertContains(t, model.View(), tt.message)
+		})
+	}
+}
+
+func TestModelViewWorkflowScreensShowResponsiveContent(t *testing.T) {
+	plan := plannedFilesPlan(3)
+	plan.OutputDir = "/tmp/generated"
+	plan.Files[1].Action = "replace"
+	plan.Files[2].Action = "unchanged"
+	plan.DeletedFiles = []string{"old.cs"}
+	plan.ExtraFileCount = 1
+	model := NewModel(plan, application.GenerateRequest{OutputDir: plan.OutputDir}, nil, nil, nil)
+
+	model.openScreen(screenPreview)
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 60, Height: 24})
+	model = updated.(Model)
+	view := stripANSI(model.View())
+	assertContains(t, view, "Readiness")
+	assertContains(t, view, "Change counts created=1, replaced=1, unchanged=1, deleted=1")
+	assertContains(t, view, "Planned Files")
+	assertContains(t, view, "File detail")
+	assertContains(t, view, "DANGER replacement removes 1 previous generated file(s)")
+
+	model.openScreen(screenGenerate)
+	view = stripANSI(model.View())
+	assertContains(t, view, "Readiness checklist")
+	assertContains(t, view, "Press g to confirm the write")
+
+	model.status = statusGenerated
+	model.result = application.GenerateResult{OutputDir: plan.OutputDir, Plan: plan, Warning: "partial warning"}
+	model.openScreen(screenResult)
+	view = stripANSI(model.View())
+	assertContains(t, view, "Result")
+	assertContains(t, view, "3 files written to /tmp/generated")
+	assertContains(t, view, "Deleted files")
+	assertContains(t, view, "old.cs")
+	assertContains(t, view, "WARNING partial warning")
 }
 
 func assertContains(t *testing.T, value, expected string) {

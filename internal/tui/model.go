@@ -80,6 +80,7 @@ const (
 	stepValueObjects
 	stepPreview
 	stepGenerate
+	stepResult
 	stepCount
 )
 
@@ -93,6 +94,7 @@ const (
 	screenValueObjects
 	screenPreview
 	screenGenerate
+	screenResult
 	screenCount
 )
 
@@ -372,6 +374,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.openScreen(screenServices)
 					m.serviceContext = serviceResourceValueObjects
 					return m, nil
+				case screenResult:
+					m.openScreen(screenGenerate)
+					return m, nil
 				case screenServices, screenProject, screenPreview, screenGenerate:
 					m.openScreen(screenOverview)
 					return m, nil
@@ -381,7 +386,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "?":
 			m.helpOpen = true
 			return m, nil
-		case "1", "2", "3", "4", "5", "6", "7":
+		case "1", "2", "3", "4", "5", "6", "7", "8":
 			if m.busy() {
 				return m, nil
 			}
@@ -517,6 +522,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.status == statusRefreshing || m.status == statusSaving || (m.status != statusReady && m.status != statusFailed) {
 				return m, nil
 			}
+			if m.activeScreen() == screenPreview {
+				m.openScreen(screenGenerate)
+				return m, nil
+			}
+			if m.generationBlocked() {
+				m.openScreen(screenGenerate)
+				m.message = m.generationBlockMessage()
+				return m, nil
+			}
 			m.status = statusGenerating
 			m.openScreen(screenGenerate)
 			m.err = nil
@@ -602,12 +616,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.openScreen(screenGenerate)
 			return m, nil
 		}
+		wasResult := m.activeScreen() == screenResult
 		m.status = statusReady
 		m.plan = msg.plan
 		m.result = application.GenerateResult{}
 		m.err = nil
 		m.errContext = ""
 		m.message = ""
+		if wasResult {
+			m.openScreen(screenPreview)
+		}
 		m.clampSelectedService()
 		m.clampFileCursor()
 		return m, nil
@@ -617,13 +635,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = statusFailed
 			m.err = msg.err
 			m.errContext = "Generation"
-			m.openScreen(screenGenerate)
+			m.openScreen(screenResult)
 			return m, nil
 		}
 		m.status = statusGenerated
 		m.result = msg.result
 		m.plan = msg.result.Plan
-		m.currentStep = stepGenerate
+		m.openScreen(screenResult)
 		m.err = nil
 		m.errContext = ""
 		m.message = ""
@@ -772,6 +790,17 @@ func (m Model) busy() bool {
 	return m.status == statusRefreshing || m.status == statusGenerating || m.status == statusSaving
 }
 
+func (m Model) generationBlocked() bool {
+	return m.postSaveRefreshFailed() || ((m.plan.ForceRequired || m.plan.Readiness.OutputForceRequired) && !m.request.Force)
+}
+
+func (m Model) generationBlockMessage() string {
+	if m.postSaveRefreshFailed() {
+		return "Generation is locked until the plan refresh succeeds."
+	}
+	return "Generation is locked until --force is confirmed for this existing output."
+}
+
 func (m *Model) moveStep(delta int) {
 	next := int(m.currentStep) + delta
 	if next < 0 {
@@ -780,7 +809,7 @@ func (m *Model) moveStep(delta int) {
 	if next >= int(stepCount) {
 		next = int(stepCount) - 1
 	}
-	m.currentStep = tuiStep(next)
+	m.openScreen(screenForStep(tuiStep(next)))
 }
 
 func layoutModeForWidth(width int) layoutMode {
@@ -817,6 +846,8 @@ func screenForStep(step tuiStep) workspaceScreen {
 		return screenPreview
 	case stepGenerate:
 		return screenGenerate
+	case stepResult:
+		return screenResult
 	default:
 		return screenOverview
 	}
@@ -836,6 +867,8 @@ func stepForScreen(screen workspaceScreen) tuiStep {
 		return stepPreview
 	case screenGenerate:
 		return stepGenerate
+	case screenResult:
+		return stepResult
 	default:
 		return stepSource
 	}
@@ -855,6 +888,8 @@ func (screen workspaceScreen) label() string {
 		return "Preview"
 	case screenGenerate:
 		return "Generate"
+	case screenResult:
+		return "Result"
 	default:
 		return "Overview"
 	}
@@ -903,6 +938,8 @@ func (step tuiStep) label() string {
 		return "Preview"
 	case stepGenerate:
 		return "Generate"
+	case stepResult:
+		return "Result"
 	default:
 		return "Source"
 	}
@@ -2357,9 +2394,11 @@ func (m Model) workspaceContent() string {
 	case screenValueObjects:
 		return m.valueObjectsWorkspace()
 	case screenPreview:
-		return strings.Join([]string{m.outputPreviewCard(), m.plannedFilesCard()}, "\n\n")
+		return m.previewWorkspace()
 	case screenGenerate:
 		return m.generateStepCard()
+	case screenResult:
+		return m.resultWorkspace()
 	default:
 		return m.overviewCard()
 	}
@@ -2377,8 +2416,9 @@ func (m Model) helpOverlay() string {
 		"Entities: up/down select | enter/e edit | f fields | a/r/d in editor",
 		"Value Objects: up/down select | enter/e edit | o rules | a/r/d in editor",
 		"Services actions: e service list | enter Entities/Value Objects context | v value objects",
-		"Preview: arrows/k/j inspect files | a filter | r refresh | g generate",
-		"Generate: g generate | r refresh",
+		"Preview: arrows/k/j inspect files | a filter | r refresh | g continue",
+		"Generate: g confirm generation | r refresh",
+		"Result: esc back to Generate | g retry after failure | r refresh",
 	}, "\n")))
 	fmt.Fprintln(&builder, dimStyle.Render("Press ? or esc to close help."))
 	return builder.String()
@@ -2832,12 +2872,13 @@ func (m Model) serviceDetail() string {
 func (m Model) generateStepCard() string {
 	var builder strings.Builder
 	fmt.Fprintln(&builder, sectionTitleStyle.Render("Generate"))
-	m.renderReadinessSummary(&builder)
+	m.renderGenerationChecklist(&builder)
 	switch m.status {
 	case statusGenerating:
 		fmt.Fprintln(&builder, busyStyle.Render("Generating files. Please wait; exit is available after generation finishes."))
 	case statusGenerated:
 		m.renderPostGenerateSummary(&builder)
+		fmt.Fprintln(&builder, dimStyle.Render("Result is available on the Result route."))
 	case statusFailed:
 		context := m.errContext
 		if context == "" {
@@ -2850,22 +2891,71 @@ func (m Model) generateStepCard() string {
 			fmt.Fprintln(&builder, dangerStyle.Render("g Retry generation, or r refresh the plan first."))
 		}
 	default:
-		fmt.Fprintf(&builder, "%s Generate %d planned file(s) into %s.\n", successStyle.Render("g"), m.plan.FileCount, m.plan.OutputDir)
+		fmt.Fprintf(&builder, "%s Generate %d planned file(s) into %s.\n", dimStyle.Render("Plan:"), m.plan.FileCount, m.outputDirectory())
 		fmt.Fprintf(&builder, "%s Review the Preview step before confirming writes.\n", labelStyle.Render("Before"))
+		if m.generationBlocked() {
+			fmt.Fprintln(&builder, dangerStyle.Render(m.generationBlockMessage()))
+			fmt.Fprintln(&builder, dimStyle.Render("Resolve the checklist item before confirming generation."))
+		} else {
+			fmt.Fprintf(&builder, "%s Confirm writing %d planned file(s) into %s.\n", successStyle.Render("g"), m.plan.FileCount, m.outputDirectory())
+			fmt.Fprintf(&builder, "%s Preview reviewed. Press g to confirm the write.\n", labelStyle.Render("Ready"))
+		}
 	}
 	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+}
+
+func (m Model) renderGenerationChecklist(builder *strings.Builder) {
+	if m.postSaveRefreshFailed() {
+		fmt.Fprintln(builder, dangerStyle.Render("Readiness is stale. Saved settings need a successful plan refresh before generation."))
+		fmt.Fprintln(builder, dangerStyle.Render("[blocked] Plan refresh required"))
+		return
+	}
+	readiness := m.plan.Readiness
+	project := "not ready"
+	if readiness.ProjectPresent || m.plan.Config.SolutionName != "" {
+		project = "ready"
+	}
+	force := "not required"
+	if m.plan.ForceRequired || readiness.OutputForceRequired {
+		force = "required"
+		if m.request.Force {
+			force = "confirmed"
+		}
+	}
+	projectReady := "no"
+	if readiness.ProjectPresent || m.plan.Config.SolutionName != "" {
+		projectReady = "yes"
+	}
+	forceRequired := "no"
+	if m.plan.ForceRequired || readiness.OutputForceRequired {
+		forceRequired = "yes"
+	}
+	fmt.Fprintf(builder, "%s project=%s, services=%d, entities=%d, fields=%d, value objects=%d, force required=%s\n", labelStyle.Render("Readiness"), projectReady, readiness.ServiceCount, readiness.EntityCount, readiness.FieldCount, readiness.ValueObjectCount, forceRequired)
+	fmt.Fprintln(builder, sectionTitleStyle.Render("Readiness checklist"))
+	fmt.Fprintf(builder, "[ready] Project configured: %s\n", project)
+	fmt.Fprintf(builder, "[ready] Resources: services=%d, entities=%d, fields=%d, value objects=%d\n", readiness.ServiceCount, readiness.EntityCount, readiness.FieldCount, readiness.ValueObjectCount)
+	fmt.Fprintf(builder, "[ready] Output directory: %s\n", m.outputDirectory())
+	if force == "required" {
+		fmt.Fprintf(builder, "%s Force confirmation: %s\n", dangerStyle.Render("[blocked]"), force)
+	} else {
+		fmt.Fprintf(builder, "[ready] Force confirmation: %s\n", force)
+	}
+	if len(readiness.Hints) > 0 {
+		for _, hint := range readiness.Hints {
+			fmt.Fprintf(builder, "%s %s\n", labelStyle.Render("Next"), hint)
+		}
+	}
+	fmt.Fprintln(builder)
 }
 
 func (m Model) renderPostGenerateSummary(builder *strings.Builder) {
 	plan := m.result.Plan
 	outputDir := m.result.OutputDir
 	if outputDir == "" {
-		outputDir = plan.OutputDir
+		outputDir = m.outputDirectory()
 	}
 	fmt.Fprintf(builder, "%s %d files written to %s.\n", successStyle.Render("Generated"), plan.FileCount, outputDir)
-	if len(plan.Files) > 0 {
-		fmt.Fprintf(builder, "%s %s\n", labelStyle.Render("Impact"), postGenerateImpactSummary(plan))
-	}
+	fmt.Fprintf(builder, "%s %s\n", labelStyle.Render("Impact"), postGenerateImpactSummary(plan))
 	if len(plan.DeletedFiles) > 0 {
 		fmt.Fprintf(builder, "%s deleted %d previous generated file(s)\n", dangerStyle.Render("Cleanup"), len(plan.DeletedFiles))
 	}
@@ -2873,6 +2963,125 @@ func (m Model) renderPostGenerateSummary(builder *strings.Builder) {
 	if m.result.Warning != "" {
 		fmt.Fprintf(builder, "%s %s\n", warningStyle.Render("WARNING"), warningStyle.Render(m.result.Warning))
 	}
+}
+
+func (m Model) resultWorkspace() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Result"))
+	if m.status == statusFailed {
+		context := m.errContext
+		if context == "" {
+			context = "Generation"
+		}
+		fmt.Fprintf(&builder, "%s %s failed: %v\n", dangerStyle.Render("FAILED"), context, m.err)
+		fmt.Fprintln(&builder, dangerStyle.Render("g Retry generation, or r refresh the plan first. esc back to Generate."))
+		fmt.Fprintln(&builder, dimStyle.Render("r Refresh the plan before retrying if the output or config changed."))
+		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+	}
+	m.renderPostGenerateSummary(&builder)
+	if len(m.result.Plan.DeletedFiles) > 0 {
+		fmt.Fprintln(&builder, labelStyle.Render("Deleted files"))
+		for _, path := range m.result.Plan.DeletedFiles {
+			fmt.Fprintf(&builder, "  %s\n", path)
+		}
+	}
+	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+}
+
+func (m Model) previewWorkspace() string {
+	var summary strings.Builder
+	fmt.Fprintln(&summary, sectionTitleStyle.Render("Output Preview"))
+	fmt.Fprintf(&summary, "%s %s\n", labelStyle.Render("Directory"), m.outputDirectory())
+	fmt.Fprintf(&summary, "%s %s\n", labelStyle.Render("Write mode"), m.writeMode())
+	readinessLabel := "ready"
+	if m.postSaveRefreshFailed() {
+		readinessLabel = "stale"
+	} else if m.generationBlocked() {
+		readinessLabel = "action required"
+	}
+	fmt.Fprintf(&summary, "%s %s\n", labelStyle.Render("Readiness"), readinessLabel)
+	forceRequired := m.plan.ForceRequired || m.plan.Readiness.OutputForceRequired
+	forceUsed := m.plan.ForceUsed || m.request.Force
+	forceStyle := dimStyle
+	if forceRequired && !forceUsed {
+		forceStyle = dangerStyle
+	} else if forceRequired {
+		forceStyle = warningStyle
+	}
+	fmt.Fprintf(&summary, "%s %s\n", labelStyle.Render("Force"), forceStyle.Render(fmt.Sprintf("required=%s, used=%s", yesNo(forceRequired), yesNo(forceUsed))))
+	fmt.Fprintf(&summary, "%s %d planned\n", labelStyle.Render("Files"), m.plan.FileCount)
+	fmt.Fprintf(&summary, "%s %s\n", labelStyle.Render("Impact"), m.impactSummary())
+	created, replaced, unchanged := plannedFileCounts(m.plan)
+	fmt.Fprintf(&summary, "%s created=%d, replaced=%d, unchanged=%d, deleted=%d\n", labelStyle.Render("Change counts"), created, replaced, unchanged, len(m.plan.DeletedFiles))
+	if m.plan.FileCount > 0 && m.impactSummary() == "unchanged only" {
+		fmt.Fprintln(&summary, successStyle.Render("No generated file content changes detected."))
+	}
+	if m.plan.ExtraFileCount > 0 || len(m.plan.DeletedFiles) > 0 {
+		fmt.Fprintf(&summary, "%s replacement removes %d previous generated file(s)\n", dangerStyle.Render("DANGER"), len(m.plan.DeletedFiles))
+		fmt.Fprintf(&summary, "%s\n", dangerStyle.Render(deletedFilePreview(m.plan.DeletedFiles)))
+	}
+
+	files := m.plannedFilesCard()
+	detail := m.plannedFileDetail()
+	if m.layout == layoutWide {
+		available := m.windowWidth - 30
+		if available < 72 {
+			available = 72
+		}
+		leftWidth := available / 3
+		rightWidth := available - leftWidth - 2
+		left := cardStyle.Width(leftWidth).Render(summary.String())
+		right := cardStyle.Width(rightWidth).Render(files + "\n\n" + detail)
+		return lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
+	}
+	return strings.Join([]string{summary.String(), files, detail}, "\n\n")
+}
+
+func (m Model) plannedFileDetail() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("File detail"))
+	indices := m.filteredFileIndices()
+	position := m.selectedFilteredPosition(indices)
+	if position < 0 || position >= len(indices) {
+		fmt.Fprintln(&builder, dimStyle.Render("No file selected."))
+		return strings.TrimRight(builder.String(), "\n")
+	}
+	file := m.plan.Files[indices[position]]
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Path"), file.Path)
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Action"), actionBadge(file.Action))
+	fmt.Fprintf(&builder, "%s %d of %d\n", labelStyle.Render("Position"), position+1, len(indices))
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) outputDirectory() string {
+	if m.plan.OutputDir != "" {
+		return m.plan.OutputDir
+	}
+	if m.result.OutputDir != "" {
+		return m.result.OutputDir
+	}
+	return m.request.OutputDir
+}
+
+func (m Model) writeMode() string {
+	if m.plan.OutputAction != "" {
+		return m.plan.OutputAction
+	}
+	return "create"
+}
+
+func plannedFileCounts(plan application.GenerationPlan) (created, replaced, unchanged int) {
+	for _, file := range plan.Files {
+		switch file.Action {
+		case "create":
+			created++
+		case "replace":
+			replaced++
+		case "unchanged":
+			unchanged++
+		}
+	}
+	return created, replaced, unchanged
 }
 
 func (m Model) renderReadinessSummary(builder *strings.Builder) {
@@ -2928,10 +3137,14 @@ func (m Model) footerCard() string {
 	case screenPreview:
 		fmt.Fprintln(&builder, readyHelp)
 	case screenGenerate:
-		if m.status == statusGenerated {
-			fmt.Fprintln(&builder, generatedHelp)
-		} else {
+		fmt.Fprintln(&builder, "Generate: g confirm generation, r refresh.")
+	case screenResult:
+		if m.status == statusFailed {
+			fmt.Fprintln(&builder, "Result: g retry generation, esc back to Generate, r refresh.")
 			fmt.Fprintln(&builder, "Generate: g generate, r refresh.")
+		} else {
+			fmt.Fprintln(&builder, generatedHelp)
+			fmt.Fprintln(&builder, "Result: esc back to Generate.")
 		}
 	default:
 		fmt.Fprintln(&builder, "Overview: r refresh, 2 Project, 3 Services, 4 Entities, 5 Value Objects, 6 Preview, 7 Generate.")
@@ -3513,9 +3726,6 @@ func impactSummaryForPlan(plan application.GenerationPlan) string {
 }
 
 func postGenerateImpactSummary(plan application.GenerationPlan) string {
-	if len(plan.Files) == 0 {
-		return "none"
-	}
 	counts := make(map[string]int)
 	for _, file := range plan.Files {
 		counts[file.Action]++
@@ -3530,10 +3740,8 @@ func postGenerateImpactSummary(plan application.GenerationPlan) string {
 	}
 	parts := []string{}
 	for _, item := range labels {
-		if count := counts[item.action]; count > 0 {
-			parts = append(parts, fmt.Sprintf("%s=%d", item.label, count))
-			delete(counts, item.action)
-		}
+		parts = append(parts, fmt.Sprintf("%s=%d", item.label, counts[item.action]))
+		delete(counts, item.action)
 	}
 	unknownActions := make([]string, 0, len(counts))
 	for action := range counts {
