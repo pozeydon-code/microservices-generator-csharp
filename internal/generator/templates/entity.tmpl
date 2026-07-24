@@ -23,5 +23,6 @@ public sealed class {{ .Entity.Name }}
     public void Update({{ .Entity.Name }}State state)
     {
 {{ range .Entity.NonIDFields }}        {{ .Name }} = state.{{ .Name }};
+{{ end }}{{ if not .Entity.NonIDFields }}        _ = Id;
 {{ end }}    }
 }

@@ -105,6 +105,35 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 	}
 }
 
+func TestGenerateIdOnlyEntityOmitsUnsafeSchemaTransition(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := spec.Config{
+		Solution: spec.Solution{Name: "IdentityPlatform", Description: "Id-only entity regression."},
+		Services: []spec.Service{{
+			Name: "IdentityService",
+			Entities: []spec.Entity{{
+				Name:   "Identity",
+				Fields: []spec.Field{{Name: "Id", Type: "Guid"}},
+			}},
+		}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected Id-only config to remain valid: %v", err)
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate Id-only config: %v", err)
+	}
+	infrastructureTests := string(generatedContent(t, files, "tests/IdentityService/IdentityService.Infrastructure.Tests/IdentityServiceInfrastructureTests.cs"))
+	assertContains(t, infrastructureTests, "Assert.Equal(ReadinessStatus.Ready, healthy.Status);")
+	assertNotContains(t, infrastructureTests, "DROP COLUMN")
+	assertNotContains(t, infrastructureTests, "<no value>")
+}
+
 func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	gen, err := New()
 	if err != nil {

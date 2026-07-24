@@ -36,13 +36,13 @@ public sealed class {{ .Name }}InfrastructureTests
             Assert.Equal(ReadinessStatus.Ready, healthy.Status);
         }
 
-        await using (var incompatibleContext = database.CreateContext())
+{{ if .ReadinessSchemaField }}        await using (var incompatibleContext = database.CreateContext())
         {
-            await incompatibleContext.Database.ExecuteSqlRawAsync("ALTER TABLE {{ (index .Entities 0).Name }}s DROP COLUMN {{ (index (index .Entities 0).NonIDFields 0).Name }}");
+            await incompatibleContext.Database.ExecuteSqlRawAsync("ALTER TABLE {{ .ReadinessSchemaEntity }}s DROP COLUMN {{ .ReadinessSchemaField }}");
             var incompatible = await new SqlReadinessProbe(incompatibleContext, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
             Assert.Equal(ReadinessStatus.NotReady, incompatible.Status);
         }
-    }
+{{ end }}    }
 
 {{ if .ReadinessLengthField }}    [Fact]
     public async Task ReadinessRejectsIncorrectStringValueObjectMaxLengthNullabilityAndPreflightFindsViolations()

@@ -46,6 +46,8 @@ type ServiceView struct {
 	ReadinessLengthMax         string
 	ReadinessLengthMaxPlusOne  string
 	ReadinessLengthRequired    bool
+	ReadinessSchemaEntity      string
+	ReadinessSchemaField       string
 }
 
 type ProjectView struct {
@@ -167,6 +169,12 @@ func buildSolutionView(cfg spec.Config) SolutionTemplateData {
 		}
 		for _, entity := range sortedEntities(service.Entities) {
 			entityView := entityViewWithSortedFields(entity, valueObjectsByName)
+			if len(serviceView.Entities) == 0 {
+				serviceView.ReadinessSchemaEntity = entityView.Name
+				if len(entityView.NonIDFields) > 0 {
+					serviceView.ReadinessSchemaField = entityView.NonIDFields[0].Name
+				}
+			}
 			if serviceView.ReadinessLengthField == "" {
 				for _, field := range entityView.Fields {
 					if field.ColumnMaxLength != "" {

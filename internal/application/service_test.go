@@ -440,6 +440,35 @@ func TestServiceUpdateServiceSettingsAddsRenamesAndDeletesServices(t *testing.T)
 	}
 }
 
+func TestServiceUpdateServiceSettingsRefreshesIdOnlyNewServiceWithRealGenerator(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "microgen.json")
+	if err := os.WriteFile(configPath, []byte(validJSONConfig), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	service, err := DefaultService()
+	if err != nil {
+		t.Fatalf("create default service: %v", err)
+	}
+
+	result, err := service.UpdateServiceSettings(GenerateRequest{
+		ConfigPath: configPath,
+		OutputDir:  filepath.Join(t.TempDir(), "generated"),
+	}, ServiceSettings{Services: []ServiceNameSetting{
+		{OriginalName: "ProductService", Name: "ProductService"},
+		{Name: "BillingService"},
+	}})
+
+	if err != nil {
+		t.Fatalf("update services: %v", err)
+	}
+	if !result.Saved || result.PlanError != nil {
+		t.Fatalf("expected saved result with refreshed plan, got %#v", result)
+	}
+	if result.Config.ServiceCount != 2 || result.Config.EntityCount != 2 {
+		t.Fatalf("expected two services and entities, got %#v", result.Config)
+	}
+}
+
 func TestServiceUpdateServiceSettingsRejectsDeletingLastServiceWithoutSaving(t *testing.T) {
 	saver := &fakeConfigSaver{}
 	gen := &fakeGenerator{}
