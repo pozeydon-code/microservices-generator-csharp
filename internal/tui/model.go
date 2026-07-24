@@ -119,9 +119,9 @@ const (
 	wizardMenu wizardScreen = iota
 	wizardProject
 	wizardServices
+	wizardValueObjects
 	wizardEntities
 	wizardFields
-	wizardValueObjects
 	wizardReview
 	wizardResult
 )
@@ -809,7 +809,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.result = application.GenerateResult{}
 		m.err = nil
 		m.errContext = ""
-		m.message = "Services saved. Plan refreshed. Use the Entities and Value Objects routes for resource editing."
+		m.message = "Services saved. Plan refreshed. Configure value objects before entities and fields."
 		m.clampSelectedService()
 		m.clampFileCursor()
 		if m.mode == modeWizard && m.wizardScreen == wizardServices {
@@ -871,11 +871,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.result = application.GenerateResult{}
 		m.err = nil
 		m.errContext = ""
-		m.message = "Fields saved. Plan refreshed. Value-object names can be edited from the Value Objects route."
+		m.message = "Fields saved. Plan refreshed. Review the generation plan."
 		m.clampSelectedService()
 		m.clampFileCursor()
 		if m.mode == modeWizard && m.wizardScreen == wizardFields {
-			m.enterWizardValueObjects()
+			m.enterWizardReview()
 		}
 		return m, nil
 
@@ -901,12 +901,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.result = application.GenerateResult{}
 		m.err = nil
 		m.errContext = ""
-		m.message = "Value objects saved. Plan refreshed. Basic type and rules can be edited from the Value Objects route."
+		m.message = "Value objects saved. Plan refreshed. Continue with entities and fields."
 		m.clampSelectedService()
 		m.clampFileCursor()
 		if m.mode == modeWizard && m.wizardScreen == wizardValueObjects {
-			m.wizardValueObjectConfigured = true
-			m.wizardValueObjectSelection = 0
+			m.enterWizardEntities()
 		} else if m.returnToWizard && m.guidedWorkspace {
 			m.enterWizardMenu()
 		}
@@ -927,16 +926,16 @@ func (m Model) updateWizard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc":
 			switch m.wizardScreen {
 			case wizardReview:
-				m.enterWizardValueObjects()
+				m.enterWizardFields()
 				return m, nil
 			case wizardValueObjects:
-				m.enterWizardFields()
+				m.enterWizardServices()
 				return m, nil
 			case wizardFields:
 				m.enterWizardEntities()
 				return m, nil
 			case wizardEntities:
-				m.enterWizardServices()
+				m.enterWizardValueObjects()
 				return m, nil
 			case wizardServices:
 				if m.wizardBackScreen == wizardProject {
@@ -1015,7 +1014,7 @@ func (m Model) updateWizard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			return m.selectWizardEntity()
 		case "esc":
-			m.enterWizardServices()
+			m.enterWizardValueObjects()
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		}
@@ -1046,7 +1045,7 @@ func (m Model) updateWizard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case "enter":
 				return m.selectWizardValueObjectOption()
 			case "esc":
-				m.enterWizardFields()
+				m.enterWizardServices()
 			case "q", "ctrl+c":
 				return m, tea.Quit
 			}
@@ -1060,7 +1059,7 @@ func (m Model) updateWizard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			return m.selectWizardValueObject()
 		case "esc":
-			m.enterWizardFields()
+			m.enterWizardServices()
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		}
@@ -1079,10 +1078,10 @@ func (m Model) updateWizard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case 1:
 				m.enterWizardWorkspace(screenPreview)
 			default:
-				m.enterWizardValueObjects()
+				m.enterWizardFields()
 			}
 		case "esc":
-			m.enterWizardValueObjects()
+			m.enterWizardFields()
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		}
@@ -1145,7 +1144,7 @@ func (m Model) selectWizardService() (tea.Model, tea.Cmd) {
 	case m.wizardServiceSelection < serviceCount:
 		m.selectedService = m.wizardServiceSelection
 		m.clampSelectedService()
-		m.enterWizardEntities()
+		m.enterWizardValueObjects()
 	case m.wizardServiceSelection == m.wizardServiceAddOption():
 		m.startServicesEditing()
 		m.servicesEdit.services = append(m.servicesEdit.services, newTextField(m.nextServicePlaceholder()))
@@ -1190,7 +1189,7 @@ func (m Model) selectWizardField() (tea.Model, tea.Cmd) {
 		m.startWizardFieldsEditing()
 		m.fieldsEdit.selected = m.wizardFieldSelection
 	case m.wizardFieldSelection == m.wizardFieldContinueOption():
-		m.enterWizardValueObjects()
+		m.enterWizardReview()
 	case m.wizardFieldSelection == m.wizardFieldAddOption():
 		m.startWizardFieldsEditing()
 		m.fieldsEdit.fields = append(m.fieldsEdit.fields, fieldEditItem{name: newTextField(m.nextFieldPlaceholder()), typeName: newTextField("string")})
@@ -1210,7 +1209,7 @@ func (m Model) selectWizardValueObjectOption() (tea.Model, tea.Cmd) {
 		m.wizardValueObjectConfigured = true
 		m.wizardValueObjectSelection = 0
 	case wizardValueObjectSkip:
-		m.enterWizardReview()
+		m.enterWizardEntities()
 	case wizardValueObjectAdvanced:
 		m.enterAdvancedWorkspace()
 		m.openScreen(screenValueObjects)
@@ -1234,7 +1233,7 @@ func (m Model) selectWizardValueObject() (tea.Model, tea.Cmd) {
 	case m.wizardValueObjectSelection == m.wizardValueObjectEditOption():
 		m.startValueObjectsEditing()
 	case m.wizardValueObjectSelection == m.wizardValueObjectReviewOption():
-		m.enterWizardReview()
+		m.enterWizardEntities()
 	case m.wizardValueObjectSelection == m.wizardValueObjectAdvancedOption():
 		m.enterAdvancedWorkspace()
 		m.openScreen(screenValueObjects)
@@ -1276,7 +1275,7 @@ func (m *Model) enterWizardEntities() {
 	m.returnToWizard = false
 	m.guidedWorkspace = false
 	m.wizardScreen = wizardEntities
-	m.wizardBackScreen = wizardServices
+	m.wizardBackScreen = wizardValueObjects
 	m.clampSelectedService()
 	entities := m.serviceEntitySummaries()
 	m.wizardEntitySelection = clampInt(m.selectedEntity, 0, len(entities)+2)
@@ -1306,7 +1305,7 @@ func (m *Model) enterWizardValueObjects() {
 	m.returnToWizard = false
 	m.guidedWorkspace = false
 	m.wizardScreen = wizardValueObjects
-	m.wizardBackScreen = wizardFields
+	m.wizardBackScreen = wizardServices
 	m.wizardValueObjectConfigured = false
 	m.wizardValueObjectSelection = 0
 	m.clampSelectedService()
@@ -1319,7 +1318,7 @@ func (m *Model) enterWizardReview() {
 	m.returnToWizard = false
 	m.guidedWorkspace = false
 	m.wizardScreen = wizardReview
-	m.wizardBackScreen = wizardValueObjects
+	m.wizardBackScreen = wizardFields
 	m.wizardSelection = 0
 	m.helpOpen = false
 }
@@ -1937,7 +1936,7 @@ func (m Model) updateValueObjectsEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.errContext = ""
 		if m.mode == modeWizard && m.wizardScreen == wizardValueObjects {
-			m.enterWizardFields()
+			m.enterWizardServices()
 			return m, nil
 		}
 		m.openScreen(screenServices)
@@ -2024,7 +2023,7 @@ func (m Model) updateValueObjectRulesEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.valueObjectsEdit.rulesOpen = false
 		m.valueObjectsEdit.editingRule = false
 		if m.mode == modeWizard && m.wizardScreen == wizardValueObjects {
-			m.enterWizardFields()
+			m.enterWizardServices()
 			return m, nil
 		}
 		m.openScreen(screenValueObjects)
@@ -3133,7 +3132,7 @@ func (m Model) wizardServicesView() string {
 		fmt.Fprintln(&builder, successStyle.Render(m.message))
 	}
 	fmt.Fprintln(&builder)
-	footer := "up/down or j/k select | enter open | esc back"
+	footer := "up/down or j/k select | enter configure value objects | esc back"
 	if m.postSaveRefreshFailed() {
 		footer += " | r retry refresh"
 	}
@@ -3143,7 +3142,7 @@ func (m Model) wizardServicesView() string {
 
 func (m Model) wizardEntitiesView() string {
 	var builder strings.Builder
-	fmt.Fprintln(&builder, dimStyle.Render("Breadcrumb: Project > Services > Entities  |  Progress: 3/6"))
+	fmt.Fprintln(&builder, dimStyle.Render("Breadcrumb: Project > Services > Value Objects > Entities  |  Progress: 4/6"))
 	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Selected service:"), truncateWizardText(m.selectedServiceSummary().Name, m.wizardContentWidth()-18))
 	fmt.Fprintln(&builder)
 	fmt.Fprintln(&builder, m.wizardPromptStyle().Render("Which entity should we configure?"))
@@ -3171,7 +3170,7 @@ func (m Model) wizardEntitiesView() string {
 		fmt.Fprintln(&builder, successStyle.Render(m.message))
 	}
 	fmt.Fprintln(&builder)
-	footer := "up/down or j/k select | enter open | esc back"
+	footer := "up/down or j/k select | enter open | esc back to value objects"
 	if m.postSaveRefreshFailed() {
 		footer += " | r retry refresh"
 	}
@@ -3183,7 +3182,7 @@ func (m Model) wizardFieldsView() string {
 	var builder strings.Builder
 	service := truncateWizardText(m.selectedServiceSummary().Name, m.wizardContentWidth()-10)
 	entity := truncateWizardText(m.selectedEntitySummary().Name, m.wizardContentWidth()-10)
-	fmt.Fprintf(&builder, "%s\n", dimStyle.Render(fmt.Sprintf("Breadcrumb: Project > Services > Entities > Fields  |  Progress: 4/6  |  %s/%s", service, entity)))
+	fmt.Fprintf(&builder, "%s\n", dimStyle.Render(fmt.Sprintf("Breadcrumb: Project > Services > Value Objects > Entities > Fields  |  Progress: 5/6  |  %s/%s", service, entity)))
 	fmt.Fprintln(&builder)
 	fmt.Fprintln(&builder, m.wizardPromptStyle().Render("Which field should we configure?"))
 	fmt.Fprintln(&builder)
@@ -3210,7 +3209,7 @@ func (m Model) wizardFieldsView() string {
 		fmt.Fprintln(&builder, successStyle.Render(m.message))
 	}
 	fmt.Fprintln(&builder)
-	footer := "up/down or j/k select | enter open | esc back"
+	footer := "up/down or j/k select | enter open | esc back to entities"
 	if m.postSaveRefreshFailed() {
 		footer += " | r retry refresh"
 	}
@@ -3221,25 +3220,25 @@ func (m Model) wizardFieldsView() string {
 func (m Model) wizardValueObjectsView() string {
 	var builder strings.Builder
 	service := truncateWizardText(m.selectedServiceSummary().Name, m.wizardContentWidth()-10)
-	fmt.Fprintf(&builder, "%s\n", dimStyle.Render(fmt.Sprintf("Breadcrumb: Project > Services > Entities > Fields > Value Objects  |  Progress: 5/6  |  %s", service)))
+	fmt.Fprintf(&builder, "%s\n", dimStyle.Render(fmt.Sprintf("Breadcrumb: Project > Services > Value Objects  |  Progress: 3/6  |  %s", service)))
 	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, m.wizardPromptStyle().Render("Would you like to configure value objects?"))
+	fmt.Fprintln(&builder, m.wizardPromptStyle().Render("Would you like to configure value objects before entities and fields?"))
 	fmt.Fprintln(&builder)
 	if (m.status == statusEditing || m.status == statusSaving) && m.edit.mode == editModeValueObjects {
 		fmt.Fprintln(&builder, sectionTitleStyle.Render("Edit value objects"))
 		m.renderValueObjectsEditor(&builder)
 		fmt.Fprintln(&builder)
-		fmt.Fprintln(&builder, m.wizardFooter("up/down or j/k select | enter save | o rules | esc back to fields"))
+		fmt.Fprintln(&builder, m.wizardFooter("up/down or j/k select | enter save | o rules | esc back to services"))
 		return strings.TrimRight(builder.String(), "\n")
 	}
 	if !m.wizardValueObjectConfigured {
-		for option, label := range []string{"Configure value objects", "Skip to review", "Advanced configuration"} {
+		for option, label := range []string{"Configure value objects", "Skip to entities", "Advanced configuration"} {
 			fmt.Fprintln(&builder, m.wizardOptionAt(option, m.wizardValueObjectSelection, label))
 		}
 		fmt.Fprintln(&builder)
 		fmt.Fprintln(&builder, m.wizardValueObjectDetail())
 		fmt.Fprintln(&builder)
-		fmt.Fprintln(&builder, m.wizardFooter("up/down or j/k select | enter continue | esc back to fields"))
+		fmt.Fprintln(&builder, m.wizardFooter("up/down or j/k select | enter continue | esc back to services"))
 		return strings.TrimRight(builder.String(), "\n")
 	}
 	for option := 0; option < m.wizardValueObjectOptionCount(); option++ {
@@ -3255,7 +3254,7 @@ func (m Model) wizardValueObjectsView() string {
 		fmt.Fprintln(&builder, "Press r to retry the refresh before continuing.")
 	}
 	fmt.Fprintln(&builder)
-	footer := "up/down or j/k select | enter open | esc back to fields"
+	footer := "up/down or j/k select | enter open | esc back to services"
 	if m.postSaveRefreshFailed() {
 		footer += " | r retry refresh"
 	}
@@ -3265,17 +3264,17 @@ func (m Model) wizardValueObjectsView() string {
 
 func (m Model) wizardReviewView() string {
 	var builder strings.Builder
-	fmt.Fprintln(&builder, dimStyle.Render("Breadcrumb: Project > Services > Entities > Fields > Value Objects > Review  |  Progress: 6/6"))
+	fmt.Fprintln(&builder, dimStyle.Render("Breadcrumb: Project > Services > Value Objects > Entities > Fields > Review  |  Progress: 6/6"))
 	fmt.Fprintln(&builder)
 	fmt.Fprintln(&builder, m.wizardPromptStyle().Render("Review your generation plan"))
 	fmt.Fprintln(&builder)
 	m.renderWizardReviewChecklist(&builder)
 	fmt.Fprintln(&builder)
-	for option, label := range []string{"Generate solution", "Inspect advanced preview", "Back to value objects/fields"} {
+	for option, label := range []string{"Generate solution", "Inspect advanced preview", "Back to fields"} {
 		fmt.Fprintln(&builder, m.wizardOptionAt(option, m.wizardSelection, label))
 	}
 	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, m.wizardFooter("up/down or j/k select | enter open | esc back to value objects"))
+	fmt.Fprintln(&builder, m.wizardFooter("up/down or j/k select | enter open | esc back to fields"))
 	return strings.TrimRight(builder.String(), "\n")
 }
 
@@ -3318,7 +3317,7 @@ func (m Model) wizardFieldOption(option int) string {
 	case option < len(fields):
 		label = fmt.Sprintf("%s: %s", truncateWizardText(fields[option].Name, m.wizardContentWidth()/2), truncateWizardText(fields[option].Type, m.wizardContentWidth()/2))
 	case option == m.wizardFieldContinueOption():
-		label = "Continue to value objects"
+		label = "Continue to review"
 	case option == m.wizardFieldAddOption():
 		label = "Add field"
 	case option == m.wizardFieldEditOption():
@@ -3451,7 +3450,7 @@ func (m Model) wizardValueObjectDetail() string {
 	valueObjects := m.serviceValueObjectSummaries()
 	if !m.wizardValueObjectConfigured {
 		fmt.Fprintf(&builder, "Current value objects: %d\n", len(valueObjects))
-		fmt.Fprintln(&builder, "Configure them now or continue directly to the review.")
+		fmt.Fprintln(&builder, "Configure them now or continue directly to entities.")
 		return strings.TrimRight(builder.String(), "\n")
 	}
 	if m.wizardValueObjectSelection >= len(valueObjects) {
@@ -3461,7 +3460,7 @@ func (m Model) wizardValueObjectDetail() string {
 		case m.wizardValueObjectEditOption():
 			fmt.Fprintln(&builder, "Open the existing value-object editor for this service.")
 		case m.wizardValueObjectReviewOption():
-			fmt.Fprintln(&builder, "Continue to the generation checklist.")
+			fmt.Fprintln(&builder, "Continue to entities and fields.")
 		default:
 			fmt.Fprintln(&builder, "Open the Advanced workspace for the full value-object route and rules editor.")
 		}
@@ -3657,7 +3656,7 @@ func wizardOptionLabel(option int) string {
 	case wizardConfigureProject:
 		return "Configure project"
 	case wizardConfigureServices:
-		return "Configure services and data model"
+		return "Configure services, value objects, entities, and fields"
 	case wizardReviewChanges:
 		return "Review generated changes"
 	case wizardGenerateSolution:
@@ -4791,7 +4790,7 @@ func (m Model) renderSettingsEditor(builder *strings.Builder) {
 		return
 	}
 	fmt.Fprintln(builder, "Editing solution settings")
-	fmt.Fprintln(builder, "Use the Services, Entities, and Value Objects routes for resource editing.")
+	fmt.Fprintln(builder, "Use the Services, Value Objects, Entities, and Fields routes for resource editing.")
 	if m.err != nil {
 		fmt.Fprintf(builder, "Save failed: %v\n", m.err)
 	}

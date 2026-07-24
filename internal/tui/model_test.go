@@ -361,15 +361,22 @@ func TestWizardServicesSelectsServiceAndPreparesContext(t *testing.T) {
 	model = updated.(Model)
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
-	if cmd != nil || model.selectedService != 1 || model.wizardScreen != wizardEntities {
-		t.Fatalf("expected selected service to route to entities, got service=%d screen=%v cmd=%v", model.selectedService, model.wizardScreen, cmd)
+	if cmd != nil || model.selectedService != 1 || model.wizardScreen != wizardValueObjects {
+		t.Fatalf("expected selected service to route to value objects, got service=%d screen=%v cmd=%v", model.selectedService, model.wizardScreen, cmd)
 	}
-	assertContains(t, model.View(), "Selected service: OrderService")
+	assertContains(t, model.View(), "OrderService")
 }
 
 func TestWizardEntitiesSelectionRoutesToFieldsAndBack(t *testing.T) {
 	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
-	model.enterWizardEntities()
+	model.enterWizardValueObjects()
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.wizardScreen != wizardEntities {
+		t.Fatalf("expected value-object skip to route to entities, got screen=%v", model.wizardScreen)
+	}
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 	if cmd != nil || model.wizardScreen != wizardFields || model.selectedEntity != 0 {
@@ -382,8 +389,8 @@ func TestWizardEntitiesSelectionRoutesToFieldsAndBack(t *testing.T) {
 	}
 	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	model = updated.(Model)
-	if cmd != nil || model.wizardScreen != wizardServices {
-		t.Fatalf("expected entities esc to return to services, got screen=%v cmd=%v", model.wizardScreen, cmd)
+	if cmd != nil || model.wizardScreen != wizardValueObjects {
+		t.Fatalf("expected entities esc to return to value objects, got screen=%v cmd=%v", model.wizardScreen, cmd)
 	}
 }
 
@@ -443,7 +450,7 @@ func TestWizardGuidedViewsShowEntityAndFieldDetailsWithoutWorkspaceRail(t *testi
 	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
 	model.enterWizardEntities()
 	view := stripANSI(model.View())
-	assertContains(t, view, "Breadcrumb: Project > Services > Entities")
+	assertContains(t, view, "Breadcrumb: Project > Services > Value Objects > Entities")
 	assertContains(t, view, "Selected service: ProductService")
 	assertContains(t, view, "Field count: 2")
 	assertContains(t, view, "Name: ProductName")
@@ -454,7 +461,7 @@ func TestWizardGuidedViewsShowEntityAndFieldDetailsWithoutWorkspaceRail(t *testi
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
 	model = updated.(Model)
 	view = stripANSI(model.View())
-	assertContains(t, view, "Breadcrumb: Project > Services > Entities > Fields")
+	assertContains(t, view, "Breadcrumb: Project > Services > Value Objects > Entities > Fields")
 	assertContains(t, view, "ProductService/Product")
 	assertContains(t, view, "Name: Name")
 	assertContains(t, view, "Value object: ProductName")
@@ -525,8 +532,8 @@ func TestWizardFieldSaveSuccessUsesExistingCallback(t *testing.T) {
 	}
 	updated, _ = model.Update(cmd())
 	model = updated.(Model)
-	if model.status != statusReady || model.wizardScreen != wizardValueObjects || captured.ServiceName != "ProductService" || captured.EntityName != "Product" {
-		t.Fatalf("expected field save to continue to value objects, got status=%v screen=%v settings=%#v", model.status, model.wizardScreen, captured)
+	if model.status != statusReady || model.wizardScreen != wizardReview || captured.ServiceName != "ProductService" || captured.EntityName != "Product" {
+		t.Fatalf("expected field save to continue to review, got status=%v screen=%v settings=%#v", model.status, model.wizardScreen, captured)
 	}
 }
 
@@ -717,7 +724,7 @@ func TestGuidedGenerationReturnsMinimalResultWizard(t *testing.T) {
 	assertNotContains(t, view, "Navigation")
 }
 
-func TestWizardFieldsContinueToValueObjectsAndEscBacksToFields(t *testing.T) {
+func TestWizardFieldsContinueToReviewAndEscBacksToFields(t *testing.T) {
 	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
 	model.enterWizardFields()
 	for range model.wizardFieldContinueOption() {
@@ -729,17 +736,17 @@ func TestWizardFieldsContinueToValueObjectsAndEscBacksToFields(t *testing.T) {
 	}
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
-	if cmd != nil || model.wizardScreen != wizardValueObjects || model.wizardValueObjectConfigured {
-		t.Fatalf("expected Fields completion to open optional value objects, got screen=%v configured=%v cmd=%v", model.wizardScreen, model.wizardValueObjectConfigured, cmd)
+	if cmd != nil || model.wizardScreen != wizardReview {
+		t.Fatalf("expected Fields completion to open review, got screen=%v cmd=%v", model.wizardScreen, cmd)
 	}
 	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	model = updated.(Model)
 	if cmd != nil || model.wizardScreen != wizardFields {
-		t.Fatalf("expected value objects esc to return to Fields, got screen=%v cmd=%v", model.wizardScreen, cmd)
+		t.Fatalf("expected review esc to return to Fields, got screen=%v cmd=%v", model.wizardScreen, cmd)
 	}
 }
 
-func TestWizardValueObjectsSkipConfigureAndReview(t *testing.T) {
+func TestWizardValueObjectsSkipConfigureAndEntities(t *testing.T) {
 	t.Run("skip", func(t *testing.T) {
 		model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
 		model.enterWizardValueObjects()
@@ -747,8 +754,8 @@ func TestWizardValueObjectsSkipConfigureAndReview(t *testing.T) {
 		model = updated.(Model)
 		updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 		model = updated.(Model)
-		if cmd != nil || model.wizardScreen != wizardReview {
-			t.Fatalf("expected skip to review, got screen=%v cmd=%v", model.wizardScreen, cmd)
+		if cmd != nil || model.wizardScreen != wizardEntities {
+			t.Fatalf("expected skip to entities, got screen=%v cmd=%v", model.wizardScreen, cmd)
 		}
 	})
 
@@ -779,13 +786,8 @@ func TestWizardValueObjectsSkipConfigureAndReview(t *testing.T) {
 		}
 		updated, cmd = model.Update(cmd())
 		model = updated.(Model)
-		if cmd != nil || model.status != statusReady || !model.wizardValueObjectConfigured {
-			t.Fatalf("expected value-object save to return to guided list, got status=%v configured=%v cmd=%v", model.status, model.wizardValueObjectConfigured, cmd)
-		}
-		updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
-		model = updated.(Model)
-		if cmd != nil || model.wizardScreen != wizardFields {
-			t.Fatalf("expected value-object editor esc to return to Fields, got screen=%v cmd=%v", model.wizardScreen, cmd)
+		if cmd != nil || model.status != statusReady || model.wizardScreen != wizardEntities {
+			t.Fatalf("expected value-object save to return to Entities, got status=%v screen=%v cmd=%v", model.status, model.wizardScreen, cmd)
 		}
 	})
 
@@ -800,10 +802,91 @@ func TestWizardValueObjectsSkipConfigureAndReview(t *testing.T) {
 		}
 		updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 		model = updated.(Model)
-		if cmd != nil || model.wizardScreen != wizardReview {
-			t.Fatalf("expected configured value-object list to continue to review, got screen=%v cmd=%v", model.wizardScreen, cmd)
+		if cmd != nil || model.wizardScreen != wizardEntities {
+			t.Fatalf("expected configured value-object list to continue to entities, got screen=%v cmd=%v", model.wizardScreen, cmd)
 		}
 	})
+}
+
+func TestWizardValueObjectChoiceShowsConfigureAndSkipWithoutExistingValueObjects(t *testing.T) {
+	plan := wizardPlan()
+	plan.Config.Services[0].ValueObjects = nil
+	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+	model.enterWizardValueObjects()
+
+	view := stripANSI(model.View())
+	assertContains(t, view, "Current value objects: 0")
+	assertContains(t, view, "Configure value objects")
+	assertContains(t, view, "Skip to entities")
+}
+
+func TestWizardBackNavigationFollowsValueObjectsBeforeEntities(t *testing.T) {
+	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
+	model.enterWizardServices()
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.wizardScreen != wizardValueObjects {
+		t.Fatalf("expected services to open value objects, got %v", model.wizardScreen)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if model.wizardScreen != wizardServices {
+		t.Fatalf("expected value objects esc to return to services, got %v", model.wizardScreen)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.wizardScreen != wizardEntities {
+		t.Fatalf("expected value objects skip to open entities, got %v", model.wizardScreen)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if model.wizardScreen != wizardValueObjects {
+		t.Fatalf("expected entities esc to return to value objects, got %v", model.wizardScreen)
+	}
+}
+
+func TestWizardFieldsCanReferenceValueObjectDefinedBeforeFields(t *testing.T) {
+	plan := wizardPlan()
+	plan.Config.Services[0].Entities[0].Fields[1] = application.FieldSummary{Name: "Name", Type: "ProductName"}
+	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+	model.enterWizardServices()
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.wizardScreen != wizardEntities {
+		t.Fatalf("expected value-object skip to open entities, got %v", model.wizardScreen)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.wizardScreen != wizardFields {
+		t.Fatalf("expected entity selection to open fields, got %v", model.wizardScreen)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	view := stripANSI(model.View())
+	assertContains(t, view, "Value object: ProductName")
+	assertNotContains(t, view, "Configure value objects")
+
+	for range model.wizardFieldContinueOption() - model.wizardFieldSelection {
+		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model = updated.(Model)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.wizardScreen != wizardReview {
+		t.Fatalf("expected fields completion to open review without another value-object step, got %v", model.wizardScreen)
+	}
 }
 
 func TestWizardReviewRoutesToExplicitGenerateAndResult(t *testing.T) {
@@ -909,10 +992,10 @@ func TestWizardValueObjectsAndReviewViewsStaySingleColumn(t *testing.T) {
 	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
 	model.enterWizardValueObjects()
 	view := stripANSI(model.View())
-	assertContains(t, view, "Breadcrumb: Project > Services > Entities > Fields > Value Objects")
-	assertContains(t, view, "Would you like to configure value objects?")
+	assertContains(t, view, "Breadcrumb: Project > Services > Value Objects")
+	assertContains(t, view, "Would you like to configure value objects before entities and fields?")
 	assertContains(t, view, "Configure value objects")
-	assertContains(t, view, "Skip to review")
+	assertContains(t, view, "Skip to entities")
 	assertContains(t, view, "Advanced configuration")
 	assertNotContains(t, view, "Navigation")
 
@@ -921,7 +1004,7 @@ func TestWizardValueObjectsAndReviewViewsStaySingleColumn(t *testing.T) {
 	assertContains(t, view, "Review your generation plan")
 	assertContains(t, view, "Generate solution")
 	assertContains(t, view, "Inspect advanced preview")
-	assertContains(t, view, "Back to value objects/fields")
+	assertContains(t, view, "Back to fields")
 	assertNotContains(t, view, "Navigation")
 }
 
@@ -1959,7 +2042,7 @@ func TestModelUpdateEditsSolutionSettingsAndSaves(t *testing.T) {
 		t.Fatalf("expected editing name field, got %#v", model)
 	}
 	assertContains(t, model.View(), "Editing solution settings")
-	assertContains(t, model.View(), "Use the Services, Entities, and Value Objects routes for resource editing.")
+	assertContains(t, model.View(), "Use the Services, Value Objects, Entities, and Fields routes for resource editing.")
 
 	for range len([]rune("CommercePlatform")) {
 		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyBackspace})
@@ -2341,7 +2424,7 @@ func TestModelUpdateEditsServicesAndSaves(t *testing.T) {
 	if cmd != nil || model.status != statusReady || model.plan.FileCount != 4 || model.plan.Config.ServiceNames[0] != "CatalogService" {
 		t.Fatalf("expected ready state with refreshed services plan, got cmd=%v model=%#v", cmd, model)
 	}
-	assertContains(t, model.View(), "Services saved. Plan refreshed. Use the Entities and Value Objects routes for resource editing.")
+	assertContains(t, model.View(), "Services saved. Plan refreshed. Configure value objects before entities and fields.")
 }
 
 func TestModelUpdateServicesEditCancelKeepsPlan(t *testing.T) {
@@ -2801,7 +2884,7 @@ func TestModelUpdateOpensFieldsEditorAndSavesFieldChanges(t *testing.T) {
 	if cmd != nil || model.status != statusReady || model.plan.FileCount != 4 {
 		t.Fatalf("expected ready state with refreshed fields plan, got cmd=%v model=%#v", cmd, model)
 	}
-	assertContains(t, model.View(), "Fields saved. Plan refreshed. Value-object names can be edited from the Value Objects route.")
+	assertContains(t, model.View(), "Fields saved. Plan refreshed. Review the generation plan.")
 }
 
 func TestModelUpdateFieldsEditCancelReturnsToServicesWorkspace(t *testing.T) {
@@ -2986,7 +3069,7 @@ func TestModelUpdateOpensValueObjectsEditorAndSavesChanges(t *testing.T) {
 	if cmd != nil || model.status != statusReady || model.plan.FileCount != 4 || model.plan.Config.Services[0].ValueObjectNames[0] != "CatalogName" {
 		t.Fatalf("expected ready state with refreshed value objects plan, got cmd=%v model=%#v", cmd, model)
 	}
-	assertContains(t, model.View(), "Value objects saved. Plan refreshed. Basic type and rules can be edited from the Value Objects route.")
+	assertContains(t, model.View(), "Value objects saved. Plan refreshed. Continue with entities and fields.")
 }
 
 func TestModelUpdateValueObjectsEditCancelKeepsPlan(t *testing.T) {
