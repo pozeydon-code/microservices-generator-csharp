@@ -21,10 +21,9 @@ func invalidSamplesFor(valueObject ValueObjectView) []InvalidSampleView {
 	}
 	if valueObject.Pattern != "" {
 		invalid := valueObject.PatternInvalidValue
-		if invalid == "" {
-			invalid = csharpStringLiteral("***")
+		if invalid != "" {
+			samples = append(samples, InvalidSampleView{FieldValue: invalid, Code: valueObject.Name + ".Pattern", Message: valueObject.Name + " has an invalid format.", TestName: "Pattern"})
 		}
-		samples = append(samples, InvalidSampleView{FieldValue: invalid, Code: valueObject.Name + ".Pattern", Message: valueObject.Name + " has an invalid format.", TestName: "Pattern"})
 	}
 	if valueObject.Minimum != "" {
 		if invalid := lowerBoundInvalid(valueObject.Type, valueObject.Minimum); invalid != "" {
@@ -43,6 +42,50 @@ func invalidSamplesFor(valueObject ValueObjectView) []InvalidSampleView {
 		samples = append(samples, InvalidSampleView{FieldValue: "default", Code: valueObject.Name + ".NotDefault", Message: valueObject.Name + " must not be the default value.", TestName: "NotDefault"})
 	}
 	return samples
+}
+
+func patternInvalidSampleFor(rules spec.ValidationRules) string {
+	if rules.Pattern == nil {
+		return ""
+	}
+	if rules.InvalidExample != nil && stringRulesBeforePatternAcceptForGenerator(*rules.InvalidExample, rules) && stringPatternRejectsForGenerator(*rules.InvalidExample, *rules.Pattern) {
+		return *rules.InvalidExample
+	}
+
+	minLength := 1
+	if rules.MinLength != nil && *rules.MinLength > minLength {
+		minLength = *rules.MinLength
+	}
+	maxLength := minLength
+	if rules.MaxLength != nil && *rules.MaxLength < maxLength {
+		return ""
+	}
+
+	for _, seed := range []string{"!", "*", "_", "#", " ", "0"} {
+		candidate := strings.Repeat(seed, maxLength)
+		if stringRulesBeforePatternAcceptForGenerator(candidate, rules) && stringPatternRejectsForGenerator(candidate, *rules.Pattern) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func stringRulesBeforePatternAcceptForGenerator(value string, rules spec.ValidationRules) bool {
+	if rules.Required != nil && *rules.Required && strings.TrimSpace(value) == "" {
+		return false
+	}
+	if rules.MinLength != nil && len(value) < *rules.MinLength {
+		return false
+	}
+	if rules.MaxLength != nil && len(value) > *rules.MaxLength {
+		return false
+	}
+	return true
+}
+
+func stringPatternRejectsForGenerator(value, pattern string) bool {
+	re, err := regexp.Compile(pattern)
+	return err == nil && !re.MatchString(value)
 }
 
 func stringRulesAcceptForGenerator(value string, rules spec.ValidationRules) bool {

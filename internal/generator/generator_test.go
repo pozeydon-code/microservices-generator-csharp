@@ -646,6 +646,36 @@ func TestGenerateEscapedStringValueObjectsAndLargeDoubleWitnesses(t *testing.T) 
 	assertNotContains(t, domainTests, "1E+308d - 1d")
 }
 
+func TestGenerateDerivesPatternInvalidSampleAfterEarlierStringRules(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := testConfig()
+	cfg.Services[0].ValueObjects = []spec.ValueObject{{
+		Name: "ShortPatternName",
+		Type: "string",
+		Validations: spec.ValidationRules{
+			Required:       boolPtr(true),
+			MinLength:      intPtr(3),
+			Pattern:        stringPtr("^[A-Za-z]+$"),
+			ValidExample:   stringPtr("Valid"),
+			InvalidExample: stringPtr("!!"),
+		},
+	}}
+	cfg.Services[0].Entities[0].Fields = []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "ShortPatternName"}}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate pattern invalid sample config: %v", err)
+	}
+	domainTests := string(generatedContent(t, files, "tests/ProductService/ProductService.Domain.Tests/ProductServiceDomainTests.cs"))
+
+	assertContains(t, domainTests, `Assert.Equal("ShortPatternName.Pattern", Assert.Single(ShortPatternName.Create("!!!").Errors).Code);`)
+	assertContains(t, domainTests, `var result = ShortPatternName.Create("!!!", "Field");`)
+	assertNotContains(t, domainTests, `Assert.Single(ShortPatternName.Create("!!").Errors).Code`)
+}
+
 func TestGeneratePreflightDoesNotTreatOptionalStringValueObjectsAsRequired(t *testing.T) {
 	gen, err := New()
 	if err != nil {

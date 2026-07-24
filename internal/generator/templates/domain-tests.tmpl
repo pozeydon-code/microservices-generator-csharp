@@ -85,7 +85,7 @@ public sealed class {{ .Name }}DomainTests
         Assert.Equal({{ .Maximum }}, result.Value!.Value);
     }
 
-{{ end }}{{ if .Pattern }}    [Fact]
+{{ end }}{{ if .PatternInvalidValue }}    [Fact]
     public void {{ .Name }}AcceptsValidPatternExampleAndRejectsInvalidPatternExample()
     {
         Assert.True({{ .Name }}.Create({{ .SampleValue }}).IsSuccess);

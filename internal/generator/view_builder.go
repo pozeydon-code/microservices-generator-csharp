@@ -246,8 +246,10 @@ func valueObjectViews(valueObjects []spec.ValueObject) []ValueObjectView {
 		if valueObject.Validations.Pattern != nil {
 			view.Pattern = *valueObject.Validations.Pattern
 			view.PatternLiteral = csharpStringLiteral(*valueObject.Validations.Pattern)
-			if valueObject.Validations.InvalidExample != nil {
-				view.PatternInvalidValue = csharpStringLiteral(*valueObject.Validations.InvalidExample)
+			if valueObject.Type == "string" {
+				if invalid := patternInvalidSampleFor(valueObject.Validations); invalid != "" {
+					view.PatternInvalidValue = csharpStringLiteral(invalid)
+				}
 			}
 		}
 		if valueObject.Validations.Minimum != nil {
