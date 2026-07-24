@@ -292,6 +292,8 @@ func TestWizardProjectStepUsesExistingEditorAndContinuesToServices(t *testing.T)
 
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
 	model = updated.(Model)
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -315,6 +317,8 @@ func TestWizardProjectSaveFailureKeepsEditorActive(t *testing.T) {
 	})
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 	updated, _ = model.Update(cmd())
@@ -334,6 +338,8 @@ func TestWizardProjectStaleRefreshLocksUntilRetry(t *testing.T) {
 	})
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 	updated, _ = model.Update(cmd())
@@ -351,6 +357,118 @@ func TestWizardProjectStaleRefreshLocksUntilRetry(t *testing.T) {
 	model = updated.(Model)
 	if model.status != statusReady || model.wizardScreen != wizardServices || model.postSaveRefreshFailed() {
 		t.Fatalf("expected retry to unlock and continue, got status=%v screen=%v stale=%v", model.status, model.wizardScreen, model.postSaveRefreshFailed())
+	}
+}
+
+func TestWizardProjectViewShowsTargetFrameworkAndSuggestions(t *testing.T) {
+	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil, []string{"net10.0", "net9.0", "net8.0"})
+	model.enterWizardProject()
+
+	view := stripANSI(model.View())
+	assertContains(t, view, "Target framework: net8.0")
+	assertContains(t, view, "Available target frameworks")
+	assertContains(t, view, "net8.0 (current)")
+	assertContains(t, view, "Edit solution name and description")
+	assertContains(t, view, "Continue to services")
+}
+
+func TestWizardProjectSuggestionChangesDraftWithoutSaving(t *testing.T) {
+	called := false
+	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, func(_ application.GenerateRequest, _ application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+		called = true
+		return application.UpdateSolutionSettingsResult{}, nil
+	}, []string{"net10.0", "net9.0", "net8.0"})
+	model.enterWizardProject()
+	model.wizardProjectSelection = 0
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || called || model.status != statusReady {
+		t.Fatalf("expected suggestion selection to stay local, got status=%v called=%v cmd=%v", model.status, called, cmd)
+	}
+	if model.edit.targetFramework.string() != "net10.0" || model.plan.Config.TargetFramework != "net8.0" {
+		t.Fatalf("expected draft target framework without plan save, draft=%q plan=%q", model.edit.targetFramework.string(), model.plan.Config.TargetFramework)
+	}
+	model.wizardProjectSelection = model.wizardProjectEditOption()
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.status != statusEditing || model.edit.targetFramework.string() != "net10.0" {
+		t.Fatalf("expected existing editor to preserve draft framework, got status=%v target=%q cmd=%v", model.status, model.edit.targetFramework.string(), cmd)
+	}
+}
+
+func TestWizardProjectContinueSavesSelectedTargetFramework(t *testing.T) {
+	plan := wizardPlan()
+	plan.Config.TargetFramework = "net10.0"
+	var captured application.SolutionSettings
+	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, func(_ application.GenerateRequest, settings application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+		captured = settings
+		return application.UpdateSolutionSettingsResult{Saved: true, Plan: plan}, nil
+	}, []string{"net10.0", "net9.0", "net8.0"})
+	model.enterWizardProject()
+	model.wizardProjectSelection = 0
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	model.wizardProjectSelection = model.wizardProjectContinueOption()
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd == nil || model.status != statusSaving {
+		t.Fatalf("expected explicit project continue save, got status=%v cmd=%v", model.status, cmd)
+	}
+	updated, cmd = model.Update(cmd())
+	model = updated.(Model)
+	if cmd != nil || model.wizardScreen != wizardServices || captured.TargetFramework != "net10.0" {
+		t.Fatalf("expected selected framework save and Services route, got screen=%v captured=%#v cmd=%v", model.wizardScreen, captured, cmd)
+	}
+}
+
+func TestWizardProjectPreservesCurrentFrameworkOutsideSuggestions(t *testing.T) {
+	plan := wizardPlan()
+	plan.Config.TargetFramework = "net7.0"
+	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil, []string{"net10.0", "net9.0"})
+	model.enterWizardProject()
+
+	view := stripANSI(model.View())
+	assertContains(t, view, "Target framework: net7.0")
+	assertContains(t, view, "Current framework: net7.0")
+	assertNotContains(t, view, "net7.0 (current)")
+	if model.wizardProjectSelection != model.wizardProjectEditOption() {
+		t.Fatalf("expected selection to avoid replacing custom current framework, got %d", model.wizardProjectSelection)
+	}
+}
+
+func TestWizardProjectUnsupportedCurrentFrameworkKeepsValidationErrorActionable(t *testing.T) {
+	plan := wizardPlan()
+	plan.Config.TargetFramework = "net0.0"
+	validationErr := errors.New("generation.targetFramework must be netN.0")
+	model := NewModel(plan, application.GenerateRequest{}, nil, nil, func(_ application.GenerateRequest, settings application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+		if settings.TargetFramework != "net0.0" {
+			t.Fatalf("expected unsupported current framework to reach existing validation, got %q", settings.TargetFramework)
+		}
+		return application.UpdateSolutionSettingsResult{}, validationErr
+	}, []string{"net10.0", "net9.0"})
+	model.enterWizardProject()
+	model.wizardProjectSelection = model.wizardProjectContinueOption()
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+
+	if model.status != statusEditing || model.err != validationErr || model.edit.targetFramework.string() != "net0.0" {
+		t.Fatalf("expected validation error to keep project editor active, got status=%v err=%v target=%q", model.status, model.err, model.edit.targetFramework.string())
+	}
+	assertContains(t, model.View(), "generation.targetFramework must be netN.0")
+}
+
+func TestWizardProjectEscReturnsToMenu(t *testing.T) {
+	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil, []string{"net10.0", "net9.0", "net8.0"})
+	model.enterWizardProject()
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+
+	if cmd != nil || model.mode != modeWizard || model.wizardScreen != wizardMenu {
+		t.Fatalf("expected Project esc to return to menu, got mode=%v screen=%v cmd=%v", model.mode, model.wizardScreen, cmd)
 	}
 }
 
@@ -643,8 +761,10 @@ func TestWizardGuidedViewsUseSingleColumnPromptListAndDetail(t *testing.T) {
 	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
 	model.enterWizardProject()
 	view := stripANSI(model.View())
-	assertContains(t, view, "What should we call your solution?")
+	assertContains(t, view, "Set up your project")
 	assertContains(t, view, "Solution name:")
+	assertContains(t, view, "Target framework: net8.0")
+	assertContains(t, view, "Continue to services")
 	assertNotContains(t, view, "Navigation")
 
 	model = NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)

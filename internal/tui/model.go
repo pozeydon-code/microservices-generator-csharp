@@ -303,6 +303,7 @@ type Model struct {
 	wizardScreen                wizardScreen
 	wizardBackScreen            wizardScreen
 	wizardSelection             int
+	wizardProjectSelection      int
 	wizardServiceSelection      int
 	wizardEntitySelection       int
 	wizardFieldSelection        int
@@ -974,6 +975,17 @@ func (m Model) updateWizard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.wizardScreen == wizardProject {
+		if msg.String() == "up" || msg.String() == "k" {
+			m.wizardProjectSelection = clampInt(m.wizardProjectSelection-1, 0, m.wizardProjectOptionCount()-1)
+			return m, nil
+		}
+		if msg.String() == "down" || msg.String() == "j" {
+			m.wizardProjectSelection = clampInt(m.wizardProjectSelection+1, 0, m.wizardProjectOptionCount()-1)
+			return m, nil
+		}
+		if key == "enter" {
+			return m.selectWizardProjectOption()
+		}
 		switch key {
 		case "esc":
 			m.enterWizardMenu()
@@ -1138,6 +1150,27 @@ func (m Model) selectWizardOption() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) selectWizardProjectOption() (tea.Model, tea.Cmd) {
+	switch {
+	case m.wizardProjectSelection < len(m.targetFrameworkSuggestions):
+		m.edit.targetFramework = newTextField(m.targetFrameworkSuggestions[m.wizardProjectSelection])
+		m.message = fmt.Sprintf("Draft target framework set to %s. Continue to services to save.", m.edit.targetFramework.string())
+	case m.wizardProjectSelection == m.wizardProjectEditOption():
+		name, description, targetFramework := m.edit.name, m.edit.description, m.edit.targetFramework
+		m.startEditing()
+		m.edit.name = name
+		m.edit.description = description
+		m.edit.targetFramework = targetFramework
+	case m.wizardProjectSelection == m.wizardProjectContinueOption():
+		m.status = statusSaving
+		m.err = nil
+		m.errContext = ""
+		m.message = ""
+		return m, m.saveSettingsCmd()
+	}
+	return m, nil
+}
+
 func (m Model) selectWizardService() (tea.Model, tea.Cmd) {
 	serviceCount := len(m.serviceSummaries())
 	switch {
@@ -1257,7 +1290,13 @@ func (m *Model) enterWizardProject() {
 	m.wizardScreen = wizardProject
 	m.wizardBackScreen = wizardMenu
 	m.helpOpen = false
-	m.startEditing()
+	m.initializeProjectDraft()
+	m.wizardProjectSelection = m.wizardProjectCurrentSelection()
+	if !m.postSaveRefreshFailed() {
+		m.err = nil
+		m.errContext = ""
+		m.message = ""
+	}
 }
 
 func (m *Model) enterWizardServices() {
@@ -1344,6 +1383,28 @@ func (m Model) wizardServiceAdvancedOption() int {
 
 func (m Model) wizardServiceOptionCount() int {
 	return m.wizardServiceAdvancedOption() + 1
+}
+
+func (m Model) wizardProjectEditOption() int {
+	return len(m.targetFrameworkSuggestions)
+}
+
+func (m Model) wizardProjectContinueOption() int {
+	return m.wizardProjectEditOption() + 1
+}
+
+func (m Model) wizardProjectOptionCount() int {
+	return m.wizardProjectContinueOption() + 1
+}
+
+func (m Model) wizardProjectCurrentSelection() int {
+	current := m.edit.targetFramework.string()
+	for index, suggestion := range m.targetFrameworkSuggestions {
+		if suggestion == current {
+			return index
+		}
+	}
+	return m.wizardProjectEditOption()
 }
 
 func (m Model) wizardEntityAddOption() int {
@@ -1608,12 +1669,16 @@ func (m *Model) startEditing() {
 	m.err = nil
 	m.errContext = ""
 	m.message = ""
+	m.initializeProjectDraft()
+	m.edit.returnStatus = returnStatus
+}
+
+func (m *Model) initializeProjectDraft() {
 	m.edit = editState{
 		mode:            editModeProject,
 		name:            newTextField(m.plan.Config.SolutionName),
 		description:     newTextField(m.plan.Config.SolutionDescription),
 		targetFramework: newTextField(m.plan.Config.TargetFramework),
-		returnStatus:    returnStatus,
 	}
 	if m.edit.targetFramework.string() == "" {
 		m.edit.targetFramework = newTextField("net8.0")
@@ -3080,26 +3145,48 @@ func (m Model) wizardProjectView() string {
 	var builder strings.Builder
 	fmt.Fprintln(&builder, dimStyle.Render("Breadcrumb: Wizard / Project > Services  |  Progress: 1/6"))
 	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, m.wizardPromptStyle().Render("What should we call your solution?"))
+	fmt.Fprintln(&builder, m.wizardPromptStyle().Render("Set up your project"))
 	fmt.Fprintln(&builder)
-	if m.status == statusSaving {
-		fmt.Fprintln(&builder, busyStyle.Render("Saving project..."))
+	if m.status == statusEditing || m.status == statusSaving {
+		fmt.Fprintln(&builder, sectionTitleStyle.Render("Edit solution settings"))
+		m.renderSettingsEditor(&builder)
+		fmt.Fprintln(&builder)
+		fmt.Fprintln(&builder, m.wizardFooter("tab/down or shift+tab/up move fields | enter save and continue | esc back to menu"))
+		return strings.TrimRight(builder.String(), "\n")
+	}
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Solution name:"), truncateWizardText(m.edit.name.string(), m.wizardContentWidth()-16))
+	fmt.Fprintf(&builder, "%s %s\n", sectionTitleStyle.Render("Target framework:"), m.edit.targetFramework.string())
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Available target frameworks"))
+	if len(m.targetFrameworkSuggestions) == 0 {
+		fmt.Fprintln(&builder, dimStyle.Render("No framework suggestions available."))
 	} else {
-		name := m.edit.name.string()
-		if m.status == statusEditing {
-			name += "_"
-		}
-		fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Solution name:"), truncateWizardText(name, m.wizardContentWidth()-16))
-		if m.err != nil {
-			fmt.Fprintf(&builder, "%s %v\n", dangerStyle.Render("Save failed:"), m.err)
-		}
-		if m.postSaveRefreshFailed() {
-			fmt.Fprintln(&builder, dangerStyle.Render("The saved project has a stale plan."))
-			fmt.Fprintln(&builder, "Press r to retry the refresh before continuing.")
+		for option := 0; option < len(m.targetFrameworkSuggestions); option++ {
+			fmt.Fprintln(&builder, m.wizardProjectOption(option))
 		}
 	}
+	if m.wizardProjectCurrentSelection() == m.wizardProjectEditOption() {
+		fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Current framework:"), m.edit.targetFramework.string())
+	}
 	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, m.wizardFooter("type to edit | enter save and continue | esc back | r retry refresh"))
+	fmt.Fprintln(&builder, m.wizardProjectOption(m.wizardProjectEditOption()))
+	fmt.Fprintln(&builder, m.wizardProjectOption(m.wizardProjectContinueOption()))
+	if m.err != nil {
+		fmt.Fprintf(&builder, "%s %v\n", dangerStyle.Render("Save failed:"), m.err)
+	}
+	if m.postSaveRefreshFailed() {
+		fmt.Fprintln(&builder, dangerStyle.Render("The saved project has a stale plan."))
+		fmt.Fprintln(&builder, "Press r to retry the refresh before continuing.")
+	}
+	if m.message != "" {
+		fmt.Fprintln(&builder, successStyle.Render(m.message))
+	}
+	fmt.Fprintln(&builder)
+	footer := "up/down or j/k select | enter choose/open/save | esc back to menu"
+	if m.postSaveRefreshFailed() {
+		footer += " | r retry refresh"
+	}
+	fmt.Fprintln(&builder, m.wizardFooter(footer))
 	return strings.TrimRight(builder.String(), "\n")
 }
 
@@ -3292,6 +3379,22 @@ func (m Model) wizardServiceOption(option int) string {
 		label = "Advanced configuration"
 	}
 	return m.wizardOptionAt(option, m.wizardServiceSelection, label)
+}
+
+func (m Model) wizardProjectOption(option int) string {
+	label := ""
+	switch {
+	case option < len(m.targetFrameworkSuggestions):
+		label = m.targetFrameworkSuggestions[option]
+		if m.edit.targetFramework.string() == label {
+			label += " (current)"
+		}
+	case option == m.wizardProjectEditOption():
+		label = "Edit solution name and description"
+	default:
+		label = "Continue to services"
+	}
+	return m.wizardOptionAt(option, m.wizardProjectSelection, label)
 }
 
 func (m Model) wizardEntityOption(option int) string {
