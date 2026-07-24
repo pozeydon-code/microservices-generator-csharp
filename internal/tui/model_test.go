@@ -230,14 +230,16 @@ func TestModelDefaultsToWizardMenu(t *testing.T) {
 
 func TestWizardSelectionAndRouting(t *testing.T) {
 	tests := []struct {
-		name       string
-		moves      int
-		wantScreen workspaceScreen
+		name          string
+		moves         int
+		wantMode      tuiMode
+		wantWizard    wizardScreen
+		wantWorkspace workspaceScreen
 	}{
-		{name: "project", moves: wizardConfigureProject, wantScreen: screenProject},
-		{name: "services", moves: wizardConfigureServices, wantScreen: screenServices},
-		{name: "preview", moves: wizardReviewChanges, wantScreen: screenPreview},
-		{name: "generate", moves: wizardGenerateSolution, wantScreen: screenGenerate},
+		{name: "project", moves: wizardConfigureProject, wantMode: modeWizard, wantWizard: wizardProject},
+		{name: "services", moves: wizardConfigureServices, wantMode: modeWizard, wantWizard: wizardServices},
+		{name: "preview", moves: wizardReviewChanges, wantMode: modeWorkspace, wantWorkspace: screenPreview},
+		{name: "generate", moves: wizardGenerateSolution, wantMode: modeWorkspace, wantWorkspace: screenGenerate},
 	}
 
 	for _, tt := range tests {
@@ -252,8 +254,8 @@ func TestWizardSelectionAndRouting(t *testing.T) {
 			}
 			updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 			model = updated.(Model)
-			if cmd != nil || model.mode != modeWorkspace || model.screen != tt.wantScreen || !model.guidedWorkspace {
-				t.Fatalf("expected guided %s route, got mode=%v screen=%v guided=%v cmd=%v", tt.name, model.mode, model.screen, model.guidedWorkspace, cmd)
+			if cmd != nil || model.mode != tt.wantMode || model.wizardScreen != tt.wantWizard || (tt.wantMode == modeWorkspace && model.screen != tt.wantWorkspace) {
+				t.Fatalf("expected %s route, got mode=%v wizard=%v screen=%v cmd=%v", tt.name, model.mode, model.wizardScreen, model.screen, cmd)
 			}
 			assertNotContains(t, stripANSI(model.View()), "Navigation")
 		})
@@ -280,6 +282,143 @@ func TestWizardEscReturnsToMenuAndQuitKeysExit(t *testing.T) {
 	}
 }
 
+func TestWizardProjectStepUsesExistingEditorAndContinuesToServices(t *testing.T) {
+	plan := wizardPlan()
+	var captured application.SolutionSettings
+	model := NewModel(plan, application.GenerateRequest{}, nil, nil, func(_ application.GenerateRequest, settings application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+		captured = settings
+		return application.UpdateSolutionSettingsResult{Saved: true, Plan: plan}, nil
+	})
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd == nil || model.status != statusSaving {
+		t.Fatalf("expected project save command, got status=%v cmd=%v", model.status, cmd)
+	}
+	updated, cmd = model.Update(cmd())
+	model = updated.(Model)
+	if cmd != nil || model.mode != modeWizard || model.wizardScreen != wizardServices || model.status != statusReady {
+		t.Fatalf("expected successful project save to continue to services, got mode=%v screen=%v status=%v cmd=%v", model.mode, model.wizardScreen, model.status, cmd)
+	}
+	if captured.SolutionName != "CommercePlatformX" {
+		t.Fatalf("expected existing project callback to receive edited name, got %#v", captured)
+	}
+}
+
+func TestWizardProjectSaveFailureKeepsEditorActive(t *testing.T) {
+	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, func(_ application.GenerateRequest, _ application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+		return application.UpdateSolutionSettingsResult{}, errors.New("config write failed")
+	})
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+	if model.status != statusEditing || model.wizardScreen != wizardProject || model.err == nil {
+		t.Fatalf("expected failed save to keep project editor, got status=%v screen=%v err=%v", model.status, model.wizardScreen, model.err)
+	}
+	assertContains(t, model.View(), "Save failed: config write failed")
+}
+
+func TestWizardProjectStaleRefreshLocksUntilRetry(t *testing.T) {
+	plan := wizardPlan()
+	model := NewModel(plan, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
+		return plan, nil
+	}, nil, func(_ application.GenerateRequest, _ application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+		return application.UpdateSolutionSettingsResult{Saved: true, Config: plan.Config, PlanError: errors.New("generation plan failed")}, nil
+	})
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+	if !model.postSaveRefreshFailed() || model.wizardScreen != wizardProject {
+		t.Fatalf("expected stale project plan lock, got status=%v screen=%v context=%q", model.status, model.wizardScreen, model.errContext)
+	}
+	assertContains(t, model.View(), "Press r to retry the refresh before continuing.")
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	model = updated.(Model)
+	if cmd == nil || model.status != statusRefreshing {
+		t.Fatalf("expected refresh retry command, got status=%v cmd=%v", model.status, cmd)
+	}
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+	if model.status != statusReady || model.wizardScreen != wizardServices || model.postSaveRefreshFailed() {
+		t.Fatalf("expected retry to unlock and continue, got status=%v screen=%v stale=%v", model.status, model.wizardScreen, model.postSaveRefreshFailed())
+	}
+}
+
+func TestWizardServicesSelectsServiceAndPreparesContext(t *testing.T) {
+	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
+	model.enterWizardServices()
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.selectedService != 1 || model.wizardScreen != wizardServices {
+		t.Fatalf("expected selected service context, got service=%d screen=%v cmd=%v", model.selectedService, model.wizardScreen, cmd)
+	}
+	assertContains(t, model.View(), "Selected OrderService")
+}
+
+func TestWizardServicesAddServiceUsesExistingEditorCallback(t *testing.T) {
+	plan := wizardPlan()
+	var captured application.ServiceSettings
+	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+	model.updateServices = func(_ application.GenerateRequest, settings application.ServiceSettings) (application.UpdateServiceSettingsResult, error) {
+		captured = settings
+		return application.UpdateServiceSettingsResult{Saved: true, Plan: plan}, nil
+	}
+	model.enterWizardServices()
+	for range model.wizardServiceAddOption() {
+		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model = updated.(Model)
+	}
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.status != statusEditing || model.edit.mode != editModeServices || !model.servicesEdit.renaming {
+		t.Fatalf("expected add service editor, got status=%v mode=%v renaming=%v cmd=%v", model.status, model.edit.mode, model.servicesEdit.renaming, cmd)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd == nil || model.status != statusSaving {
+		t.Fatalf("expected service save command, got status=%v cmd=%v", model.status, cmd)
+	}
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+	if model.status != statusReady || model.wizardScreen != wizardServices || len(captured.Services) != 3 {
+		t.Fatalf("expected service callback and return to services, got status=%v screen=%v settings=%#v", model.status, model.wizardScreen, captured)
+	}
+}
+
+func TestWizardGuidedViewsUseSingleColumnPromptListAndDetail(t *testing.T) {
+	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
+	model.enterWizardProject()
+	view := stripANSI(model.View())
+	assertContains(t, view, "What should we call your solution?")
+	assertContains(t, view, "Solution name:")
+	assertNotContains(t, view, "Navigation")
+
+	model = NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
+	model.enterWizardServices()
+	view = stripANSI(model.View())
+	assertContains(t, view, "Which service should we configure?")
+	assertContains(t, view, "Add service")
+	assertContains(t, view, "Edit services")
+	assertContains(t, view, "Advanced configuration")
+	assertContains(t, view, "Selected service")
+	assertContains(t, view, "Entities: 1 | Fields: 2 | Value objects: 1")
+	assertNotContains(t, view, "Navigation")
+}
+
 func TestWizardAdvancedWorkspaceHasBackPath(t *testing.T) {
 	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
 	for range wizardAdvancedWorkspace {
@@ -302,15 +441,14 @@ func TestWizardAdvancedWorkspaceHasBackPath(t *testing.T) {
 }
 
 func TestGuidedServicesPreserveSelectedContext(t *testing.T) {
-	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	model.enterWizardWorkspace(screenServices)
 	model.serviceContext = serviceResourceValueObjects
 	model.selectedService = 2
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
 	model = updated.(Model)
-	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if cmd != nil || model.screen != screenServices || model.serviceContext != serviceResourceValueObjects || model.selectedService != 2 {
-		t.Fatalf("expected Services context to be preserved, got screen=%v context=%v service=%d cmd=%v", model.screen, model.serviceContext, model.selectedService, cmd)
+	if model.screen != screenServices || model.serviceContext != serviceResourceValueObjects || model.selectedService != 2 {
+		t.Fatalf("expected Services context to be preserved, got screen=%v context=%v service=%d", model.screen, model.serviceContext, model.selectedService)
 	}
 }
 
@@ -2955,6 +3093,29 @@ func plannedFilesPlan(count int) application.GenerationPlan {
 		files[index] = application.PlannedFile{Path: fmt.Sprintf("file-%02d.txt", index+1), Action: "create"}
 	}
 	return application.GenerationPlan{FileCount: count, Files: files}
+}
+
+func wizardPlan() application.GenerationPlan {
+	return application.GenerationPlan{
+		Config: application.ConfigSummary{
+			SolutionName:        "CommercePlatform",
+			SolutionDescription: "Product management.",
+			TargetFramework:     "net8.0",
+			ServiceCount:        2,
+			ServiceNames:        []string{"ProductService", "OrderService"},
+			Services: []application.ServiceSummary{
+				{
+					Name:         "ProductService",
+					Entities:     []application.EntitySummary{{Name: "Product", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}}},
+					ValueObjects: []application.ValueObjectSummary{{Name: "ProductName", Type: "string"}},
+				},
+				{
+					Name:     "OrderService",
+					Entities: []application.EntitySummary{{Name: "Order", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}}}},
+				},
+			},
+		},
+	}
 }
 
 func serviceEditNames(services []textField) []string {

@@ -117,6 +117,8 @@ type wizardScreen int
 
 const (
 	wizardMenu wizardScreen = iota
+	wizardProject
+	wizardServices
 	wizardResult
 )
 
@@ -289,7 +291,9 @@ type Model struct {
 	returnToWizard             bool
 	guidedWorkspace            bool
 	wizardScreen               wizardScreen
+	wizardBackScreen           wizardScreen
 	wizardSelection            int
+	wizardServiceSelection     int
 	wizardResultSelection      int
 }
 
@@ -668,7 +672,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = statusFailed
 			m.err = msg.err
 			m.errContext = errContext
-			m.openScreen(screenGenerate)
+			if m.mode != modeWizard {
+				m.openScreen(screenGenerate)
+			}
 			return m, nil
 		}
 		wasResult := m.activeScreen() == screenResult
@@ -683,6 +689,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.clampSelectedService()
 		m.clampFileCursor()
+		if m.mode == modeWizard && m.wizardScreen == wizardProject {
+			m.enterWizardServices()
+			m.wizardBackScreen = wizardProject
+		} else if m.mode == modeWizard && m.wizardScreen == wizardServices {
+			m.wizardServiceSelection = clampInt(m.wizardServiceSelection, 0, m.wizardServiceOptionCount()-1)
+		}
 		return m, nil
 
 	case generationFinishedMsg:
@@ -742,7 +754,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.message = "Settings saved. Plan refreshed. Use Services to edit services, entities, fields, and value objects."
 		m.clampSelectedService()
 		m.clampFileCursor()
-		if m.returnToWizard && m.guidedWorkspace {
+		if m.mode == modeWizard && m.wizardScreen == wizardProject {
+			m.enterWizardServices()
+			m.wizardBackScreen = wizardProject
+		} else if m.returnToWizard && m.guidedWorkspace {
 			m.enterWizardMenu()
 		}
 		return m, nil
@@ -772,7 +787,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.message = "Services saved. Plan refreshed. Use the Entities and Value Objects routes for resource editing."
 		m.clampSelectedService()
 		m.clampFileCursor()
-		if m.returnToWizard && m.guidedWorkspace {
+		if m.mode == modeWizard && m.wizardScreen == wizardServices {
+			m.wizardServiceSelection = clampInt(m.wizardServiceSelection, 0, m.wizardServiceOptionCount()-1)
+		} else if m.returnToWizard && m.guidedWorkspace {
 			m.enterWizardMenu()
 		}
 		return m, nil
@@ -869,6 +886,64 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) updateWizard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	if m.postSaveRefreshFailed() {
+		switch key {
+		case "r":
+			m.status = statusRefreshing
+			m.err = nil
+			m.message = ""
+			return m, m.planCmd()
+		case "esc":
+			if m.wizardScreen == wizardServices && m.wizardBackScreen == wizardProject {
+				m.enterWizardProject()
+				return m, nil
+			}
+			m.enterWizardMenu()
+			return m, nil
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		default:
+			return m, nil
+		}
+	}
+	if m.status == statusSaving {
+		return m, nil
+	}
+	if m.status == statusEditing {
+		if m.edit.mode == editModeServices {
+			return m.updateServicesEdit(msg)
+		}
+		return m.updateEdit(msg)
+	}
+
+	if m.wizardScreen == wizardProject {
+		switch key {
+		case "esc":
+			m.enterWizardMenu()
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		}
+		return m, nil
+	}
+	if m.wizardScreen == wizardServices {
+		switch key {
+		case "up", "k":
+			m.wizardServiceSelection = clampInt(m.wizardServiceSelection-1, 0, m.wizardServiceOptionCount()-1)
+		case "down", "j":
+			m.wizardServiceSelection = clampInt(m.wizardServiceSelection+1, 0, m.wizardServiceOptionCount()-1)
+		case "enter":
+			return m.selectWizardService()
+		case "esc":
+			if m.wizardBackScreen == wizardProject {
+				m.enterWizardProject()
+			} else {
+				m.enterWizardMenu()
+			}
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		}
+		return m, nil
+	}
 	if m.wizardScreen == wizardResult {
 		switch key {
 		case "up", "k":
@@ -905,10 +980,9 @@ func (m Model) updateWizard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) selectWizardOption() (tea.Model, tea.Cmd) {
 	switch m.wizardSelection {
 	case wizardConfigureProject:
-		m.enterWizardWorkspace(screenProject)
-		m.startEditing()
+		m.enterWizardProject()
 	case wizardConfigureServices:
-		m.enterWizardServicesWorkspace()
+		m.enterWizardServices()
 	case wizardReviewChanges:
 		m.enterWizardWorkspace(screenPreview)
 	case wizardGenerateSolution:
@@ -921,12 +995,71 @@ func (m Model) selectWizardOption() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) selectWizardService() (tea.Model, tea.Cmd) {
+	serviceCount := len(m.plan.Config.Services)
+	switch {
+	case m.wizardServiceSelection < serviceCount:
+		m.selectedService = m.wizardServiceSelection
+		m.clampSelectedService()
+		m.message = fmt.Sprintf("Selected %s. Entity and field configuration will continue here.", m.selectedServiceSummary().Name)
+	case m.wizardServiceSelection == m.wizardServiceAddOption():
+		m.startServicesEditing()
+		m.servicesEdit.services = append(m.servicesEdit.services, newTextField(m.nextServicePlaceholder()))
+		m.servicesEdit.original = append(m.servicesEdit.original, "")
+		m.servicesEdit.selected = len(m.servicesEdit.services) - 1
+		m.servicesEdit.renaming = true
+	case m.wizardServiceSelection == m.wizardServiceEditOption():
+		m.startServicesEditing()
+	case m.wizardServiceSelection == m.wizardServiceAdvancedOption():
+		m.enterAdvancedWorkspace()
+		m.openScreen(screenServices)
+	}
+	return m, nil
+}
+
 func (m *Model) enterWizardMenu() {
 	m.mode = modeWizard
 	m.returnToWizard = false
 	m.guidedWorkspace = false
 	m.wizardScreen = wizardMenu
+	m.wizardBackScreen = wizardMenu
 	m.helpOpen = false
+}
+
+func (m *Model) enterWizardProject() {
+	m.mode = modeWizard
+	m.returnToWizard = false
+	m.guidedWorkspace = false
+	m.wizardScreen = wizardProject
+	m.wizardBackScreen = wizardMenu
+	m.helpOpen = false
+	m.startEditing()
+}
+
+func (m *Model) enterWizardServices() {
+	m.mode = modeWizard
+	m.returnToWizard = false
+	m.guidedWorkspace = false
+	m.wizardScreen = wizardServices
+	m.wizardBackScreen = wizardMenu
+	m.wizardServiceSelection = clampInt(m.selectedService, 0, m.wizardServiceOptionCount()-1)
+	m.helpOpen = false
+}
+
+func (m Model) wizardServiceAddOption() int {
+	return len(m.plan.Config.Services)
+}
+
+func (m Model) wizardServiceEditOption() int {
+	return m.wizardServiceAddOption() + 1
+}
+
+func (m Model) wizardServiceAdvancedOption() int {
+	return m.wizardServiceAddOption() + 2
+}
+
+func (m Model) wizardServiceOptionCount() int {
+	return m.wizardServiceAdvancedOption() + 1
 }
 
 func (m *Model) enterWizardWorkspace(screen workspaceScreen) {
@@ -2039,7 +2172,9 @@ func (m Model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = m.edit.returnStatus
 		m.err = nil
 		m.errContext = ""
-		if m.returnToWizard && m.guidedWorkspace {
+		if m.mode == modeWizard && m.wizardScreen == wizardProject {
+			m.enterWizardMenu()
+		} else if m.returnToWizard && m.guidedWorkspace {
 			m.enterWizardMenu()
 		} else {
 			m.openScreen(screenProject)
@@ -2532,6 +2667,12 @@ func (m Model) wizardView() string {
 		fmt.Fprintln(&builder, dimStyle.Render("Footer: up/down or j/k move | enter select | esc menu | q quit"))
 		return strings.TrimRight(builder.String(), "\n")
 	}
+	if m.wizardScreen == wizardProject {
+		return m.wizardProjectView()
+	}
+	if m.wizardScreen == wizardServices {
+		return m.wizardServicesView()
+	}
 
 	fmt.Fprintln(&builder, dimStyle.Render("Breadcrumb: Wizard / Menu  |  Progress: 1/1"))
 	fmt.Fprintln(&builder)
@@ -2547,6 +2688,145 @@ func (m Model) wizardView() string {
 	fmt.Fprintln(&builder)
 	fmt.Fprintln(&builder, dimStyle.Render("Footer: up/down or j/k move | enter select | q quit"))
 	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) wizardProjectView() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, dimStyle.Render("Breadcrumb: Wizard / Project > Services  |  Progress: 1/2"))
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, m.wizardPromptStyle().Render("What should we call your solution?"))
+	fmt.Fprintln(&builder)
+	if m.status == statusSaving {
+		fmt.Fprintln(&builder, busyStyle.Render("Saving project..."))
+	} else {
+		name := m.edit.name.string()
+		if m.status == statusEditing {
+			name += "_"
+		}
+		fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Solution name:"), truncateWizardText(name, m.wizardContentWidth()-16))
+		if m.err != nil {
+			fmt.Fprintf(&builder, "%s %v\n", dangerStyle.Render("Save failed:"), m.err)
+		}
+		if m.postSaveRefreshFailed() {
+			fmt.Fprintln(&builder, dangerStyle.Render("The saved project has a stale plan."))
+			fmt.Fprintln(&builder, "Press r to retry the refresh before continuing.")
+		}
+	}
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, m.wizardFooter("type to edit | enter save and continue | esc back | r retry refresh"))
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) wizardServicesView() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, dimStyle.Render("Breadcrumb: Wizard / Project / Services  |  Progress: 2/2"))
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, m.wizardPromptStyle().Render("Which service should we configure?"))
+	fmt.Fprintln(&builder)
+	if m.status == statusEditing || m.status == statusSaving {
+		fmt.Fprintln(&builder, sectionTitleStyle.Render("Edit services"))
+		m.renderServicesEditor(&builder)
+		fmt.Fprintln(&builder)
+		fmt.Fprintln(&builder, m.wizardFooter("up/down or j/k select | enter confirm/save | esc cancel"))
+		return strings.TrimRight(builder.String(), "\n")
+	}
+	for option := 0; option < m.wizardServiceOptionCount(); option++ {
+		fmt.Fprintln(&builder, m.wizardServiceOption(option))
+	}
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, m.wizardServiceDetail())
+	if m.err != nil {
+		fmt.Fprintf(&builder, "%s %v\n", dangerStyle.Render("Operation failed:"), m.err)
+	}
+	if m.postSaveRefreshFailed() {
+		fmt.Fprintln(&builder, dangerStyle.Render("The saved services have a stale plan."))
+		fmt.Fprintln(&builder, "Press r to retry the refresh before continuing.")
+	}
+	if m.message != "" {
+		fmt.Fprintln(&builder, successStyle.Render(m.message))
+	}
+	fmt.Fprintln(&builder)
+	footer := "up/down or j/k select | enter open | esc back"
+	if m.postSaveRefreshFailed() {
+		footer += " | r retry refresh"
+	}
+	fmt.Fprintln(&builder, m.wizardFooter(footer))
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) wizardServiceOption(option int) string {
+	label := ""
+	switch {
+	case option < len(m.plan.Config.Services):
+		label = truncateWizardText(m.plan.Config.Services[option].Name, m.wizardContentWidth()-4)
+	case option == m.wizardServiceAddOption():
+		label = "Add service"
+	case option == m.wizardServiceEditOption():
+		label = "Edit services"
+	default:
+		label = "Advanced configuration"
+	}
+	return m.wizardOptionAt(option, m.wizardServiceSelection, label)
+}
+
+func (m Model) wizardOptionAt(option, selected int, label string) string {
+	if option == selected {
+		return m.wizardSelectedStyle().Render("> " + label)
+	}
+	return m.wizardTextStyle().Render("  " + label)
+}
+
+func (m Model) wizardServiceDetail() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Selected service"))
+	if m.wizardServiceSelection >= len(m.plan.Config.Services) {
+		switch m.wizardServiceSelection {
+		case m.wizardServiceAddOption():
+			fmt.Fprintln(&builder, "Create a service with a default Id Guid entity.")
+		case m.wizardServiceEditOption():
+			fmt.Fprintln(&builder, "Rename or remove services using the existing editor.")
+		default:
+			fmt.Fprintln(&builder, "Open the full route workspace for entities, fields, and value objects.")
+		}
+		return strings.TrimRight(builder.String(), "\n")
+	}
+	service := m.plan.Config.Services[m.wizardServiceSelection]
+	fieldCount := 0
+	for _, entity := range service.Entities {
+		fieldCount += len(entity.Fields)
+	}
+	fmt.Fprintf(&builder, "%s\n", truncateWizardText(service.Name, m.wizardContentWidth()))
+	fmt.Fprintf(&builder, "Entities: %d | Fields: %d | Value objects: %d", len(service.Entities), fieldCount, len(service.ValueObjects))
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) wizardFooter(controls string) string {
+	return dimStyle.Render("Footer: " + controls)
+}
+
+func (m Model) wizardContentWidth() int {
+	width := m.windowWidth
+	if width <= 0 {
+		return 80
+	}
+	if width < 20 {
+		return 20
+	}
+	return width - 2
+}
+
+func truncateWizardText(value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= width {
+		return value
+	}
+	if width <= 3 {
+		return string(runes[:width])
+	}
+	return string(runes[:width-3]) + "..."
 }
 
 func (m Model) wizardOption(option int, label string) string {
