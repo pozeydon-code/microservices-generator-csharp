@@ -238,7 +238,7 @@ func TestWizardSelectionAndRouting(t *testing.T) {
 	}{
 		{name: "project", moves: wizardConfigureProject, wantMode: modeWizard, wantWizard: wizardProject},
 		{name: "services", moves: wizardConfigureServices, wantMode: modeWizard, wantWizard: wizardServices},
-		{name: "preview", moves: wizardReviewChanges, wantMode: modeWorkspace, wantWorkspace: screenPreview},
+		{name: "review", moves: wizardReviewChanges, wantMode: modeWizard, wantWizard: wizardReview},
 		{name: "generate", moves: wizardGenerateSolution, wantMode: modeWorkspace, wantWorkspace: screenGenerate},
 	}
 
@@ -525,8 +525,8 @@ func TestWizardFieldSaveSuccessUsesExistingCallback(t *testing.T) {
 	}
 	updated, _ = model.Update(cmd())
 	model = updated.(Model)
-	if model.status != statusReady || model.wizardScreen != wizardFields || captured.ServiceName != "ProductService" || captured.EntityName != "Product" {
-		t.Fatalf("expected field save to return to guided list, got status=%v screen=%v settings=%#v", model.status, model.wizardScreen, captured)
+	if model.status != statusReady || model.wizardScreen != wizardValueObjects || captured.ServiceName != "ProductService" || captured.EntityName != "Product" {
+		t.Fatalf("expected field save to continue to value objects, got status=%v screen=%v settings=%#v", model.status, model.wizardScreen, captured)
 	}
 }
 
@@ -714,6 +714,214 @@ func TestGuidedGenerationReturnsMinimalResultWizard(t *testing.T) {
 	assertContains(t, view, "2 files written to /tmp/generated")
 	assertContains(t, view, "Back to menu")
 	assertContains(t, view, "Advanced workspace")
+	assertNotContains(t, view, "Navigation")
+}
+
+func TestWizardFieldsContinueToValueObjectsAndEscBacksToFields(t *testing.T) {
+	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
+	model.enterWizardFields()
+	for range model.wizardFieldContinueOption() {
+		updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model = updated.(Model)
+		if cmd != nil {
+			t.Fatal("expected no command while selecting field continuation")
+		}
+	}
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.wizardScreen != wizardValueObjects || model.wizardValueObjectConfigured {
+		t.Fatalf("expected Fields completion to open optional value objects, got screen=%v configured=%v cmd=%v", model.wizardScreen, model.wizardValueObjectConfigured, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.wizardScreen != wizardFields {
+		t.Fatalf("expected value objects esc to return to Fields, got screen=%v cmd=%v", model.wizardScreen, cmd)
+	}
+}
+
+func TestWizardValueObjectsSkipConfigureAndReview(t *testing.T) {
+	t.Run("skip", func(t *testing.T) {
+		model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
+		model.enterWizardValueObjects()
+		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model = updated.(Model)
+		updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		model = updated.(Model)
+		if cmd != nil || model.wizardScreen != wizardReview {
+			t.Fatalf("expected skip to review, got screen=%v cmd=%v", model.wizardScreen, cmd)
+		}
+	})
+
+	t.Run("configure and edit", func(t *testing.T) {
+		plan := wizardPlan()
+		model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+		model.updateValueObjects = func(_ application.GenerateRequest, _ application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
+			return application.UpdateValueObjectSettingsResult{Saved: true, Plan: plan}, nil
+		}
+		model.enterWizardValueObjects()
+		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		model = updated.(Model)
+		if !model.wizardValueObjectConfigured || model.wizardValueObjectSelection != 0 {
+			t.Fatalf("expected configure selection to open value-object list, got configured=%v selection=%d", model.wizardValueObjectConfigured, model.wizardValueObjectSelection)
+		}
+		assertContains(t, model.View(), "ProductName: string")
+		assertContains(t, model.View(), "Rules: no rules")
+		updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		model = updated.(Model)
+		if cmd != nil || model.status != statusEditing || model.edit.mode != editModeValueObjects {
+			t.Fatalf("expected selected value object editor, got status=%v mode=%v cmd=%v", model.status, model.edit.mode, cmd)
+		}
+		assertContains(t, model.View(), "Editing value objects for ProductService")
+		updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		model = updated.(Model)
+		if cmd == nil || model.status != statusSaving {
+			t.Fatalf("expected value-object save command, got status=%v cmd=%v", model.status, cmd)
+		}
+		updated, cmd = model.Update(cmd())
+		model = updated.(Model)
+		if cmd != nil || model.status != statusReady || !model.wizardValueObjectConfigured {
+			t.Fatalf("expected value-object save to return to guided list, got status=%v configured=%v cmd=%v", model.status, model.wizardValueObjectConfigured, cmd)
+		}
+		updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		model = updated.(Model)
+		if cmd != nil || model.wizardScreen != wizardFields {
+			t.Fatalf("expected value-object editor esc to return to Fields, got screen=%v cmd=%v", model.wizardScreen, cmd)
+		}
+	})
+
+	t.Run("configured list continues", func(t *testing.T) {
+		model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
+		model.enterWizardValueObjects()
+		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		model = updated.(Model)
+		for range model.wizardValueObjectReviewOption() {
+			updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+			model = updated.(Model)
+		}
+		updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		model = updated.(Model)
+		if cmd != nil || model.wizardScreen != wizardReview {
+			t.Fatalf("expected configured value-object list to continue to review, got screen=%v cmd=%v", model.wizardScreen, cmd)
+		}
+	})
+}
+
+func TestWizardReviewRoutesToExplicitGenerateAndResult(t *testing.T) {
+	plan := wizardPlan()
+	plan.OutputDir = "/tmp/generated"
+	plan.FileCount = 2
+	plan.Files = []application.PlannedFile{{Path: "one.cs", Action: "create"}, {Path: "two.cs", Action: "replace"}}
+	plan.Readiness = application.ReadinessSummary{ProjectPresent: true, Hints: []string{"Review output before writing."}}
+	called := false
+	model := NewModel(plan, application.GenerateRequest{OutputDir: plan.OutputDir}, nil, func(actual application.GenerateRequest) (application.GenerateResult, error) {
+		called = true
+		return application.GenerateResult{OutputDir: actual.OutputDir, Plan: plan, Warning: "check generated tests"}, nil
+	}, nil)
+	model.enterWizardReview()
+	view := stripANSI(model.View())
+	assertContains(t, view, "Review your generation plan")
+	assertContains(t, view, "Solution: CommercePlatform")
+	assertContains(t, view, "Services: 2 | Entities: 2 | Fields: 3 | Value objects: 1")
+	assertContains(t, view, "Changes: created=1 | replaced=1 | unchanged=0 | deleted=0")
+	assertNotContains(t, view, "Navigation")
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.mode != modeWorkspace || model.screen != screenGenerate || called {
+		t.Fatalf("expected Review to open explicit Generate without writing, got mode=%v screen=%v called=%v cmd=%v", model.mode, model.screen, called, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd == nil || model.status != statusGenerating {
+		t.Fatalf("expected Generate Enter confirmation to start writing, got status=%v cmd=%v", model.status, cmd)
+	}
+	updated, cmd = model.Update(cmd())
+	model = updated.(Model)
+	if cmd != nil || model.mode != modeWizard || model.wizardScreen != wizardResult || model.status != statusGenerated {
+		t.Fatalf("expected successful generation Result, got mode=%v screen=%v status=%v cmd=%v", model.mode, model.wizardScreen, model.status, cmd)
+	}
+	view = stripANSI(model.View())
+	assertContains(t, view, "Output directory: /tmp/generated")
+	assertContains(t, view, "Impact: created=1, replaced=1, unchanged=0")
+	assertContains(t, view, "dotnet build && dotnet test")
+	assertContains(t, view, "Warning: check generated tests")
+	assertNotContains(t, view, "Navigation")
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.mode != modeWizard || model.wizardScreen != wizardMenu {
+		t.Fatalf("expected Result esc to return to menu, got mode=%v screen=%v cmd=%v", model.mode, model.wizardScreen, cmd)
+	}
+}
+
+func TestWizardGenerationFailureResultAndSafetyBlocks(t *testing.T) {
+	generationErr := errors.New("write failed")
+	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
+		return application.GenerateResult{}, generationErr
+	}, nil)
+	model.enterWizardReview()
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, cmd = model.Update(cmd())
+	model = updated.(Model)
+	if cmd != nil || model.wizardScreen != wizardResult || model.status != statusFailed {
+		t.Fatalf("expected failed generation Result, got screen=%v status=%v cmd=%v", model.wizardScreen, model.status, cmd)
+	}
+	assertContains(t, model.View(), "FAILED Generation failed: write failed")
+	assertContains(t, model.View(), "No generated result was published.")
+
+	for _, test := range []struct {
+		name    string
+		prepare func(*Model)
+		want    string
+	}{{
+		name: "stale plan",
+		prepare: func(model *Model) {
+			model.status = statusFailed
+			model.errContext = "Refresh after save"
+		},
+		want: "Readiness is stale. Saved settings need a successful plan refresh before generation.",
+	}, {
+		name:    "force required",
+		prepare: func(model *Model) { model.plan.ForceRequired = true },
+		want:    "Generation is locked until --force is confirmed",
+	}} {
+		t.Run(test.name, func(t *testing.T) {
+			blocked := NewModel(wizardPlan(), application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
+				t.Fatal("generation should remain blocked")
+				return application.GenerateResult{}, nil
+			}, nil)
+			blocked.enterWizardWorkspace(screenGenerate)
+			test.prepare(&blocked)
+			updated, command := blocked.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			blocked = updated.(Model)
+			if command != nil {
+				t.Fatal("expected no command for blocked generation")
+			}
+			assertContains(t, blocked.View(), test.want)
+		})
+	}
+}
+
+func TestWizardValueObjectsAndReviewViewsStaySingleColumn(t *testing.T) {
+	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
+	model.enterWizardValueObjects()
+	view := stripANSI(model.View())
+	assertContains(t, view, "Breadcrumb: Project > Services > Entities > Fields > Value Objects")
+	assertContains(t, view, "Would you like to configure value objects?")
+	assertContains(t, view, "Configure value objects")
+	assertContains(t, view, "Skip to review")
+	assertContains(t, view, "Advanced configuration")
+	assertNotContains(t, view, "Navigation")
+
+	model.enterWizardReview()
+	view = stripANSI(model.View())
+	assertContains(t, view, "Review your generation plan")
+	assertContains(t, view, "Generate solution")
+	assertContains(t, view, "Inspect advanced preview")
+	assertContains(t, view, "Back to value objects/fields")
 	assertNotContains(t, view, "Navigation")
 }
 
