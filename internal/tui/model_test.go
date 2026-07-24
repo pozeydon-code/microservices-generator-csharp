@@ -26,7 +26,7 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 			ValueObjectCount:    3,
 			ServiceNames:        []string{"ProductService", "OrderService"},
 			Services: []application.ServiceSummary{
-				{Name: "ProductService", EntityNames: []string{"Product"}, ValueObjectNames: []string{"ProductName"}},
+				{Name: "ProductService", EntityNames: []string{"Product"}, ValueObjectNames: []string{"ProductName"}, Entities: []application.EntitySummary{{Name: "Product", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}}}},
 				{Name: "OrderService", EntityNames: []string{"Order", "OrderLine"}, ValueObjectNames: []string{"OrderNumber", "Money"}},
 			},
 		},
@@ -86,11 +86,15 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 
 	model.currentStep = stepServices
 	view = model.View()
-	assertContains(t, view, "Summary 2 services, 3 entities, 3 value objects")
-	assertContains(t, view, "> ProductService: Product | VOs: ProductName")
-	assertContains(t, view, "  OrderService: Order, OrderLine | VOs: OrderNumber, Money")
-	assertContains(t, view, "up/down choose service, enter edit entities, e edit services, v edit value objects.")
-	assertContains(t, view, "Entity fields can be edited from the entity editor. Value-object type/rule editing is basic and has no advanced DSL. New entities get Id Guid.")
+	assertContains(t, view, "Services workspace")
+	assertContains(t, view, "Selected service: ProductService")
+	assertContains(t, view, "Context: [Services]  Entities  Value Objects")
+	assertContains(t, view, "Service detail")
+	assertContains(t, view, "Entities: 1")
+	assertContains(t, view, "Fields: 2")
+	assertContains(t, view, "Value objects: 1")
+	assertContains(t, view, "References: 0")
+	assertNotContains(t, view, "Editing entities")
 
 	model.currentStep = stepPreview
 	view = model.View()
@@ -274,6 +278,65 @@ func TestModelUpdateSelectsAndOpensWorkspaceRoutes(t *testing.T) {
 	assertNotContains(t, model.View(), "Wizard")
 }
 
+func TestModelUpdateSwitchesServicesResourceContextsAndSelections(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{Services: []application.ServiceSummary{
+		{Name: "ProductService", EntityNames: []string{"Product"}, ValueObjectNames: []string{"ProductName"}},
+		{Name: "OrderService", EntityNames: []string{"Order", "OrderLine"}, ValueObjectNames: []string{"OrderNumber"}},
+	}}
+	model := modelOnStep(plan, stepServices)
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	if cmd != nil || model.selectedService != 1 {
+		t.Fatalf("expected second service selected, got selected=%d cmd=%v", model.selectedService, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(Model)
+	if cmd != nil || model.serviceContext != serviceResourceEntities {
+		t.Fatalf("expected Entities context, got context=%v cmd=%v", model.serviceContext, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	if cmd != nil || model.selectedEntity != 1 {
+		t.Fatalf("expected second entity selected, got selected=%d cmd=%v", model.selectedEntity, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRight})
+	model = updated.(Model)
+	if cmd != nil || model.serviceContext != serviceResourceValueObjects {
+		t.Fatalf("expected Value Objects context, got context=%v cmd=%v", model.serviceContext, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	model = updated.(Model)
+	if cmd != nil || model.serviceContext != serviceResourceEntities {
+		t.Fatalf("expected Entities context after left, got context=%v cmd=%v", model.serviceContext, cmd)
+	}
+}
+
+func TestModelUpdateEntersNestedServicesEditorsAndBacksToWorkspace(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{Services: []application.ServiceSummary{{Name: "OrderService", EntityNames: []string{"Order", "OrderLine"}, Entities: []application.EntitySummary{{Name: "Order"}, {Name: "OrderLine"}}}}}
+	model := modelOnStep(plan, stepServices)
+	model.serviceContext = serviceResourceEntities
+	model.selectedEntity = 1
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.status != statusEditing || model.edit.mode != editModeEntities || model.entitiesEdit.selected != 1 {
+		t.Fatalf("expected selected entity editor, got %#v cmd=%v", model, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	model = updated.(Model)
+	if cmd != nil || model.edit.mode != editModeFields {
+		t.Fatalf("expected fields editor, got mode=%v cmd=%v", model.edit.mode, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.status != statusReady || model.activeScreen() != screenServices || model.serviceContext != serviceResourceEntities {
+		t.Fatalf("expected fields editor to back to Services workspace, got status=%v screen=%v context=%v cmd=%v", model.status, model.activeScreen(), model.serviceContext, cmd)
+	}
+}
+
 func TestModelUpdateNumericShortcutsOpenCompatibilityRoutes(t *testing.T) {
 	for key, want := range map[rune]workspaceScreen{'1': screenOverview, '2': screenProject, '3': screenServices, '4': screenPreview, '5': screenGenerate} {
 		t.Run(fmt.Sprintf("route %c", key), func(t *testing.T) {
@@ -365,6 +428,40 @@ func TestModelViewUsesResponsiveWorkspaceShell(t *testing.T) {
 			assertContains(t, view, tt.want)
 			assertNotContains(t, view, tt.unwanted)
 			assertNotContains(t, view, "Wizard")
+		})
+	}
+}
+
+func TestModelViewServicesWorkspaceUsesResponsiveResourceLayout(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.Config = application.ConfigSummary{Services: []application.ServiceSummary{{
+		Name:                  "ProductService",
+		EntityNames:           []string{"Product"},
+		ValueObjectNames:      []string{"ProductName"},
+		ValueObjectReferences: []application.ValueObjectReferenceSummary{{ValueObjectName: "ProductName", EntityName: "Product", FieldName: "Name"}},
+		Entities:              []application.EntitySummary{{Name: "Product", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}}},
+	}}}
+
+	for _, width := range []int{120, 90, 60} {
+		t.Run(fmt.Sprintf("width %d", width), func(t *testing.T) {
+			model := modelOnStep(plan, stepServices)
+			updated, cmd := model.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+			model = updated.(Model)
+			if cmd != nil {
+				t.Fatal("expected no command from window size")
+			}
+			view := stripANSI(model.View())
+			assertContains(t, view, "Services workspace")
+			assertContains(t, view, "Selected service: ProductService")
+			assertContains(t, view, "Context: [Services]  Entities  Value Objects")
+			assertContains(t, view, "Entities: 1")
+			assertContains(t, view, "Fields: 2")
+			assertContains(t, view, "Value objects: 1")
+			assertContains(t, view, "References: 1")
+			assertContains(t, view, "ProductName <- Product.Name")
+			assertNotContains(t, view, "Editing entities")
+			assertNotContains(t, view, "Editing fields")
+			assertNotContains(t, view, "Editing value objects")
 		})
 	}
 }
@@ -1547,7 +1644,11 @@ func TestModelUpdateSelectsServiceAndEditsEntitiesAndSaves(t *testing.T) {
 	if cmd != nil || model.selectedService != 1 {
 		t.Fatalf("expected selected service cursor to move to OrderService, got selected=%d cmd=%v", model.selectedService, cmd)
 	}
-	assertContains(t, model.View(), "> OrderService: Order, OrderLine")
+	assertContains(t, model.View(), "Selected service: OrderService")
+	assertContains(t, model.View(), "Entities: 2")
+	assertContains(t, model.View(), "Fields: 4")
+	assertContains(t, model.View(), "Value objects: 0")
+	assertContains(t, model.View(), "References: 0")
 
 	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
@@ -1844,7 +1945,7 @@ func TestModelUpdateOpensFieldsEditorAndSavesFieldChanges(t *testing.T) {
 	assertContains(t, model.View(), "Fields saved. Plan refreshed. Value-object names can be edited from the Services step.")
 }
 
-func TestModelUpdateFieldsEditCancelReturnsToEntitiesEditor(t *testing.T) {
+func TestModelUpdateFieldsEditCancelReturnsToServicesWorkspace(t *testing.T) {
 	plan := plannedFilesPlan(1)
 	plan.Config = application.ConfigSummary{ServiceCount: 1, EntityCount: 1, Services: []application.ServiceSummary{{Name: "ProductService", EntityNames: []string{"Product"}, Entities: []application.EntitySummary{{Name: "Product", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}}}}}}}
 	model := modelOnStep(plan, stepServices)
@@ -1855,8 +1956,8 @@ func TestModelUpdateFieldsEditCancelReturnsToEntitiesEditor(t *testing.T) {
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	model = updated.(Model)
 
-	if cmd != nil || model.status != statusEditing || model.edit.mode != editModeEntities {
-		t.Fatalf("expected esc to return to entities editor, got cmd=%v model=%#v", cmd, model)
+	if cmd != nil || model.status != statusReady || model.activeScreen() != screenServices || model.serviceContext != serviceResourceEntities {
+		t.Fatalf("expected esc to return to Services workspace, got cmd=%v model=%#v", cmd, model)
 	}
 }
 

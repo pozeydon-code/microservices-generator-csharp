@@ -100,6 +100,14 @@ const (
 	layoutWide
 )
 
+type serviceResourceContext int
+
+const (
+	serviceResourceServices serviceResourceContext = iota
+	serviceResourceEntities
+	serviceResourceValueObjects
+)
+
 type editField int
 
 type editMode int
@@ -242,6 +250,9 @@ type Model struct {
 	actionFilter               string
 	currentStep                tuiStep
 	selectedService            int
+	selectedEntity             int
+	selectedValueObject        int
+	serviceContext             serviceResourceContext
 	screen                     workspaceScreen
 	selectedScreen             workspaceScreen
 	helpOpen                   bool
@@ -315,13 +326,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		switch key {
-		case "tab", "]":
+		case "tab":
+			if m.busy() {
+				return m, nil
+			}
+			if m.activeScreen() == screenServices {
+				m.moveServiceContext(1)
+				return m, nil
+			}
+			m.moveStep(1)
+			return m, nil
+		case "]":
 			if m.busy() {
 				return m, nil
 			}
 			m.moveStep(1)
 			return m, nil
-		case "shift+tab", "[":
+		case "shift+tab":
+			if m.busy() {
+				return m, nil
+			}
+			m.moveStep(-1)
+			return m, nil
+		case "[":
 			if m.busy() {
 				return m, nil
 			}
@@ -350,7 +377,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.activeScreen() == screenServices {
-				m.moveSelectedService(-1)
+				m.moveSelectedServiceResource(-1)
 				return m, nil
 			}
 			if m.activeScreen() != screenPreview {
@@ -364,7 +391,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.activeScreen() == screenServices {
-				m.moveSelectedService(1)
+				m.moveSelectedServiceResource(1)
 				return m, nil
 			}
 			if m.activeScreen() != screenPreview {
@@ -373,17 +400,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.moveFileCursor(1)
 			return m, nil
-		case "left", "h":
+		case "left", "right":
 			if m.busy() {
 				return m, nil
 			}
-			m.navigateRoute(-1)
+			if m.activeScreen() == screenServices {
+				delta := 1
+				if key == "left" {
+					delta = -1
+				}
+				m.moveServiceContext(delta)
+				return m, nil
+			}
+			if key == "left" {
+				m.navigateRoute(-1)
+			} else {
+				m.navigateRoute(1)
+			}
 			return m, nil
-		case "right", "l":
+		case "h", "l":
 			if m.busy() {
 				return m, nil
 			}
-			m.navigateRoute(1)
+			if key == "h" {
+				m.navigateRoute(-1)
+			} else {
+				m.navigateRoute(1)
+			}
 			return m, nil
 		case "home":
 			if m.status == statusGenerating || m.status == statusRefreshing || m.status == statusSaving {
@@ -461,7 +504,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if m.activeScreen() == screenServices {
-				m.startEntitiesEditing()
+				switch m.serviceContext {
+				case serviceResourceEntities:
+					m.startEntitiesEditing()
+				case serviceResourceValueObjects:
+					m.startValueObjectsEditing()
+				default:
+					// Keep the established service-selection flow: Enter opens the selected service's entities.
+					m.startEntitiesEditing()
+				}
 				return m, nil
 			}
 			if m.selectedScreen != m.activeScreen() {
@@ -824,14 +875,20 @@ func (m *Model) startEntitiesEditing() {
 	m.message = ""
 	m.edit = editState{mode: editModeEntities}
 	service := m.selectedServiceSummary()
-	m.entitiesEdit = entitiesEditState{returnStatus: returnStatus, serviceName: service.Name, original: append([]string(nil), service.EntityNames...), entities: make([]textField, 0, len(service.EntityNames))}
-	for _, name := range service.EntityNames {
+	entities := m.serviceEntitySummaries()
+	entityNames := make([]string, 0, len(entities))
+	for _, entity := range entities {
+		entityNames = append(entityNames, entity.Name)
+	}
+	m.entitiesEdit = entitiesEditState{returnStatus: returnStatus, serviceName: service.Name, original: append([]string(nil), entityNames...), entities: make([]textField, 0, len(entityNames))}
+	for _, name := range entityNames {
 		m.entitiesEdit.entities = append(m.entitiesEdit.entities, newTextField(name))
 	}
 	if len(m.entitiesEdit.entities) == 0 {
 		m.entitiesEdit.entities = append(m.entitiesEdit.entities, newTextField(m.nextEntityPlaceholder()))
 		m.entitiesEdit.original = append(m.entitiesEdit.original, "")
 	}
+	m.entitiesEdit.selected = clampInt(m.selectedEntity, 0, len(m.entitiesEdit.entities)-1)
 }
 
 func (m *Model) startFieldsEditing() {
@@ -858,19 +915,19 @@ func (m *Model) startValueObjectsEditing() {
 	m.errContext = ""
 	m.message = ""
 	m.edit = editState{mode: editModeValueObjects}
-	m.valueObjectsEdit = valueObjectsEditState{returnStatus: returnStatus, serviceName: service.Name, valueObjects: make([]valueObjectEditItem, 0, len(service.ValueObjectNames))}
-	if len(service.ValueObjects) > 0 {
-		for _, valueObject := range service.ValueObjects {
+	valueObjects := m.serviceValueObjectSummaries()
+	m.valueObjectsEdit = valueObjectsEditState{returnStatus: returnStatus, serviceName: service.Name, valueObjects: make([]valueObjectEditItem, 0, len(valueObjects))}
+	for _, valueObject := range valueObjects {
+		if len(service.ValueObjects) > 0 {
 			m.valueObjectsEdit.valueObjects = append(m.valueObjectsEdit.valueObjects, valueObjectEditItemFromSummary(valueObject))
-		}
-	} else {
-		for _, name := range service.ValueObjectNames {
-			m.valueObjectsEdit.valueObjects = append(m.valueObjectsEdit.valueObjects, newValueObjectEditItem(name, name))
+		} else {
+			m.valueObjectsEdit.valueObjects = append(m.valueObjectsEdit.valueObjects, newValueObjectEditItem(valueObject.Name, valueObject.Name))
 		}
 	}
 	if len(m.valueObjectsEdit.valueObjects) == 0 {
 		m.valueObjectsEdit.valueObjects = append(m.valueObjectsEdit.valueObjects, newValueObjectEditItem("", m.nextValueObjectPlaceholder()))
 	}
+	m.valueObjectsEdit.selected = clampInt(m.selectedValueObject, 0, len(m.valueObjectsEdit.valueObjects)-1)
 }
 
 func valueObjectEditItemFromSummary(summary application.ValueObjectSummary) valueObjectEditItem {
@@ -1007,9 +1064,11 @@ func (m Model) updateFieldsEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.String() {
 	case "esc":
+		m.status = m.entitiesEdit.returnStatus
 		m.edit.mode = editModeEntities
 		m.err = nil
 		m.errContext = ""
+		m.serviceContext = serviceResourceEntities
 		return m, nil
 	case "enter":
 		if m.fieldsEdit.editingName || m.fieldsEdit.editingType {
@@ -1340,31 +1399,112 @@ func (m *Model) moveSelectedService(delta int) {
 	m.clampSelectedService()
 }
 
-func (m *Model) clampSelectedService() {
-	if len(m.plan.Config.Services) == 0 {
-		m.selectedService = 0
+func (m *Model) moveServiceContext(delta int) {
+	m.serviceContext = serviceResourceContext(clampInt(int(m.serviceContext)+delta, int(serviceResourceServices), int(serviceResourceValueObjects)))
+	m.clampServiceResourceSelection()
+}
+
+func (m *Model) moveSelectedServiceResource(delta int) {
+	switch m.serviceContext {
+	case serviceResourceEntities:
+		m.selectedEntity += delta
+	case serviceResourceValueObjects:
+		m.selectedValueObject += delta
+	default:
+		m.moveSelectedService(delta)
 		return
 	}
-	if m.selectedService < 0 {
+	m.clampServiceResourceSelection()
+}
+
+func (m *Model) clampSelectedService() {
+	serviceCount := len(m.serviceSummaries())
+	if serviceCount == 0 {
 		m.selectedService = 0
+	} else {
+		if m.selectedService < 0 {
+			m.selectedService = 0
+		}
+		if m.selectedService >= serviceCount {
+			m.selectedService = serviceCount - 1
+		}
 	}
-	if m.selectedService >= len(m.plan.Config.Services) {
-		m.selectedService = len(m.plan.Config.Services) - 1
+	m.clampServiceResourceSelection()
+}
+
+func (m *Model) clampServiceResourceSelection() {
+	entityCount := len(m.serviceEntitySummaries())
+	if m.selectedEntity < 0 {
+		m.selectedEntity = 0
+	}
+	if entityCount == 0 || m.selectedEntity >= entityCount {
+		m.selectedEntity = maxInt(entityCount-1, 0)
+	}
+
+	valueObjectCount := len(m.serviceValueObjectSummaries())
+	if m.selectedValueObject < 0 {
+		m.selectedValueObject = 0
+	}
+	if valueObjectCount == 0 || m.selectedValueObject >= valueObjectCount {
+		m.selectedValueObject = maxInt(valueObjectCount-1, 0)
 	}
 }
 
+func maxInt(value, minimum int) int {
+	if value < minimum {
+		return minimum
+	}
+	return value
+}
+
 func (m Model) selectedServiceSummary() application.ServiceSummary {
-	if len(m.plan.Config.Services) == 0 {
+	services := m.serviceSummaries()
+	if len(services) == 0 {
 		return application.ServiceSummary{Name: "CatalogService", EntityNames: []string{"Catalog"}}
 	}
 	selected := m.selectedService
 	if selected < 0 {
 		selected = 0
 	}
-	if selected >= len(m.plan.Config.Services) {
-		selected = len(m.plan.Config.Services) - 1
+	if selected >= len(services) {
+		selected = len(services) - 1
 	}
-	return m.plan.Config.Services[selected]
+	return services[selected]
+}
+
+func (m Model) serviceSummaries() []application.ServiceSummary {
+	if len(m.plan.Config.Services) > 0 {
+		return m.plan.Config.Services
+	}
+	services := make([]application.ServiceSummary, 0, len(m.plan.Config.ServiceNames))
+	for _, name := range m.plan.Config.ServiceNames {
+		services = append(services, application.ServiceSummary{Name: name})
+	}
+	return services
+}
+
+func (m Model) serviceEntitySummaries() []application.EntitySummary {
+	service := m.selectedServiceSummary()
+	if len(service.Entities) > 0 {
+		return service.Entities
+	}
+	entities := make([]application.EntitySummary, 0, len(service.EntityNames))
+	for _, name := range service.EntityNames {
+		entities = append(entities, application.EntitySummary{Name: name})
+	}
+	return entities
+}
+
+func (m Model) serviceValueObjectSummaries() []application.ValueObjectSummary {
+	service := m.selectedServiceSummary()
+	if len(service.ValueObjects) > 0 {
+		return service.ValueObjects
+	}
+	valueObjects := make([]application.ValueObjectSummary, 0, len(service.ValueObjectNames))
+	for _, name := range service.ValueObjectNames {
+		valueObjects = append(valueObjects, application.ValueObjectSummary{Name: name})
+	}
+	return valueObjects
 }
 
 func (m Model) selectedEntitySummary() application.EntitySummary {
@@ -1372,6 +1512,9 @@ func (m Model) selectedEntitySummary() application.EntitySummary {
 	name := "Product"
 	if len(m.entitiesEdit.entities) > 0 {
 		name = m.entitiesEdit.entities[m.entitiesEdit.selected].string()
+	} else if entities := m.serviceEntitySummaries(); len(entities) > 0 {
+		selected := clampInt(m.selectedEntity, 0, len(entities)-1)
+		return entities[selected]
 	}
 	if m.entitiesEdit.selected < len(service.Entities) && service.Entities[m.entitiesEdit.selected].Name == name {
 		return service.Entities[m.entitiesEdit.selected]
@@ -2127,7 +2270,8 @@ func (m Model) helpOverlay() string {
 		"Global: ? close help | esc back | q/ctrl+c quit",
 		"Overview: r refresh | g generate",
 		"Project: e edit settings | r refresh",
-		"Services: up/down select service | enter entities | e services | v value objects",
+		"Services: tab or left/right switch Services/Entities/Value Objects | up/down select | enter open",
+		"Services actions: e service list | f fields from entity editor | v value objects | a/r/d edit resources",
 		"Preview: arrows/k/j inspect files | a filter | r refresh | g generate",
 		"Generate: g generate | r refresh",
 	}, "\n")))
@@ -2237,52 +2381,151 @@ func (m Model) projectStepCard() string {
 }
 
 func (m Model) servicesStepCard() string {
-	var builder strings.Builder
-	fmt.Fprintln(&builder, sectionTitleStyle.Render("Services"))
 	if (m.status == statusEditing && m.edit.mode == editModeServices) || (m.status == statusSaving && m.edit.mode == editModeServices) {
+		var builder strings.Builder
+		fmt.Fprintln(&builder, sectionTitleStyle.Render("Services"))
 		m.renderServicesEditor(&builder)
 		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 	}
 	if (m.status == statusEditing && m.edit.mode == editModeEntities) || (m.status == statusSaving && m.edit.mode == editModeEntities) {
+		var builder strings.Builder
+		fmt.Fprintln(&builder, sectionTitleStyle.Render("Services"))
 		m.renderEntitiesEditor(&builder)
 		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 	}
 	if (m.status == statusEditing && m.edit.mode == editModeFields) || (m.status == statusSaving && m.edit.mode == editModeFields) {
+		var builder strings.Builder
+		fmt.Fprintln(&builder, sectionTitleStyle.Render("Services"))
 		m.renderFieldsEditor(&builder)
 		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 	}
 	if (m.status == statusEditing && m.edit.mode == editModeValueObjects) || (m.status == statusSaving && m.edit.mode == editModeValueObjects) {
+		var builder strings.Builder
+		fmt.Fprintln(&builder, sectionTitleStyle.Render("Services"))
 		m.renderValueObjectsEditor(&builder)
 		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 	}
-	fmt.Fprintf(&builder, "%s %d services, %d entities, %d value objects\n", labelStyle.Render("Summary"), m.plan.Config.ServiceCount, m.plan.Config.EntityCount, m.plan.Config.ValueObjectCount)
-	if len(m.plan.Config.Services) > 0 {
-		for index, service := range m.plan.Config.Services {
-			cursor := " "
-			if index == m.selectedService {
-				cursor = ">"
-			}
-			entities := "no entities"
-			if len(service.EntityNames) > 0 {
-				entities = strings.Join(service.EntityNames, ", ")
-			}
-			valueObjects := "no value objects"
-			if len(service.ValueObjectNames) > 0 {
-				valueObjects = strings.Join(service.ValueObjectNames, ", ")
-			}
-			fmt.Fprintf(&builder, "%s %s: %s | VOs: %s\n", cursor, service.Name, entities, valueObjects)
+	return m.servicesWorkspace()
+}
+
+func (m Model) servicesWorkspace() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Services workspace"))
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Selected service:"), m.selectedServiceSummary().Name)
+	fmt.Fprintf(&builder, "%s\n", m.serviceContextTabs())
+
+	serviceList := cardStyle.Render(m.servicesResourceList())
+	detail := cardStyle.Render(m.serviceDetail())
+	if m.layout == layoutWide {
+		available := m.windowWidth - 30
+		if available < 60 {
+			available = 60
 		}
-	} else if len(m.plan.Config.ServiceNames) > 0 {
-		fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Services"), strings.Join(m.plan.Config.ServiceNames, ", "))
+		listWidth := available / 3
+		detailWidth := available - listWidth - 2
+		serviceList = cardStyle.Width(listWidth).Render(m.servicesResourceList())
+		detail = cardStyle.Width(detailWidth).Render(m.serviceDetail())
+		fmt.Fprintln(&builder, lipgloss.JoinHorizontal(lipgloss.Top, serviceList, "  ", detail))
+	} else {
+		fmt.Fprintln(&builder, serviceList)
+		fmt.Fprintln(&builder)
+		fmt.Fprintln(&builder, detail)
+	}
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) serviceContextTabs() string {
+	labels := []string{"Services", "Entities", "Value Objects"}
+	parts := make([]string, 0, len(labels))
+	for index, label := range labels {
+		if serviceResourceContext(index) == m.serviceContext {
+			parts = append(parts, readyStyle.Render("["+label+"]"))
+		} else {
+			parts = append(parts, dimStyle.Render(label))
+		}
+	}
+	return labelStyle.Render("Context:") + " " + strings.Join(parts, "  ")
+}
+
+func (m Model) servicesResourceList() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Services"))
+	services := m.serviceSummaries()
+	if len(services) == 0 {
+		fmt.Fprintln(&builder, dimStyle.Render("No services configured."))
+		return strings.TrimRight(builder.String(), "\n")
+	}
+	for index, service := range services {
+		row := fmt.Sprintf("  %s", service.Name)
+		if index == m.selectedService {
+			row = fmt.Sprintf("> %s", service.Name)
+		}
+		if index == m.selectedService {
+			row = selectedRowStyle.Render(row)
+		}
+		fmt.Fprintln(&builder, row)
+	}
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, dimStyle.Render("Primary resource list"))
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) serviceDetail() string {
+	service := m.selectedServiceSummary()
+	entities := m.serviceEntitySummaries()
+	valueObjects := m.serviceValueObjectSummaries()
+	fieldCount := 0
+	for _, entity := range entities {
+		fieldCount += len(entity.Fields)
+	}
+
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Service detail"))
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Service:"), service.Name)
+	fmt.Fprintln(&builder, labelStyle.Render("Summary"))
+	fmt.Fprintf(&builder, "  Entities: %d\n", len(entities))
+	fmt.Fprintf(&builder, "  Fields: %d\n", fieldCount)
+	fmt.Fprintf(&builder, "  Value objects: %d\n", len(valueObjects))
+	fmt.Fprintf(&builder, "  References: %d\n", len(service.ValueObjectReferences))
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, labelStyle.Render("Entities"))
+	if len(entities) == 0 {
+		fmt.Fprintln(&builder, dimStyle.Render("  No entities"))
+	} else {
+		for index, entity := range entities {
+			cursor := "  "
+			if m.serviceContext == serviceResourceEntities && index == m.selectedEntity {
+				cursor = "> "
+			}
+			fmt.Fprintf(&builder, "%s%s\n", cursor, entity.Name)
+		}
+	}
+	fmt.Fprintln(&builder, labelStyle.Render("Value Objects"))
+	if len(valueObjects) == 0 {
+		fmt.Fprintln(&builder, dimStyle.Render("  No value objects"))
+	} else {
+		for index, valueObject := range valueObjects {
+			cursor := "  "
+			if m.serviceContext == serviceResourceValueObjects && index == m.selectedValueObject {
+				cursor = "> "
+			}
+			fmt.Fprintf(&builder, "%s%s\n", cursor, valueObject.Name)
+		}
+	}
+	if len(service.ValueObjectReferences) > 0 {
+		fmt.Fprintln(&builder, labelStyle.Render("References"))
+		for _, reference := range service.ValueObjectReferences {
+			fmt.Fprintf(&builder, "  %s <- %s.%s\n", reference.ValueObjectName, reference.EntityName, reference.FieldName)
+		}
 	}
 	fmt.Fprintln(&builder)
 	if m.busy() || m.postSaveRefreshFailed() {
-		fmt.Fprintln(&builder, busyStyle.Render("Service and entity editing is paused until the current operation finishes or the stale plan is refreshed."))
+		fmt.Fprintln(&builder, busyStyle.Render("Editing is paused until the current operation finishes or the stale plan is refreshed."))
 	} else {
-		fmt.Fprintln(&builder, successStyle.Render("up/down choose service, enter edit entities, e edit services, v edit value objects."))
+		fmt.Fprintln(&builder, successStyle.Render("Enter open selected resource/editor."))
+		fmt.Fprintln(&builder, dimStyle.Render("e services | f fields | v value objects | a/r/d in editors"))
 	}
-	fmt.Fprintln(&builder, dimStyle.Render("Entity fields can be edited from the entity editor. Value-object type/rule editing is basic and has no advanced DSL. New entities get Id Guid."))
-	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+	return strings.TrimRight(builder.String(), "\n")
 }
 
 func (m Model) generateStepCard() string {
@@ -2375,7 +2618,8 @@ func (m Model) footerCard() string {
 	case screenProject:
 		fmt.Fprintln(&builder, "Project: e edit settings, r refresh.")
 	case screenServices:
-		fmt.Fprintln(&builder, "Services: e edit services, enter edit entities, v edit value objects, r refresh.")
+		fmt.Fprintln(&builder, "Services: tab/left/right context; up/down select; enter open.")
+		fmt.Fprintln(&builder, "Actions: e services; f fields; v value objects; a/r/d in editors; r refresh.")
 	case screenPreview:
 		fmt.Fprintln(&builder, readyHelp)
 	case screenGenerate:
