@@ -106,6 +106,29 @@ const (
 	layoutWide
 )
 
+type tuiMode int
+
+const (
+	modeWizard tuiMode = iota
+	modeWorkspace
+)
+
+type wizardScreen int
+
+const (
+	wizardMenu wizardScreen = iota
+	wizardResult
+)
+
+const (
+	wizardConfigureProject = iota
+	wizardConfigureServices
+	wizardReviewChanges
+	wizardGenerateSolution
+	wizardAdvancedWorkspace
+	wizardQuit
+)
+
 type serviceResourceContext int
 
 const (
@@ -262,6 +285,16 @@ type Model struct {
 	screen                     workspaceScreen
 	selectedScreen             workspaceScreen
 	helpOpen                   bool
+	mode                       tuiMode
+	returnToWizard             bool
+	guidedWorkspace            bool
+	wizardScreen               wizardScreen
+	wizardSelection            int
+	wizardResultSelection      int
+}
+
+var runTeaProgram = func(model tea.Model, options ...tea.ProgramOption) (tea.Model, error) {
+	return tea.NewProgram(model, options...).Run()
 }
 
 func NewModel(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, targetFrameworkSuggestions ...[]string) Model {
@@ -269,7 +302,7 @@ func NewModel(plan application.GenerationPlan, request application.GenerateReque
 	if len(targetFrameworkSuggestions) > 0 {
 		suggestions = append([]string(nil), targetFrameworkSuggestions[0]...)
 	}
-	return Model{plan: plan, request: request, planFunc: planFunc, generate: generate, update: update, status: statusReady, targetFrameworkSuggestions: suggestions, windowRows: defaultFileWindowRows, layout: layoutModeForWidth(0), currentStep: stepSource, screen: screenOverview, selectedScreen: screenOverview}
+	return Model{plan: plan, request: request, planFunc: planFunc, generate: generate, update: update, status: statusReady, targetFrameworkSuggestions: suggestions, windowRows: defaultFileWindowRows, layout: layoutModeForWidth(0), currentStep: stepSource, screen: screenOverview, selectedScreen: screenOverview, mode: modeWizard, wizardScreen: wizardMenu}
 }
 
 func Run(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, updateServices UpdateServicesFunc, updateEntities UpdateEntitiesFunc, updateFields UpdateFieldsFunc, updateValueObjects UpdateValueObjectsFunc, targetFrameworkSuggestions []string) error {
@@ -278,7 +311,7 @@ func Run(plan application.GenerationPlan, request application.GenerateRequest, p
 	model.updateEntities = updateEntities
 	model.updateFields = updateFields
 	model.updateValueObjects = updateValueObjects
-	_, err := tea.NewProgram(model).Run()
+	_, err := runTeaProgram(model, tea.WithAltScreen())
 	return err
 }
 
@@ -296,6 +329,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clampFileCursor()
 		return m, nil
 	case tea.KeyMsg:
+		if m.mode == modeWizard {
+			return m.updateWizard(msg)
+		}
 		if m.helpOpen {
 			if msg.String() == "esc" || msg.String() == "?" {
 				m.helpOpen = false
@@ -320,7 +356,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		key := msg.String()
 		if m.postSaveRefreshFailed() {
 			switch key {
-			case "q", "esc", "ctrl+c":
+			case "q", "ctrl+c":
+				return m, tea.Quit
+			case "esc":
+				if m.returnToWizard && m.guidedWorkspace {
+					m.enterWizardMenu()
+					return m, nil
+				}
 				return m, tea.Quit
 			case "r":
 				m.status = statusRefreshing
@@ -375,11 +417,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.serviceContext = serviceResourceValueObjects
 					return m, nil
 				case screenResult:
-					m.openScreen(screenGenerate)
+					if m.returnToWizard && m.guidedWorkspace {
+						m.enterWizardMenu()
+					} else {
+						m.openScreen(screenGenerate)
+					}
 					return m, nil
 				case screenServices, screenProject, screenPreview, screenGenerate:
-					m.openScreen(screenOverview)
+					if m.returnToWizard && m.guidedWorkspace {
+						m.enterWizardMenu()
+					} else {
+						m.openScreen(screenOverview)
+					}
 					return m, nil
+				case screenOverview:
+					if m.returnToWizard {
+						m.enterWizardMenu()
+						return m, nil
+					}
 				}
 			}
 			return m, tea.Quit
@@ -635,18 +690,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = statusFailed
 			m.err = msg.err
 			m.errContext = "Generation"
-			m.openScreen(screenResult)
+			if m.returnToWizard && m.guidedWorkspace {
+				m.mode = modeWizard
+				m.wizardScreen = wizardResult
+			} else {
+				m.openScreen(screenResult)
+			}
 			return m, nil
 		}
 		m.status = statusGenerated
 		m.result = msg.result
 		m.plan = msg.result.Plan
-		m.openScreen(screenResult)
+		if m.returnToWizard && m.guidedWorkspace {
+			m.mode = modeWizard
+			m.wizardScreen = wizardResult
+			m.returnToWizard = false
+		} else {
+			m.openScreen(screenResult)
+		}
 		m.err = nil
 		m.errContext = ""
 		m.message = ""
 		m.clampSelectedService()
 		m.clampFileCursor()
+		if m.returnToWizard && m.guidedWorkspace {
+			m.enterWizardMenu()
+		}
 		return m, nil
 
 	case settingsFinishedMsg:
@@ -673,6 +742,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.message = "Settings saved. Plan refreshed. Use Services to edit services, entities, fields, and value objects."
 		m.clampSelectedService()
 		m.clampFileCursor()
+		if m.returnToWizard && m.guidedWorkspace {
+			m.enterWizardMenu()
+		}
 		return m, nil
 
 	case servicesFinishedMsg:
@@ -700,6 +772,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.message = "Services saved. Plan refreshed. Use the Entities and Value Objects routes for resource editing."
 		m.clampSelectedService()
 		m.clampFileCursor()
+		if m.returnToWizard && m.guidedWorkspace {
+			m.enterWizardMenu()
+		}
 		return m, nil
 
 	case entitiesFinishedMsg:
@@ -727,6 +802,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.message = "Entities saved. Plan refreshed. Press f in the Entities editor to edit fields."
 		m.clampSelectedService()
 		m.clampFileCursor()
+		if m.returnToWizard && m.guidedWorkspace {
+			m.enterWizardMenu()
+		}
 		return m, nil
 
 	case fieldsFinishedMsg:
@@ -781,9 +859,97 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.message = "Value objects saved. Plan refreshed. Basic type and rules can be edited from the Value Objects route."
 		m.clampSelectedService()
 		m.clampFileCursor()
+		if m.returnToWizard && m.guidedWorkspace {
+			m.enterWizardMenu()
+		}
 		return m, nil
 	}
 	return m, nil
+}
+
+func (m Model) updateWizard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	if m.wizardScreen == wizardResult {
+		switch key {
+		case "up", "k":
+			m.wizardResultSelection = clampInt(m.wizardResultSelection-1, 0, 1)
+		case "down", "j":
+			m.wizardResultSelection = clampInt(m.wizardResultSelection+1, 0, 1)
+		case "enter":
+			if m.wizardResultSelection == 0 {
+				m.enterWizardMenu()
+			} else {
+				m.enterAdvancedWorkspace()
+			}
+		case "esc":
+			m.enterWizardMenu()
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		}
+		return m, nil
+	}
+
+	switch key {
+	case "up", "k":
+		m.wizardSelection = clampInt(m.wizardSelection-1, 0, wizardQuit)
+	case "down", "j":
+		m.wizardSelection = clampInt(m.wizardSelection+1, 0, wizardQuit)
+	case "enter":
+		return m.selectWizardOption()
+	case "q", "esc", "ctrl+c":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m Model) selectWizardOption() (tea.Model, tea.Cmd) {
+	switch m.wizardSelection {
+	case wizardConfigureProject:
+		m.enterWizardWorkspace(screenProject)
+		m.startEditing()
+	case wizardConfigureServices:
+		m.enterWizardServicesWorkspace()
+	case wizardReviewChanges:
+		m.enterWizardWorkspace(screenPreview)
+	case wizardGenerateSolution:
+		m.enterWizardWorkspace(screenGenerate)
+	case wizardAdvancedWorkspace:
+		m.enterAdvancedWorkspace()
+	case wizardQuit:
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m *Model) enterWizardMenu() {
+	m.mode = modeWizard
+	m.returnToWizard = false
+	m.guidedWorkspace = false
+	m.wizardScreen = wizardMenu
+	m.helpOpen = false
+}
+
+func (m *Model) enterWizardWorkspace(screen workspaceScreen) {
+	m.mode = modeWorkspace
+	m.returnToWizard = true
+	m.guidedWorkspace = true
+	m.openScreen(screen)
+}
+
+func (m *Model) enterWizardServicesWorkspace() {
+	m.mode = modeWorkspace
+	m.returnToWizard = true
+	m.guidedWorkspace = true
+	m.screen = screenServices
+	m.selectedScreen = screenServices
+	m.currentStep = stepForScreen(screenServices)
+}
+
+func (m *Model) enterAdvancedWorkspace() {
+	m.mode = modeWorkspace
+	m.returnToWizard = true
+	m.guidedWorkspace = false
+	m.openScreen(screenOverview)
 }
 
 func (m Model) busy() bool {
@@ -1873,7 +2039,11 @@ func (m Model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = m.edit.returnStatus
 		m.err = nil
 		m.errContext = ""
-		m.openScreen(screenProject)
+		if m.returnToWizard && m.guidedWorkspace {
+			m.enterWizardMenu()
+		} else {
+			m.openScreen(screenProject)
+		}
 		return m, nil
 	case "enter":
 		m.status = statusSaving
@@ -2307,6 +2477,12 @@ func stringPtrFromText(field textField) *string {
 }
 
 func (m Model) View() string {
+	if m.mode == modeWizard {
+		return m.wizardView()
+	}
+	if m.guidedWorkspace {
+		return m.guidedWorkspaceView()
+	}
 	if m.helpOpen {
 		return m.workspaceHeader() + "\n\n" + m.helpOverlay()
 	}
@@ -2330,12 +2506,156 @@ func (m Model) View() string {
 	return builder.String()
 }
 
+func (m Model) wizardView() string {
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "%s - %s\n", appTitleStyle.Render("Microgen"), m.statusBadge())
+	if m.wizardScreen == wizardResult {
+		fmt.Fprintln(&builder, dimStyle.Render("Breadcrumb: Wizard / Result  |  Progress: complete"))
+		fmt.Fprintln(&builder)
+		fmt.Fprintln(&builder, sectionTitleStyle.Render("Generation complete"))
+		if m.status == statusFailed {
+			fmt.Fprintf(&builder, "%s %s failed: %v\n", dangerStyle.Render("FAILED"), m.errContext, m.err)
+		} else {
+			outputDir := m.result.OutputDir
+			if outputDir == "" {
+				outputDir = m.outputDirectory()
+			}
+			fmt.Fprintf(&builder, "%s %d files written to %s.\n", successStyle.Render("Generated"), m.result.Plan.FileCount, outputDir)
+			if len(m.result.Plan.DeletedFiles) > 0 {
+				fmt.Fprintf(&builder, "%s %d previous generated file(s) removed.\n", warningStyle.Render("Cleanup:"), len(m.result.Plan.DeletedFiles))
+			}
+		}
+		fmt.Fprintln(&builder)
+		fmt.Fprintln(&builder, m.wizardResultOption(0, "Back to menu"))
+		fmt.Fprintln(&builder, m.wizardResultOption(1, "Advanced workspace"))
+		fmt.Fprintln(&builder)
+		fmt.Fprintln(&builder, dimStyle.Render("Footer: up/down or j/k move | enter select | esc menu | q quit"))
+		return strings.TrimRight(builder.String(), "\n")
+	}
+
+	fmt.Fprintln(&builder, dimStyle.Render("Breadcrumb: Wizard / Menu  |  Progress: 1/1"))
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, m.wizardPromptStyle().Render("What would you like to configure?"))
+	fmt.Fprintln(&builder)
+	for option := 0; option <= wizardQuit; option++ {
+		fmt.Fprintln(&builder, m.wizardOption(option, wizardOptionLabel(option)))
+	}
+	if m.message != "" {
+		fmt.Fprintln(&builder)
+		fmt.Fprintln(&builder, successStyle.Render(m.message))
+	}
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, dimStyle.Render("Footer: up/down or j/k move | enter select | q quit"))
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) wizardOption(option int, label string) string {
+	if option == m.wizardSelection {
+		return m.wizardSelectedStyle().Render("> " + label)
+	}
+	return m.wizardTextStyle().Render("  " + label)
+}
+
+func (m Model) wizardResultOption(option int, label string) string {
+	if option == m.wizardResultSelection {
+		return m.wizardSelectedStyle().Render("> " + label)
+	}
+	return m.wizardTextStyle().Render("  " + label)
+}
+
+func (m Model) wizardTextStyle() lipgloss.Style {
+	if m.windowWidth <= 0 {
+		return dimStyle
+	}
+	width := m.windowWidth - 2
+	if width < 1 {
+		width = 1
+	}
+	return dimStyle.Width(width)
+}
+
+func (m Model) wizardSelectedStyle() lipgloss.Style {
+	style := selectedRowStyle
+	if m.windowWidth > 0 {
+		width := m.windowWidth - 2
+		if width < 1 {
+			width = 1
+		}
+		style = style.Width(width)
+	}
+	return style
+}
+
+func (m Model) wizardPromptStyle() lipgloss.Style {
+	style := sectionTitleStyle
+	if m.windowWidth > 0 {
+		width := m.windowWidth - 2
+		if width < 1 {
+			width = 1
+		}
+		style = style.Width(width)
+	}
+	return style
+}
+
+func wizardOptionLabel(option int) string {
+	switch option {
+	case wizardConfigureProject:
+		return "Configure project"
+	case wizardConfigureServices:
+		return "Configure services and data model"
+	case wizardReviewChanges:
+		return "Review generated changes"
+	case wizardGenerateSolution:
+		return "Generate solution"
+	case wizardAdvancedWorkspace:
+		return "Advanced workspace"
+	default:
+		return "Quit"
+	}
+}
+
+func (m Model) guidedWorkspaceView() string {
+	m.layout = layoutNarrow
+	var builder strings.Builder
+	fmt.Fprintln(&builder, m.guidedWorkspaceHeader())
+	fmt.Fprintln(&builder, m.workspaceContent())
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, m.guidedWorkspaceFooter())
+	return builder.String()
+}
+
+func (m Model) guidedWorkspaceHeader() string {
+	return fmt.Sprintf("%s - %s\n%s", appTitleStyle.Render("Microgen"), m.statusBadge(), dimStyle.Render("Breadcrumb: Wizard / "+m.activeScreen().label()))
+}
+
+func (m Model) guidedWorkspaceFooter() string {
+	var controls string
+	switch m.activeScreen() {
+	case screenProject:
+		controls = "esc back | tab/up/down fields | enter save"
+	case screenServices:
+		controls = "esc back | up/down select | enter open | e edit"
+	case screenPreview:
+		controls = "esc back | arrows/j/k files | r refresh | g generate"
+	case screenGenerate:
+		controls = "esc back | g confirm generation | r refresh"
+	default:
+		controls = "esc back | q quit"
+	}
+	return dimStyle.Render("Footer: " + controls)
+}
+
 func (m Model) workspaceHeader() string {
 	project := m.plan.Config.SolutionName
 	if project == "" {
 		project = "Unconfigured project"
 	}
-	return fmt.Sprintf("%s - %s  %s  %s %s\n%s", appTitleStyle.Render("Microgen"), m.statusBadge(), dimStyle.Render("Workspace"), labelStyle.Render("Current project:"), project, m.primaryActionStyle().Render("Primary: "+m.primaryAction()))
+	workspace := "Workspace"
+	if m.returnToWizard {
+		workspace = "Advanced workspace | esc back to wizard"
+	}
+	return fmt.Sprintf("%s - %s  %s  %s %s\n%s", appTitleStyle.Render("Microgen"), m.statusBadge(), dimStyle.Render(workspace), labelStyle.Render("Current project:"), project, m.primaryActionStyle().Render("Primary: "+m.primaryAction()))
 }
 
 func (m Model) navigationRail() string {

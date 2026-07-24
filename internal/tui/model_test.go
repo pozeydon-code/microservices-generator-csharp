@@ -56,7 +56,7 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 		},
 	}
 
-	model := NewModel(plan, application.GenerateRequest{ConfigPath: "microgen.json"}, nil, nil, nil)
+	model := workspaceModel(plan, application.GenerateRequest{ConfigPath: "microgen.json"}, nil, nil, nil)
 	view := model.View()
 
 	assertContains(t, view, "Microgen - READY")
@@ -200,7 +200,7 @@ func TestModelGenerateStepShowsPostGenerateImpactSummary(t *testing.T) {
 }
 
 func TestModelViewShowsPrimaryActionOnce(t *testing.T) {
-	view := stripANSI(NewModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil).View())
+	view := stripANSI(workspaceModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil).View())
 
 	if count := strings.Count(view, "Primary:"); count != 1 {
 		t.Fatalf("expected one primary action, got %d in %q", count, view)
@@ -208,19 +208,159 @@ func TestModelViewShowsPrimaryActionOnce(t *testing.T) {
 }
 
 func TestModelViewShowsBootstrappedConfigSource(t *testing.T) {
-	view := NewModel(plannedFilesPlan(1), application.GenerateRequest{ConfigPath: "starter.json", ConfigBootstrapped: true}, nil, nil, nil).View()
+	view := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{ConfigPath: "starter.json", ConfigBootstrapped: true}, nil, nil, nil).View()
 
 	assertContains(t, view, "Source starter.json (starter config bootstrapped this run)")
 	assertContains(t, view, "Created starter config. Edit project, service, entity, and basic field settings incrementally.")
 }
 
-func TestModelDefaultsToSourceStep(t *testing.T) {
+func TestModelDefaultsToWizardMenu(t *testing.T) {
 	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
 
-	if model.currentStep != stepSource {
-		t.Fatalf("expected source step by default, got %v", model.currentStep)
+	if model.mode != modeWizard || model.wizardScreen != wizardMenu {
+		t.Fatalf("expected wizard menu by default, got mode=%v screen=%v", model.mode, model.wizardScreen)
 	}
-	assertContains(t, model.View(), "Overview")
+	view := stripANSI(model.View())
+	assertContains(t, view, "Breadcrumb: Wizard / Menu")
+	assertContains(t, view, "What would you like to configure?")
+	assertContains(t, view, "> Configure project")
+	assertContains(t, view, "Footer:")
+	assertNotContains(t, view, "Navigation")
+}
+
+func TestWizardSelectionAndRouting(t *testing.T) {
+	tests := []struct {
+		name       string
+		moves      int
+		wantScreen workspaceScreen
+	}{
+		{name: "project", moves: wizardConfigureProject, wantScreen: screenProject},
+		{name: "services", moves: wizardConfigureServices, wantScreen: screenServices},
+		{name: "preview", moves: wizardReviewChanges, wantScreen: screenPreview},
+		{name: "generate", moves: wizardGenerateSolution, wantScreen: screenGenerate},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+			for range tt.moves {
+				updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+				model = updated.(Model)
+				if cmd != nil {
+					t.Fatal("expected no command while selecting wizard option")
+				}
+			}
+			updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			model = updated.(Model)
+			if cmd != nil || model.mode != modeWorkspace || model.screen != tt.wantScreen || !model.guidedWorkspace {
+				t.Fatalf("expected guided %s route, got mode=%v screen=%v guided=%v cmd=%v", tt.name, model.mode, model.screen, model.guidedWorkspace, cmd)
+			}
+			assertNotContains(t, stripANSI(model.View()), "Navigation")
+		})
+	}
+}
+
+func TestWizardEscReturnsToMenuAndQuitKeysExit(t *testing.T) {
+	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.mode != modeWizard || model.wizardScreen != wizardMenu {
+		t.Fatalf("expected esc to return to wizard menu, got mode=%v screen=%v cmd=%v", model.mode, model.wizardScreen, cmd)
+	}
+
+	for _, msg := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune{'q'}}, {Type: tea.KeyCtrlC}} {
+		_, cmd = model.Update(msg)
+		if cmd == nil {
+			t.Fatalf("expected quit command for %q", msg.String())
+		}
+	}
+}
+
+func TestWizardAdvancedWorkspaceHasBackPath(t *testing.T) {
+	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	for range wizardAdvancedWorkspace {
+		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model = updated.(Model)
+	}
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.mode != modeWorkspace || model.screen != screenOverview || model.guidedWorkspace {
+		t.Fatalf("expected advanced workspace, got mode=%v screen=%v guided=%v cmd=%v", model.mode, model.screen, model.guidedWorkspace, cmd)
+	}
+	view := stripANSI(model.View())
+	assertContains(t, view, "Advanced workspace")
+	assertContains(t, view, "Navigation")
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.mode != modeWizard {
+		t.Fatalf("expected esc to return from advanced workspace, got mode=%v cmd=%v", model.mode, cmd)
+	}
+}
+
+func TestGuidedServicesPreserveSelectedContext(t *testing.T) {
+	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	model.serviceContext = serviceResourceValueObjects
+	model.selectedService = 2
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenServices || model.serviceContext != serviceResourceValueObjects || model.selectedService != 2 {
+		t.Fatalf("expected Services context to be preserved, got screen=%v context=%v service=%d cmd=%v", model.screen, model.serviceContext, model.selectedService, cmd)
+	}
+}
+
+func TestGuidedGenerationReturnsMinimalResultWizard(t *testing.T) {
+	plan := plannedFilesPlan(2)
+	plan.OutputDir = "/tmp/generated"
+	request := application.GenerateRequest{OutputDir: plan.OutputDir}
+	model := NewModel(plan, request, nil, func(actual application.GenerateRequest) (application.GenerateResult, error) {
+		return application.GenerateResult{OutputDir: actual.OutputDir, Plan: plan}, nil
+	}, nil)
+	for range wizardGenerateSolution {
+		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+		model = updated.(Model)
+	}
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	model = updated.(Model)
+	if cmd == nil || model.status != statusGenerating {
+		t.Fatalf("expected explicit generation command, got status=%v cmd=%v", model.status, cmd)
+	}
+	finished := cmd().(generationFinishedMsg)
+	updated, cmd = model.Update(finished)
+	model = updated.(Model)
+	if cmd != nil || model.mode != modeWizard || model.wizardScreen != wizardResult {
+		t.Fatalf("expected wizard result screen, got mode=%v screen=%v cmd=%v", model.mode, model.wizardScreen, cmd)
+	}
+	view := stripANSI(model.View())
+	assertContains(t, view, "Generation complete")
+	assertContains(t, view, "2 files written to /tmp/generated")
+	assertContains(t, view, "Back to menu")
+	assertContains(t, view, "Advanced workspace")
+	assertNotContains(t, view, "Navigation")
+}
+
+func TestRunUsesFullscreenProgramOption(t *testing.T) {
+	original := runTeaProgram
+	t.Cleanup(func() { runTeaProgram = original })
+	optionCount := 0
+	runTeaProgram = func(model tea.Model, options ...tea.ProgramOption) (tea.Model, error) {
+		optionCount = len(options)
+		return model, nil
+	}
+
+	if err := Run(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil, nil, nil, nil, nil, nil); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	if optionCount != 1 {
+		t.Fatalf("expected one fullscreen program option, got %d", optionCount)
+	}
 }
 
 func TestLayoutModeForWidthUsesResponsiveBreakpoints(t *testing.T) {
@@ -265,7 +405,7 @@ func TestClampIntKeepsValuesWithinBounds(t *testing.T) {
 }
 
 func TestModelUpdateSelectsAndOpensWorkspaceRoutes(t *testing.T) {
-	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
 
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
 	model = updated.(Model)
@@ -343,7 +483,7 @@ func TestModelUpdateEntersNestedServicesEditorsAndBacksToWorkspace(t *testing.T)
 func TestModelUpdateNumericShortcutsOpenCompatibilityRoutes(t *testing.T) {
 	for key, want := range map[rune]workspaceScreen{'1': screenOverview, '2': screenProject, '3': screenServices, '4': screenEntities, '5': screenValueObjects, '6': screenPreview, '7': screenGenerate, '8': screenResult} {
 		t.Run(fmt.Sprintf("route %c", key), func(t *testing.T) {
-			model := NewModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil)
+			model := workspaceModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil)
 			updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
 			model = updated.(Model)
 			if cmd != nil || model.screen != want || model.selectedScreen != want {
@@ -354,7 +494,7 @@ func TestModelUpdateNumericShortcutsOpenCompatibilityRoutes(t *testing.T) {
 }
 
 func TestModelUpdateProjectEditorUsesDedicatedRouteAndBackNavigation(t *testing.T) {
-	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
 	model = updated.(Model)
 	if cmd != nil || model.screen != screenProject {
@@ -378,7 +518,7 @@ func TestModelUpdateProjectEditorUsesDedicatedRouteAndBackNavigation(t *testing.
 }
 
 func TestModelUpdateHelpOverlayAndBusyLocks(t *testing.T) {
-	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
 	model = updated.(Model)
 	if cmd != nil || !model.helpOpen || !strings.Contains(stripANSI(model.View()), "Global:") {
@@ -421,7 +561,7 @@ func TestModelViewUsesResponsiveWorkspaceShell(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			model := NewModel(plannedFilesPlan(1), application.GenerateRequest{ConfigPath: "config.json", OutputDir: "/tmp/out"}, nil, nil, nil)
+			model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{ConfigPath: "config.json", OutputDir: "/tmp/out"}, nil, nil, nil)
 			updated, cmd := model.Update(tea.WindowSizeMsg{Width: tt.width, Height: 24})
 			model = updated.(Model)
 			if cmd != nil || model.layout != layoutModeForWidth(tt.width) {
@@ -480,7 +620,7 @@ func TestModelViewDedicatedResourceRoutesUseResponsiveListDetailLayout(t *testin
 
 	for _, width := range []int{120, 90, 60} {
 		t.Run(fmt.Sprintf("entities width %d", width), func(t *testing.T) {
-			model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+			model := workspaceModel(plan, application.GenerateRequest{}, nil, nil, nil)
 			model.openScreen(screenEntities)
 			updated, cmd := model.Update(tea.WindowSizeMsg{Width: width, Height: 24})
 			model = updated.(Model)
@@ -497,7 +637,7 @@ func TestModelViewDedicatedResourceRoutesUseResponsiveListDetailLayout(t *testin
 			assertContains(t, view, "Enter/e edit entity | f edit fields")
 		})
 		t.Run(fmt.Sprintf("value objects width %d", width), func(t *testing.T) {
-			model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+			model := workspaceModel(plan, application.GenerateRequest{}, nil, nil, nil)
 			model.openScreen(screenValueObjects)
 			updated, cmd := model.Update(tea.WindowSizeMsg{Width: width, Height: 24})
 			model = updated.(Model)
@@ -574,7 +714,7 @@ func TestModelUpdatePromotesServicesContextsAndNestedEditorsToDedicatedRoutes(t 
 func TestModelUpdateKeepsDedicatedRoutesLockedAfterSaveRefreshFailure(t *testing.T) {
 	plan := plannedFilesPlan(1)
 	plan.Config = application.ConfigSummary{Services: []application.ServiceSummary{{Name: "CatalogService", Entities: []application.EntitySummary{{Name: "Product"}}}}}
-	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+	model := workspaceModel(plan, application.GenerateRequest{}, nil, nil, nil)
 	model.openScreen(screenEntities)
 	model.status = statusFailed
 	model.errContext = "Refresh after save"
@@ -592,7 +732,7 @@ func TestModelUpdateKeepsDedicatedRoutesLockedAfterSaveRefreshFailure(t *testing
 }
 
 func TestModelUpdateNavigatesSteps(t *testing.T) {
-	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
 
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyTab})
 	model = updated.(Model)
@@ -634,7 +774,7 @@ func TestModelUpdateNavigatesSteps(t *testing.T) {
 func TestModelUpdateIgnoresStepNavigationWhileBusy(t *testing.T) {
 	for _, status := range []modelStatus{statusRefreshing, statusGenerating, statusSaving} {
 		t.Run(fmt.Sprintf("status %d", status), func(t *testing.T) {
-			model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+			model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
 			model.status = status
 
 			updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -652,7 +792,7 @@ func TestModelViewTruncatesDeletedFilePreview(t *testing.T) {
 	plan.ExtraFileCount = 4
 	plan.DeletedFiles = []string{"old-1.txt", "old-2.txt", "old-3.txt", "old-4.txt"}
 
-	model := NewModel(plan, application.GenerateRequest{ConfigPath: "microgen.json"}, nil, nil, nil)
+	model := workspaceModel(plan, application.GenerateRequest{ConfigPath: "microgen.json"}, nil, nil, nil)
 	model.currentStep = stepPreview
 	view := model.View()
 
@@ -888,7 +1028,7 @@ func TestModelViewReassuresWhenAllPlannedFilesAreUnchanged(t *testing.T) {
 func TestModelUpdateIgnoresActionFilterWhileBusy(t *testing.T) {
 	for _, status := range []modelStatus{statusRefreshing, statusGenerating, statusSaving} {
 		t.Run(fmt.Sprintf("status %d", status), func(t *testing.T) {
-			model := NewModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil)
+			model := workspaceModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil)
 			model.status = status
 
 			updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
@@ -907,7 +1047,7 @@ func TestModelUpdateIgnoresActionFilterWhileBusy(t *testing.T) {
 func TestModelUpdateIgnoresPlannedFileNavigationWhileBusy(t *testing.T) {
 	for _, status := range []modelStatus{statusRefreshing, statusGenerating} {
 		t.Run(fmt.Sprintf("status %d", status), func(t *testing.T) {
-			model := NewModel(plannedFilesPlan(6), application.GenerateRequest{}, nil, nil, nil)
+			model := workspaceModel(plannedFilesPlan(6), application.GenerateRequest{}, nil, nil, nil)
 			model.status = status
 
 			updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
@@ -935,7 +1075,7 @@ func TestModelUpdateQuitsOnExitKeys(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, cmd := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil).Update(tt.msg)
+			_, cmd := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil).Update(tt.msg)
 
 			if cmd == nil {
 				t.Fatal("expected quit command")
@@ -956,7 +1096,7 @@ func TestModelUpdateIgnoresExitKeysWhileGenerating(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil)
+			model := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil)
 			model.status = statusGenerating
 
 			updated, cmd := model.Update(tt.msg)
@@ -984,7 +1124,7 @@ func TestModelUpdateAllowsExitKeysWhileRefreshing(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil)
+			model := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil)
 			model.status = statusRefreshing
 
 			_, cmd := model.Update(tt.msg)
@@ -997,7 +1137,7 @@ func TestModelUpdateAllowsExitKeysWhileRefreshing(t *testing.T) {
 }
 
 func TestModelViewShowsRefreshWaitHelpOnly(t *testing.T) {
-	model := NewModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil)
+	model := workspaceModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil)
 	model.status = statusRefreshing
 
 	view := model.View()
@@ -1025,7 +1165,7 @@ func TestModelUpdateAllowsExitKeysAfterGenerationFinishes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil)
+			model := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil)
 			model.status = statusGenerating
 			finished, finishCmd := model.Update(tt.finishMsg)
 
@@ -1043,7 +1183,7 @@ func TestModelUpdateAllowsExitKeysAfterGenerationFinishes(t *testing.T) {
 }
 
 func TestModelUpdateIgnoresOtherKeys(t *testing.T) {
-	_, cmd := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	_, cmd := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
 
 	if cmd != nil {
 		t.Fatal("expected no command")
@@ -1052,7 +1192,7 @@ func TestModelUpdateIgnoresOtherKeys(t *testing.T) {
 
 func TestModelUpdateStartsGenerationOnConfirmedKey(t *testing.T) {
 	request := application.GenerateRequest{ConfigPath: "config.json", OutputDir: "/tmp/generated", Force: true}
-	model := NewModel(application.GenerationPlan{}, request, nil, func(actual application.GenerateRequest) (application.GenerateResult, error) {
+	model := workspaceModel(application.GenerationPlan{}, request, nil, func(actual application.GenerateRequest) (application.GenerateResult, error) {
 		if actual != request {
 			t.Fatalf("expected request %#v, got %#v", request, actual)
 		}
@@ -1087,7 +1227,7 @@ func TestModelUpdateStartsGenerationOnConfirmedKey(t *testing.T) {
 
 func TestModelUpdateStartsRefreshOnRefreshKey(t *testing.T) {
 	request := application.GenerateRequest{ConfigPath: "config.json", OutputDir: "/tmp/generated", Force: true}
-	model := NewModel(application.GenerationPlan{}, request, func(actual application.GenerateRequest) (application.GenerationPlan, error) {
+	model := workspaceModel(application.GenerationPlan{}, request, func(actual application.GenerateRequest) (application.GenerationPlan, error) {
 		if actual != request {
 			t.Fatalf("expected request %#v, got %#v", request, actual)
 		}
@@ -1120,7 +1260,7 @@ func TestModelUpdateStartsRefreshOnRefreshKey(t *testing.T) {
 }
 
 func TestModelUpdateRecordsRefreshSuccess(t *testing.T) {
-	model := NewModel(plannedFilesPlan(10), application.GenerateRequest{}, nil, nil, nil)
+	model := workspaceModel(plannedFilesPlan(10), application.GenerateRequest{}, nil, nil, nil)
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnd})
 	model = updated.(Model)
 
@@ -1151,7 +1291,7 @@ func TestModelUpdateRecordsRefreshSuccess(t *testing.T) {
 func TestModelUpdateRecordsRefreshFailureAndAllowsRetry(t *testing.T) {
 	refreshErr := errors.New("plan failed")
 	retries := 0
-	model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
+	model := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
 		retries++
 		return application.GenerationPlan{}, nil
 	}, nil, nil)
@@ -1186,7 +1326,7 @@ func TestModelUpdateRecordsRefreshFailureAndAllowsRetry(t *testing.T) {
 
 func TestModelUpdateIgnoresGenerationKeyWhileGeneratingOrGenerated(t *testing.T) {
 	for _, status := range []modelStatus{statusRefreshing, statusGenerating, statusGenerated} {
-		model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
+		model := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
 			t.Fatal("generation should not run")
 			return application.GenerateResult{}, nil
 		}, nil)
@@ -1202,7 +1342,7 @@ func TestModelUpdateIgnoresGenerationKeyWhileGeneratingOrGenerated(t *testing.T)
 
 func TestModelUpdateIgnoresRefreshKeyWhileRefreshingOrGenerating(t *testing.T) {
 	for _, status := range []modelStatus{statusRefreshing, statusGenerating} {
-		model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
+		model := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
 			t.Fatal("refresh should not run")
 			return application.GenerationPlan{}, nil
 		}, nil, nil)
@@ -1223,7 +1363,7 @@ func TestModelUpdateEditsSolutionSettingsAndSaves(t *testing.T) {
 	updatedPlan := plannedFilesPlan(3)
 	updatedPlan.Config = application.ConfigSummary{SolutionName: "CatalogPlatform", SolutionDescription: "New description", TargetFramework: "net9.0"}
 	var capturedSettings application.SolutionSettings
-	model := NewModel(plan, request, nil, nil, func(actual application.GenerateRequest, settings application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+	model := workspaceModel(plan, request, nil, nil, func(actual application.GenerateRequest, settings application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
 		if actual != request {
 			t.Fatalf("expected request %#v, got %#v", request, actual)
 		}
@@ -1311,7 +1451,7 @@ func TestModelUpdateEditsSolutionSettingsAndSaves(t *testing.T) {
 func TestModelViewShowsTargetFrameworkSuggestionsAndCyclesThem(t *testing.T) {
 	plan := plannedFilesPlan(1)
 	plan.Config = application.ConfigSummary{SolutionName: "CommercePlatform", TargetFramework: "net8.0"}
-	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil, []string{"net10.0", "net9.0", "net8.0"})
+	model := workspaceModel(plan, application.GenerateRequest{}, nil, nil, nil, []string{"net10.0", "net9.0", "net8.0"})
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
 	model = updated.(Model)
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -1333,7 +1473,7 @@ func TestModelViewShowsTargetFrameworkSuggestionsAndCyclesThem(t *testing.T) {
 func TestModelUpdateSupportsEditNavigationAndCancel(t *testing.T) {
 	plan := plannedFilesPlan(1)
 	plan.Config = application.ConfigSummary{SolutionName: "CommercePlatform", SolutionDescription: "Description", TargetFramework: "net8.0"}
-	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+	model := workspaceModel(plan, application.GenerateRequest{}, nil, nil, nil)
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
 	model = updated.(Model)
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -1365,7 +1505,7 @@ func TestModelUpdateSupportsEditNavigationAndCancel(t *testing.T) {
 func TestModelUpdateEditModeTabNavigatesFieldsNotSteps(t *testing.T) {
 	plan := plannedFilesPlan(1)
 	plan.Config = application.ConfigSummary{SolutionName: "CommercePlatform", TargetFramework: "net8.0"}
-	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+	model := workspaceModel(plan, application.GenerateRequest{}, nil, nil, nil)
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
 	model = updated.(Model)
 
@@ -1384,7 +1524,7 @@ func TestModelUpdateEditModeTabNavigatesFieldsNotSteps(t *testing.T) {
 }
 
 func TestModelUpdateCancelRestoresPreviousStatus(t *testing.T) {
-	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
 	model.status = statusGenerated
 	model.result = application.GenerateResult{OutputDir: "/tmp/generated", Plan: application.GenerationPlan{FileCount: 1}}
 
@@ -1404,7 +1544,7 @@ func TestModelUpdateSaveFailureKeepsEditorOpen(t *testing.T) {
 	saveErr := errors.New("invalid config")
 	plan := plannedFilesPlan(1)
 	plan.Config = application.ConfigSummary{SolutionName: "CommercePlatform", TargetFramework: "net8.0"}
-	model := NewModel(plan, application.GenerateRequest{}, nil, nil, func(application.GenerateRequest, application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+	model := workspaceModel(plan, application.GenerateRequest{}, nil, nil, func(application.GenerateRequest, application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
 		return application.UpdateSolutionSettingsResult{}, saveErr
 	})
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
@@ -1436,7 +1576,7 @@ func TestModelUpdateSaveSuccessWithRefreshFailureAllowsRetry(t *testing.T) {
 	refreshedPlan.Config = application.ConfigSummary{SolutionName: "CatalogPlatform", SolutionDescription: "New description", TargetFramework: "net9.0", ServiceCount: 2, EntityCount: 3, ValueObjectCount: 1, ServiceNames: []string{"CatalogService", "OrderService"}}
 	refreshedPlan.OutputDir = "/tmp/refreshed"
 	refreshedPlan.OutputAction = "replace"
-	model := NewModel(plan, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
+	model := workspaceModel(plan, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
 		retries++
 		return refreshedPlan, nil
 	}, nil, func(application.GenerateRequest, application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
@@ -1507,7 +1647,7 @@ func TestModelUpdateSaveRefreshRetryFailureKeepsStalePlanLocked(t *testing.T) {
 	plan := plannedFilesPlan(1)
 	plan.Config = application.ConfigSummary{SolutionName: "CommercePlatform", TargetFramework: "net8.0"}
 	savedConfig := application.ConfigSummary{SolutionName: "CatalogPlatform", TargetFramework: "net9.0"}
-	model := NewModel(plan, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
+	model := workspaceModel(plan, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
 		return application.GenerationPlan{}, retryErr
 	}, nil, nil)
 
@@ -1554,7 +1694,7 @@ func TestModelUpdateEditsServicesAndSaves(t *testing.T) {
 	updatedPlan := plannedFilesPlan(4)
 	updatedPlan.Config = application.ConfigSummary{ServiceCount: 2, EntityCount: 2, ServiceNames: []string{"CatalogService", "Service3Service"}}
 	var capturedSettings application.ServiceSettings
-	model := NewModel(plan, request, nil, nil, nil)
+	model := workspaceModel(plan, request, nil, nil, nil)
 	model.currentStep = stepServices
 	model.updateServices = func(actual application.GenerateRequest, settings application.ServiceSettings) (application.UpdateServiceSettingsResult, error) {
 		if actual != request {
@@ -2570,14 +2710,14 @@ func TestModelUpdateBlocksValueObjectsEditWhileBusy(t *testing.T) {
 
 func TestModelUpdateBlocksQuitAndActionsWhileSavingOrEditing(t *testing.T) {
 	for _, msg := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune{'q'}}, {Type: tea.KeyEsc}, {Type: tea.KeyCtrlC}} {
-		model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil)
+		model := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil)
 		model.status = statusSaving
 		updated, cmd := model.Update(msg)
 		if cmd != nil || updated.(Model).status != statusSaving {
 			t.Fatalf("expected quit to be blocked while saving for %q", msg.String())
 		}
 	}
-	model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
+	model := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
 		t.Fatal("refresh should not run while editing")
 		return application.GenerationPlan{}, nil
 	}, func(application.GenerateRequest) (application.GenerateResult, error) {
@@ -2602,7 +2742,7 @@ func TestModelUpdateRecordsGenerationSuccess(t *testing.T) {
 		Plan:      application.GenerationPlan{OutputDir: "/tmp/generated", FileCount: 3},
 	}
 
-	updated, cmd := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil).Update(generationFinishedMsg{result: result})
+	updated, cmd := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil).Update(generationFinishedMsg{result: result})
 	updatedModel := updated.(Model)
 
 	if cmd != nil {
@@ -2625,7 +2765,7 @@ func TestModelUpdateRecordsGenerationSuccess(t *testing.T) {
 func TestModelUpdateRecordsGenerationFailureAndAllowsRetry(t *testing.T) {
 	generationErr := errors.New("write failed")
 	retries := 0
-	model := NewModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
+	model := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
 		retries++
 		return application.GenerateResult{}, nil
 	}, nil)
@@ -2663,7 +2803,7 @@ func TestModelUpdatePreviewGenerateResultWorkflow(t *testing.T) {
 	request := application.GenerateRequest{ConfigPath: "config.json", OutputDir: "/tmp/generated"}
 	plan := plannedFilesPlan(2)
 	plan.OutputDir = request.OutputDir
-	model := NewModel(plan, request, nil, func(actual application.GenerateRequest) (application.GenerateResult, error) {
+	model := workspaceModel(plan, request, nil, func(actual application.GenerateRequest) (application.GenerateResult, error) {
 		if actual != request {
 			t.Fatalf("expected request %#v, got %#v", request, actual)
 		}
@@ -2693,7 +2833,7 @@ func TestModelUpdatePreviewGenerateResultWorkflow(t *testing.T) {
 
 func TestModelUpdateResultFailureBackAndRetry(t *testing.T) {
 	generationErr := errors.New("write failed")
-	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
+	model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
 		return application.GenerateResult{}, generationErr
 	}, nil)
 
@@ -2745,7 +2885,7 @@ func TestModelUpdateBlocksStaleAndForceUnsafeGeneration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
+			model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
 				t.Fatal("generation should remain blocked")
 				return application.GenerateResult{}, nil
 			}, nil)
@@ -2769,7 +2909,7 @@ func TestModelViewWorkflowScreensShowResponsiveContent(t *testing.T) {
 	plan.Files[2].Action = "unchanged"
 	plan.DeletedFiles = []string{"old.cs"}
 	plan.ExtraFileCount = 1
-	model := NewModel(plan, application.GenerateRequest{OutputDir: plan.OutputDir}, nil, nil, nil)
+	model := workspaceModel(plan, application.GenerateRequest{OutputDir: plan.OutputDir}, nil, nil, nil)
 
 	model.openScreen(screenPreview)
 	updated, _ := model.Update(tea.WindowSizeMsg{Width: 60, Height: 24})
@@ -2850,8 +2990,14 @@ func stringPtr(value string) *string {
 }
 
 func modelOnStep(plan application.GenerationPlan, step tuiStep) Model {
-	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+	model := workspaceModel(plan, application.GenerateRequest{}, nil, nil, nil)
 	model.currentStep = step
+	return model
+}
+
+func workspaceModel(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, targetFrameworkSuggestions ...[]string) Model {
+	model := NewModel(plan, request, planFunc, generate, update, targetFrameworkSuggestions...)
+	model.mode = modeWorkspace
 	return model
 }
 
