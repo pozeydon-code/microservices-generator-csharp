@@ -16,6 +16,8 @@ const (
 	minFileWindowRows     = 3
 	maxFileWindowRows     = 12
 	reservedViewRows      = 18
+	wideTerminalWidth     = 100
+	mediumTerminalWidth   = 76
 )
 
 const readyHelp = "Navigate files: arrows/k/j/pgup/pgdown/home/end. Actions: g generate, e edit settings, r refresh, a filter."
@@ -77,6 +79,25 @@ const (
 	stepPreview
 	stepGenerate
 	stepCount
+)
+
+type workspaceScreen int
+
+const (
+	screenOverview workspaceScreen = iota
+	screenProject
+	screenServices
+	screenPreview
+	screenGenerate
+	screenCount
+)
+
+type layoutMode int
+
+const (
+	layoutNarrow layoutMode = iota
+	layoutMedium
+	layoutWide
 )
 
 type editField int
@@ -215,9 +236,15 @@ type Model struct {
 	fileCursor                 int
 	fileOffset                 int
 	windowRows                 int
+	windowWidth                int
+	windowHeight               int
+	layout                     layoutMode
 	actionFilter               string
 	currentStep                tuiStep
 	selectedService            int
+	screen                     workspaceScreen
+	selectedScreen             workspaceScreen
+	helpOpen                   bool
 }
 
 func NewModel(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, targetFrameworkSuggestions ...[]string) Model {
@@ -225,7 +252,7 @@ func NewModel(plan application.GenerationPlan, request application.GenerateReque
 	if len(targetFrameworkSuggestions) > 0 {
 		suggestions = append([]string(nil), targetFrameworkSuggestions[0]...)
 	}
-	return Model{plan: plan, request: request, planFunc: planFunc, generate: generate, update: update, status: statusReady, targetFrameworkSuggestions: suggestions, windowRows: defaultFileWindowRows, currentStep: stepSource}
+	return Model{plan: plan, request: request, planFunc: planFunc, generate: generate, update: update, status: statusReady, targetFrameworkSuggestions: suggestions, windowRows: defaultFileWindowRows, layout: layoutModeForWidth(0), currentStep: stepSource, screen: screenOverview, selectedScreen: screenOverview}
 }
 
 func Run(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, updateServices UpdateServicesFunc, updateEntities UpdateEntitiesFunc, updateFields UpdateFieldsFunc, updateValueObjects UpdateValueObjectsFunc, targetFrameworkSuggestions []string) error {
@@ -245,10 +272,19 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		m.windowWidth = msg.Width
+		m.windowHeight = msg.Height
+		m.layout = layoutModeForWidth(msg.Width)
 		m.windowRows = visibleFileRows(msg.Height)
 		m.clampFileCursor()
 		return m, nil
 	case tea.KeyMsg:
+		if m.helpOpen {
+			if msg.String() == "esc" || msg.String() == "?" {
+				m.helpOpen = false
+			}
+			return m, nil
+		}
 		if m.status == statusEditing {
 			if m.edit.mode == editModeValueObjects {
 				return m.updateValueObjectsEdit(msg)
@@ -295,13 +331,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.status == statusGenerating || m.status == statusSaving {
 				return m, nil
 			}
+			if key == "esc" && m.activeScreen() != screenOverview {
+				m.openScreen(screenOverview)
+				return m, nil
+			}
 			return m, tea.Quit
+		case "?":
+			m.helpOpen = true
+			return m, nil
+		case "1", "2", "3", "4", "5":
+			if m.busy() {
+				return m, nil
+			}
+			m.openScreen(workspaceScreen(key[0] - '1'))
+			return m, nil
 		case "up", "k":
 			if m.status == statusGenerating || m.status == statusRefreshing || m.status == statusSaving {
 				return m, nil
 			}
-			if m.currentStep == stepServices {
+			if m.activeScreen() == screenServices {
 				m.moveSelectedService(-1)
+				return m, nil
+			}
+			if m.activeScreen() != screenPreview {
+				m.moveRouteSelection(-1)
 				return m, nil
 			}
 			m.moveFileCursor(-1)
@@ -310,11 +363,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.status == statusGenerating || m.status == statusRefreshing || m.status == statusSaving {
 				return m, nil
 			}
-			if m.currentStep == stepServices {
+			if m.activeScreen() == screenServices {
 				m.moveSelectedService(1)
 				return m, nil
 			}
+			if m.activeScreen() != screenPreview {
+				m.moveRouteSelection(1)
+				return m, nil
+			}
 			m.moveFileCursor(1)
+			return m, nil
+		case "left", "h":
+			if m.busy() {
+				return m, nil
+			}
+			m.navigateRoute(-1)
+			return m, nil
+		case "right", "l":
+			if m.busy() {
+				return m, nil
+			}
+			m.navigateRoute(1)
 			return m, nil
 		case "home":
 			if m.status == statusGenerating || m.status == statusRefreshing || m.status == statusSaving {
@@ -371,7 +440,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.status = statusGenerating
-			m.currentStep = stepGenerate
+			m.openScreen(screenGenerate)
 			m.err = nil
 			m.errContext = ""
 			m.message = ""
@@ -380,10 +449,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.status == statusRefreshing || m.status == statusGenerating || m.status == statusSaving {
 				return m, nil
 			}
-			if m.currentStep == stepServices {
+			if m.activeScreen() == screenServices {
 				m.startServicesEditing()
 			} else {
-				m.currentStep = stepProject
+				m.openScreen(screenProject)
 				m.startEditing()
 			}
 			return m, nil
@@ -391,15 +460,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.status == statusRefreshing || m.status == statusGenerating || m.status == statusSaving {
 				return m, nil
 			}
-			if m.currentStep == stepServices {
+			if m.activeScreen() == screenServices {
 				m.startEntitiesEditing()
+				return m, nil
+			}
+			if m.selectedScreen != m.activeScreen() {
+				m.openScreen(m.selectedScreen)
 			}
 			return m, nil
 		case "v":
 			if m.status == statusRefreshing || m.status == statusGenerating || m.status == statusSaving {
 				return m, nil
 			}
-			if m.currentStep == stepServices {
+			if m.activeScreen() == screenServices {
 				m.startValueObjectsEditing()
 			}
 			return m, nil
@@ -413,7 +486,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = statusFailed
 			m.err = msg.err
 			m.errContext = errContext
-			m.currentStep = stepGenerate
+			m.openScreen(screenGenerate)
 			return m, nil
 		}
 		m.status = statusReady
@@ -431,7 +504,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = statusFailed
 			m.err = msg.err
 			m.errContext = "Generation"
-			m.currentStep = stepGenerate
+			m.openScreen(screenGenerate)
 			return m, nil
 		}
 		m.status = statusGenerated
@@ -597,6 +670,94 @@ func (m *Model) moveStep(delta int) {
 	m.currentStep = tuiStep(next)
 }
 
+func layoutModeForWidth(width int) layoutMode {
+	if width >= wideTerminalWidth {
+		return layoutWide
+	}
+	if width >= mediumTerminalWidth {
+		return layoutMedium
+	}
+	return layoutNarrow
+}
+
+func clampInt(value, minimum, maximum int) int {
+	if value < minimum {
+		return minimum
+	}
+	if value > maximum {
+		return maximum
+	}
+	return value
+}
+
+func screenForStep(step tuiStep) workspaceScreen {
+	switch step {
+	case stepProject:
+		return screenProject
+	case stepServices:
+		return screenServices
+	case stepPreview:
+		return screenPreview
+	case stepGenerate:
+		return screenGenerate
+	default:
+		return screenOverview
+	}
+}
+
+func stepForScreen(screen workspaceScreen) tuiStep {
+	switch screen {
+	case screenProject:
+		return stepProject
+	case screenServices:
+		return stepServices
+	case screenPreview:
+		return stepPreview
+	case screenGenerate:
+		return stepGenerate
+	default:
+		return stepSource
+	}
+}
+
+func (screen workspaceScreen) label() string {
+	switch screen {
+	case screenProject:
+		return "Project"
+	case screenServices:
+		return "Services"
+	case screenPreview:
+		return "Preview"
+	case screenGenerate:
+		return "Generate"
+	default:
+		return "Overview"
+	}
+}
+
+func (m Model) activeScreen() workspaceScreen {
+	if m.screen == screenOverview && m.currentStep != stepSource {
+		return screenForStep(m.currentStep)
+	}
+	return m.screen
+}
+
+func (m *Model) openScreen(screen workspaceScreen) {
+	screen = workspaceScreen(clampInt(int(screen), int(screenOverview), int(screenCount)-1))
+	m.screen = screen
+	m.selectedScreen = screen
+	m.currentStep = stepForScreen(screen)
+}
+
+func (m *Model) moveRouteSelection(delta int) {
+	m.selectedScreen = workspaceScreen(clampInt(int(m.selectedScreen)+delta, int(screenOverview), int(screenCount)-1))
+}
+
+func (m *Model) navigateRoute(delta int) {
+	m.selectedScreen = workspaceScreen(clampInt(int(m.activeScreen())+delta, int(screenOverview), int(screenCount)-1))
+	m.openScreen(m.selectedScreen)
+}
+
 func (step tuiStep) label() string {
 	switch step {
 	case stepSource:
@@ -619,6 +780,7 @@ func (m Model) postSaveRefreshFailed() bool {
 }
 
 func (m *Model) startEditing() {
+	m.openScreen(screenProject)
 	returnStatus := m.status
 	m.status = statusEditing
 	m.err = nil
@@ -637,6 +799,7 @@ func (m *Model) startEditing() {
 }
 
 func (m *Model) startServicesEditing() {
+	m.openScreen(screenServices)
 	returnStatus := m.status
 	m.status = statusEditing
 	m.err = nil
@@ -653,6 +816,7 @@ func (m *Model) startServicesEditing() {
 }
 
 func (m *Model) startEntitiesEditing() {
+	m.openScreen(screenServices)
 	returnStatus := m.status
 	m.status = statusEditing
 	m.err = nil
@@ -686,6 +850,7 @@ func (m *Model) startFieldsEditing() {
 }
 
 func (m *Model) startValueObjectsEditing() {
+	m.openScreen(screenServices)
 	returnStatus := m.status
 	service := m.selectedServiceSummary()
 	m.status = statusEditing
@@ -1439,6 +1604,7 @@ func (m Model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = m.edit.returnStatus
 		m.err = nil
 		m.errContext = ""
+		m.openScreen(screenProject)
 		return m, nil
 	case "enter":
 		m.status = statusSaving
@@ -1872,14 +2038,20 @@ func stringPtrFromText(field textField) *string {
 }
 
 func (m Model) View() string {
+	if m.helpOpen {
+		return m.workspaceHeader() + "\n\n" + m.helpOverlay()
+	}
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "%s - %s\n", appTitleStyle.Render("Microgen"), m.statusBadge())
-	fmt.Fprintf(&builder, "%s\n", dimStyle.Render("Step-based generator dashboard"))
-	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Primary:"), m.primaryActionStyle().Render(m.primaryAction()))
-	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, m.stepperCard())
-	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, m.currentStepPanel())
+	fmt.Fprintln(&builder, m.workspaceHeader())
+	if m.layout == layoutWide {
+		rail := cardStyle.Width(22).Render(m.navigationRail())
+		content := m.workspaceContent()
+		fmt.Fprintln(&builder, lipgloss.JoinHorizontal(lipgloss.Top, rail, "  ", content))
+	} else {
+		fmt.Fprintln(&builder, m.compactNavigation())
+		fmt.Fprintln(&builder)
+		fmt.Fprintln(&builder, m.workspaceContent())
+	}
 	if m.message != "" {
 		fmt.Fprintln(&builder)
 		fmt.Fprintln(&builder, successStyle.Render(m.message))
@@ -1889,47 +2061,140 @@ func (m Model) View() string {
 	return builder.String()
 }
 
-func (m Model) stepperCard() string {
-	var builder strings.Builder
-	fmt.Fprintln(&builder, sectionTitleStyle.Render("Wizard"))
-	for step := stepSource; step < stepCount; step++ {
-		marker := " "
-		style := dimStyle
-		if step < m.currentStep {
-			marker = "x"
-			style = successStyle
-		}
-		if step == m.currentStep {
-			marker = ">"
-			style = readyStyle
-		}
-		fmt.Fprintf(&builder, "%s %d/%d %s\n", style.Render(marker), step+1, stepCount, style.Render(step.label()))
+func (m Model) workspaceHeader() string {
+	project := m.plan.Config.SolutionName
+	if project == "" {
+		project = "Unconfigured project"
 	}
-	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Progress"), fmt.Sprintf("%d/%d", m.currentStep+1, stepCount))
-	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+	return fmt.Sprintf("%s - %s  %s  %s %s\n%s", appTitleStyle.Render("Microgen"), m.statusBadge(), dimStyle.Render("Workspace"), labelStyle.Render("Current project:"), project, m.primaryActionStyle().Render("Primary: "+m.primaryAction()))
 }
 
-func (m Model) currentStepPanel() string {
+func (m Model) navigationRail() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Navigation"))
+	for screen := screenOverview; screen < screenCount; screen++ {
+		cursor := " "
+		style := dimStyle
+		if screen == m.activeScreen() {
+			cursor = ">"
+			style = readyStyle
+		} else if screen == m.selectedScreen {
+			cursor = "*"
+			style = labelStyle
+		}
+		fmt.Fprintf(&builder, "%s %d %s\n", style.Render(cursor), screen+1, style.Render(screen.label()))
+	}
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, dimStyle.Render("Enter open"))
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+func (m Model) compactNavigation() string {
+	parts := make([]string, 0, int(screenCount))
+	for screen := screenOverview; screen < screenCount; screen++ {
+		label := fmt.Sprintf("%d:%s", screen+1, screen.label())
+		if screen == m.activeScreen() {
+			label = readyStyle.Render("[" + label + "]")
+		}
+		parts = append(parts, label)
+	}
+	return dimStyle.Render("Navigation ") + strings.Join(parts, "  ")
+}
+
+func (m Model) workspaceContent() string {
 	if m.postSaveRefreshFailed() {
 		return strings.Join([]string{m.projectStepCard(), m.generateStepCard()}, "\n\n")
 	}
-	switch m.currentStep {
-	case stepProject:
+	switch m.activeScreen() {
+	case screenProject:
 		return m.projectStepCard()
-	case stepServices:
+	case screenServices:
 		return m.servicesStepCard()
-	case stepPreview:
+	case screenPreview:
 		return strings.Join([]string{m.outputPreviewCard(), m.plannedFilesCard()}, "\n\n")
-	case stepGenerate:
+	case screenGenerate:
 		return m.generateStepCard()
 	default:
-		return m.sourceStepCard()
+		return m.overviewCard()
 	}
+}
+
+func (m Model) helpOverlay() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, cardStyle.Render(strings.Join([]string{
+		sectionTitleStyle.Render("Help"),
+		"Global: 1-5 open screens | up/down select route | enter open | h/l or left/right switch",
+		"Global: ? close help | esc back | q/ctrl+c quit",
+		"Overview: r refresh | g generate",
+		"Project: e edit settings | r refresh",
+		"Services: up/down select service | enter entities | e services | v value objects",
+		"Preview: arrows/k/j inspect files | a filter | r refresh | g generate",
+		"Generate: g generate | r refresh",
+	}, "\n")))
+	fmt.Fprintln(&builder, dimStyle.Render("Press ? or esc to close help."))
+	return builder.String()
+}
+
+func (m Model) overviewCard() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Overview"))
+	fmt.Fprintf(&builder, "%s %s %s\n", labelStyle.Render("Source"), m.request.ConfigPath, dimStyle.Render("("+m.configSourceLabel()+")"))
+	if m.request.ConfigBootstrapped {
+		fmt.Fprintln(&builder, dimStyle.Render("Created starter config. Edit project, service, entity, and basic field settings incrementally."))
+	}
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Product"), m.plan.Config.SolutionName)
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Target"), m.plan.Config.TargetFramework)
+	outputDir := m.plan.OutputDir
+	if outputDir == "" {
+		outputDir = m.request.OutputDir
+	}
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Output"), outputDir)
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Mode"), m.plan.OutputAction)
+	readiness := m.plan.Readiness
+	if m.status == statusGenerated {
+		readiness = m.result.Plan.Readiness
+	}
+	projectCount := boolAsInt(readiness.ProjectPresent || m.plan.Config.SolutionName != "")
+	serviceCount := readiness.ServiceCount
+	if serviceCount == 0 {
+		serviceCount = m.plan.Config.ServiceCount
+	}
+	entityCount := readiness.EntityCount
+	if entityCount == 0 {
+		entityCount = m.plan.Config.EntityCount
+	}
+	valueObjectCount := readiness.ValueObjectCount
+	if valueObjectCount == 0 {
+		valueObjectCount = m.plan.Config.ValueObjectCount
+	}
+	badge := successStyle.Render("READY")
+	if m.postSaveRefreshFailed() {
+		badge = dangerStyle.Render("STALE")
+	} else if m.busy() {
+		badge = busyStyle.Render(m.statusLabel())
+	}
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Readiness"), badge)
+	fmt.Fprintf(&builder, "%s project=%d, services=%d, entities=%d, fields=%d, value objects=%d\n", labelStyle.Render("Counts"), projectCount, serviceCount, entityCount, readiness.FieldCount, valueObjectCount)
+	if len(readiness.Hints) > 0 {
+		fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Next"), readiness.Hints[0])
+	} else if m.plan.FileCount > 0 {
+		fmt.Fprintf(&builder, "%s Review Preview before generating.\n", labelStyle.Render("Next"))
+	} else {
+		fmt.Fprintf(&builder, "%s Refresh the plan before continuing.\n", labelStyle.Render("Next"))
+	}
+	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+}
+
+func boolAsInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func (m Model) sourceStepCard() string {
 	var builder strings.Builder
-	fmt.Fprintln(&builder, sectionTitleStyle.Render("Source"))
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Overview"))
 	fmt.Fprintf(&builder, "%s %s %s\n", labelStyle.Render("Source"), m.request.ConfigPath, dimStyle.Render("("+m.configSourceLabel()+")"))
 	if m.request.ConfigBootstrapped {
 		fmt.Fprintln(&builder, dimStyle.Render("Created starter config. Edit project, service, entity, and basic field settings incrementally."))
@@ -2093,41 +2358,36 @@ func (m Model) renderReadinessSummary(builder *strings.Builder) {
 
 func (m Model) footerCard() string {
 	var builder strings.Builder
-	fmt.Fprintln(&builder, sectionTitleStyle.Render("Shortcuts"))
 	if m.status == statusRefreshing {
-		fmt.Fprintln(&builder, busyStyle.Render("Refreshing plan. Please wait; editing, filtering, and generation are paused."))
-		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+		return busyStyle.Render("Refreshing plan. Please wait; editing, filtering, and generation are paused.")
 	}
 	if m.status == statusGenerating {
-		fmt.Fprintln(&builder, busyStyle.Render("Generating files. Please wait; exit is available after generation finishes."))
-		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+		return busyStyle.Render("Generating files. Please wait; exit is available after generation finishes.")
 	}
 	if m.status == statusSaving {
-		fmt.Fprintln(&builder, busyStyle.Render("Saving settings. Please wait; exit is available after save finishes."))
-		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+		return busyStyle.Render("Saving settings. Please wait; exit is available after save finishes.")
 	}
 	if m.postSaveRefreshFailed() {
-		fmt.Fprintln(&builder, "Keys: r retry refresh | q/esc/ctrl+c quit")
-		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+		return "Locked: r retry refresh | q/esc/ctrl+c quit"
 	}
-	fmt.Fprintln(&builder, stepHelp)
-	switch m.currentStep {
-	case stepProject:
+	fmt.Fprintln(&builder, "Navigate: up/down select route, enter open, h/l switch, ? help.")
+	switch m.activeScreen() {
+	case screenProject:
 		fmt.Fprintln(&builder, "Project: e edit settings, r refresh.")
-	case stepServices:
+	case screenServices:
 		fmt.Fprintln(&builder, "Services: e edit services, enter edit entities, v edit value objects, r refresh.")
-	case stepPreview:
+	case screenPreview:
 		fmt.Fprintln(&builder, readyHelp)
-	case stepGenerate:
+	case screenGenerate:
 		if m.status == statusGenerated {
 			fmt.Fprintln(&builder, generatedHelp)
 		} else {
 			fmt.Fprintln(&builder, "Generate: g generate, r refresh.")
 		}
 	default:
-		fmt.Fprintln(&builder, "Actions: r refresh. Move to Project to edit or Generate to write files.")
+		fmt.Fprintln(&builder, "Overview: r refresh, 2 Project, 3 Services, 4 Preview, 5 Generate.")
 	}
-	fmt.Fprintln(&builder, "Exit: q/esc/ctrl+c")
+	fmt.Fprintln(&builder, "Back: esc | Exit: q/ctrl+c")
 	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 }
 

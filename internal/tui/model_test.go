@@ -60,20 +60,21 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	view := model.View()
 
 	assertContains(t, view, "Microgen - READY")
-	assertContains(t, view, "Step-based generator dashboard")
+	assertContains(t, view, "Workspace")
 	assertContains(t, view, "Primary: g Generate")
-	assertContains(t, view, "Wizard")
-	assertContains(t, view, "> 1/5 Source")
-	assertContains(t, view, "  2/5 Project")
-	assertContains(t, view, "  3/5 Services")
-	assertContains(t, view, "  4/5 Preview")
-	assertContains(t, view, "  5/5 Generate")
-	assertContains(t, view, "Progress 1/5")
+	assertContains(t, view, "Navigation")
+	assertContains(t, view, "1:Overview")
+	assertContains(t, view, "2:Project")
+	assertContains(t, view, "3:Services")
+	assertContains(t, view, "4:Preview")
+	assertContains(t, view, "5:Generate")
+	assertNotContains(t, view, "Wizard")
+	assertNotContains(t, view, "Progress 1/5")
 	assertContains(t, view, "Source")
 	assertContains(t, view, "Source microgen.json (existing JSON)")
 	assertContains(t, view, "Output /tmp/generated")
 	assertContains(t, view, "Mode replace")
-	assertContains(t, view, "Steps: tab/] next, shift+tab/[ previous.")
+	assertContains(t, view, "Navigate: up/down select route, enter open, h/l switch, ? help.")
 
 	model.currentStep = stepProject
 	view = model.View()
@@ -107,7 +108,7 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	assertContains(t, view, "> [1/6] [REPLACE] README.md")
 	assertContains(t, view, "  [5/6] [CREATE] tests/ProductService/ProductService.Api.Tests/ProductEndpointsTests.cs")
 	assertContains(t, view, readyHelp)
-	assertContains(t, view, "Exit: q/esc/ctrl+c")
+	assertContains(t, view, "Back: esc | Exit: q/ctrl+c")
 
 	model.currentStep = stepGenerate
 	view = model.View()
@@ -212,7 +213,160 @@ func TestModelDefaultsToSourceStep(t *testing.T) {
 	if model.currentStep != stepSource {
 		t.Fatalf("expected source step by default, got %v", model.currentStep)
 	}
-	assertContains(t, model.View(), "> 1/5 Source")
+	assertContains(t, model.View(), "Overview")
+}
+
+func TestLayoutModeForWidthUsesResponsiveBreakpoints(t *testing.T) {
+	tests := []struct {
+		name  string
+		width int
+		want  layoutMode
+	}{
+		{name: "narrow below medium", width: 75, want: layoutNarrow},
+		{name: "medium lower bound", width: 76, want: layoutMedium},
+		{name: "medium upper bound", width: 99, want: layoutMedium},
+		{name: "wide lower bound", width: 100, want: layoutWide},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := layoutModeForWidth(tt.width); got != tt.want {
+				t.Fatalf("layoutModeForWidth(%d) = %v, want %v", tt.width, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClampIntKeepsValuesWithinBounds(t *testing.T) {
+	tests := []struct {
+		name  string
+		value int
+		want  int
+	}{
+		{name: "below lower bound", value: -1, want: 0},
+		{name: "inside bounds", value: 2, want: 2},
+		{name: "above upper bound", value: 9, want: 4},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := clampInt(tt.value, 0, 4); got != tt.want {
+				t.Fatalf("clampInt(%d, 0, 4) = %d, want %d", tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestModelUpdateSelectsAndOpensWorkspaceRoutes(t *testing.T) {
+	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	if cmd != nil || model.selectedScreen != screenProject || model.activeScreen() != screenOverview {
+		t.Fatalf("expected Project to be selected without opening it, got screen=%v selected=%v cmd=%v", model.activeScreen(), model.selectedScreen, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenProject || model.currentStep != stepProject {
+		t.Fatalf("expected enter to open Project, got screen=%v step=%v cmd=%v", model.screen, model.currentStep, cmd)
+	}
+	assertContains(t, model.View(), "Solution")
+	assertNotContains(t, model.View(), "Wizard")
+}
+
+func TestModelUpdateNumericShortcutsOpenCompatibilityRoutes(t *testing.T) {
+	for key, want := range map[rune]workspaceScreen{'1': screenOverview, '2': screenProject, '3': screenServices, '4': screenPreview, '5': screenGenerate} {
+		t.Run(fmt.Sprintf("route %c", key), func(t *testing.T) {
+			model := NewModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil)
+			updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
+			model = updated.(Model)
+			if cmd != nil || model.screen != want || model.selectedScreen != want {
+				t.Fatalf("expected key %c to open %v, got screen=%v selected=%v cmd=%v", key, want, model.screen, model.selectedScreen, cmd)
+			}
+		})
+	}
+}
+
+func TestModelUpdateProjectEditorUsesDedicatedRouteAndBackNavigation(t *testing.T) {
+	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenProject {
+		t.Fatalf("expected Project route, got screen=%v cmd=%v", model.screen, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	model = updated.(Model)
+	if cmd != nil || model.status != statusEditing || model.edit.mode != editModeProject {
+		t.Fatalf("expected project editor, got status=%v mode=%v cmd=%v", model.status, model.edit.mode, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.status != statusReady || model.screen != screenProject {
+		t.Fatalf("expected esc to leave editor on Project, got status=%v screen=%v cmd=%v", model.status, model.screen, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenOverview {
+		t.Fatalf("expected second esc to return Overview, got screen=%v cmd=%v", model.screen, cmd)
+	}
+}
+
+func TestModelUpdateHelpOverlayAndBusyLocks(t *testing.T) {
+	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	model = updated.(Model)
+	if cmd != nil || !model.helpOpen || !strings.Contains(stripANSI(model.View()), "Global:") {
+		t.Fatalf("expected help overlay, got open=%v cmd=%v view=%q", model.helpOpen, cmd, model.View())
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.helpOpen {
+		t.Fatalf("expected esc to close help, got open=%v cmd=%v", model.helpOpen, cmd)
+	}
+
+	model.status = statusRefreshing
+	model.selectedScreen = screenProject
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'5'}})
+	model = updated.(Model)
+	if cmd != nil || model.screen != screenOverview || model.selectedScreen != screenProject {
+		t.Fatalf("expected busy route lock, got screen=%v selected=%v cmd=%v", model.screen, model.selectedScreen, cmd)
+	}
+
+	model.status = statusFailed
+	model.errContext = "Refresh after save"
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	model = updated.(Model)
+	if cmd != nil || model.status != statusFailed {
+		t.Fatalf("expected stale-plan generation lock, got status=%v cmd=%v", model.status, cmd)
+	}
+}
+
+func TestModelViewUsesResponsiveWorkspaceShell(t *testing.T) {
+	tests := []struct {
+		name     string
+		width    int
+		want     string
+		unwanted string
+	}{
+		{name: "wide rail", width: 120, want: "Enter open", unwanted: "Navigation ["},
+		{name: "medium top navigation", width: 90, want: "Navigation [1:Overview]", unwanted: "Enter open"},
+		{name: "narrow focused content", width: 60, want: "Overview", unwanted: "Enter open"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := NewModel(plannedFilesPlan(1), application.GenerateRequest{ConfigPath: "config.json", OutputDir: "/tmp/out"}, nil, nil, nil)
+			updated, cmd := model.Update(tea.WindowSizeMsg{Width: tt.width, Height: 24})
+			model = updated.(Model)
+			if cmd != nil || model.layout != layoutModeForWidth(tt.width) {
+				t.Fatalf("expected layout %v, got %v cmd=%v", layoutModeForWidth(tt.width), model.layout, cmd)
+			}
+			view := stripANSI(model.View())
+			assertContains(t, view, tt.want)
+			assertNotContains(t, view, tt.unwanted)
+			assertNotContains(t, view, "Wizard")
+		})
+	}
 }
 
 func TestModelUpdateNavigatesSteps(t *testing.T) {
@@ -627,10 +781,8 @@ func TestModelUpdateAllowsExitKeysAfterGenerationFinishes(t *testing.T) {
 		msg       tea.KeyMsg
 	}{
 		{name: "success q", finishMsg: generationFinishedMsg{}, msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}},
-		{name: "success esc", finishMsg: generationFinishedMsg{}, msg: tea.KeyMsg{Type: tea.KeyEsc}},
 		{name: "success ctrl+c", finishMsg: generationFinishedMsg{}, msg: tea.KeyMsg{Type: tea.KeyCtrlC}},
 		{name: "failure q", finishMsg: generationFinishedMsg{err: errors.New("write failed")}, msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}},
-		{name: "failure esc", finishMsg: generationFinishedMsg{err: errors.New("write failed")}, msg: tea.KeyMsg{Type: tea.KeyEsc}},
 		{name: "failure ctrl+c", finishMsg: generationFinishedMsg{err: errors.New("write failed")}, msg: tea.KeyMsg{Type: tea.KeyCtrlC}},
 	}
 
@@ -1077,7 +1229,7 @@ func TestModelUpdateSaveSuccessWithRefreshFailureAllowsRetry(t *testing.T) {
 	assertContains(t, view, "FAILED Refresh after save failed: plan failed")
 	assertContains(t, view, "Readiness is stale. Saved settings need a successful plan refresh before generation.")
 	assertContains(t, view, "r Retry plan refresh. Other actions stay locked until refresh succeeds.")
-	assertContains(t, view, "Keys: r retry refresh | q/esc/ctrl+c quit")
+	assertContains(t, view, "Locked: r retry refresh | q/esc/ctrl+c quit")
 	assertNotContains(t, view, "Readiness project=yes")
 	assertNotContains(t, view, "Save failed")
 	assertNotContains(t, view, "Esc cancels")
