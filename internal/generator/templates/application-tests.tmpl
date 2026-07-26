@@ -133,11 +133,14 @@ public sealed class {{ .Entity.Name }}ApplicationTests
         var handler = new Delete{{ .Entity.Name }}CommandHandler(repository);
 
         var missing = await handler.Handle(new Delete{{ .Entity.Name }}Command(Guid.NewGuid(), "token-v1"), CancellationToken.None);
+        var missingMalformed = await handler.Handle(new Delete{{ .Entity.Name }}Command(Guid.NewGuid(), "unknown-token"), CancellationToken.None);
         var conflict = await handler.Handle(new Delete{{ .Entity.Name }}Command(entity.Id, "stale-token"), CancellationToken.None);
         var invalid = await handler.Handle(new Delete{{ .Entity.Name }}Command(entity.Id, "unknown-token"), CancellationToken.None);
         var deleted = await handler.Handle(new Delete{{ .Entity.Name }}Command(entity.Id, "token-v1"), CancellationToken.None);
 
         Assert.Equal(ErrorType.NotFound, missing.FirstError.Type);
+        Assert.Equal(ErrorType.NotFound, missingMalformed.FirstError.Type);
+        Assert.Equal("{{ .Entity.Name }}.NotFound", missingMalformed.FirstError.Code);
         Assert.Equal(ErrorType.Conflict, conflict.FirstError.Type);
         Assert.Equal(ErrorType.Validation, invalid.FirstError.Type);
         Assert.False(deleted.IsError);

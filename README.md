@@ -50,7 +50,7 @@ Domain <- Application <- Infrastructure
 Application + Infrastructure <- WebApi
 ```
 
-Create, List, GetById, Update, and Delete are CQRS vertical slices. Each entity gets Application commands/queries, handlers, and validators under its plural feature directory; MediatR dispatches every operation through closed validation behavior registrations, and ErrorOr carries success or neutral errors to WebApi. Handlers use the existing Application repository port, preserve pagination defaults/maxima and opaque concurrency DTO mapping, and map missing records and persistence conflicts without leaking infrastructure details. Invalid pagination and invalid concurrency tokens preserve the compact legacy `{ "error": ... }` response contract; field validation uses ProblemDetails.
+Create, List, GetById, Update, and Delete are CQRS vertical slices. Each entity gets Application commands/queries, handlers, and validators under its plural feature directory; MediatR dispatches every operation through closed validation behavior registrations, and ErrorOr carries success or neutral errors to WebApi. Handlers use the existing Application repository port, preserve pagination defaults/maxima and opaque concurrency DTO mapping, and map missing records and persistence conflicts without leaking infrastructure details. Invalid pagination and invalid concurrency tokens preserve the compact legacy `{ "error": ... }` response contract; field validation uses ProblemDetails. Delete resolves the entity before checking a non-empty token, so a missing entity intentionally returns `404` even when that token is malformed; an empty or whitespace token is rejected earlier by request validation with `400`.
 
 ## Generated dependency policy
 
@@ -146,7 +146,9 @@ Services can declare reusable Value Objects and then reference them from entity 
       "required": true,
       "minLength": 3,
       "maxLength": 100,
-      "pattern": "^[A-Za-z0-9 .'-]+$"
+      "pattern": "^[A-Za-z0-9 .'-]+$",
+      "validExample": "Product Prime",
+      "invalidExample": "***"
     }
   },
   {
@@ -163,7 +165,7 @@ Generated HTTP create/update contracts expose primitive values, not a Domain JSO
 
 ## SQL Server and migrations
 
-Generated Infrastructure uses EF Core SQL Server with framework-aligned package versions pinned by the generator. The WebApi reads `ConnectionStrings:DefaultConnection`, including from `ConnectionStrings__DefaultConnection`, and passes configuration into Infrastructure composition. SQL command timeout/retry settings are bounded so database work fits inside the WebApi request timeout budget.
+Generated Infrastructure uses EF Core SQL Server with framework-aligned package versions pinned by the generator. The WebApi reads `ConnectionStrings:DefaultConnection`, including from `ConnectionStrings__DefaultConnection`, and passes configuration into Infrastructure composition. SQL command timeout/retry settings are bounded so database work fits inside the WebApi request timeout budget. The generated EF execution strategy retries transient `SaveChangesAsync` failures once. If the connection is lost after the database commits but before the client receives the acknowledgement, the outcome is ambiguous: an exception, retry result, or conflict does not prove that the write failed. Generated code does not create idempotency keys or operation identities; callers that retry mutations must establish a durable operation-identity/idempotency boundary at the API/application edge and reconcile the final state by identity.
 JWT Bearer auth reads `Authentication:Authority` and `Authentication:Audience`, including `Authentication__Authority` and `Authentication__Audience`; no signing secrets are generated.
 
 Generated files do not contain credentials and do not run migrations, `EnsureCreated`, package installation, or database commands. Migration commands are manual user actions. A production runbook should include backup, target-environment verification, SQL review, apply, smoke test, readiness verification, repair criteria, and fix-forward planning:
@@ -217,7 +219,7 @@ The workflow uses pinned Go and .NET SDK versions. GitHub Actions are referenced
 
 - Nested/composed Value Objects are a later slice; this generator remains CLI-first with a TUI adapter.
 - The TUI can edit solution metadata, target framework, services, basic entity names, basic entity fields, value-object names, and basic value-object rules. Advanced value-object validation builders and a custom rule DSL remain out of scope.
-- Request idempotency is not generated; add idempotency keys or operation IDs at the API edge when required.
+- Request idempotency is not generated. A mutation response after a transient commit failure is not proof that the mutation was rolled back; add a durable idempotency key or operation ID at the API/application edge when mutation retries must be unambiguous.
 - Production telemetry exporters are deployment-specific; generated code provides logging/problem-details hooks but no vendor exporter.
 - JSON is the only input format.
 - Docker files and production telemetry exporters are future slices.

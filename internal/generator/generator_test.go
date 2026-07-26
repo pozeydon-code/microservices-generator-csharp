@@ -14,6 +14,27 @@ import (
 	"github.com/pozeydon-code/generator-microservices-go/internal/spec"
 )
 
+func TestGeneratedWebApiTestsDoNotContainUnusedJsonPropertyFields(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	files, err := gen.Generate(testConfig())
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	content := string(generatedContent(
+		t,
+		files,
+		"tests/ProductService/ProductService.WebApi.Tests/Features/Products/ProductControllerTests.cs",
+	))
+
+	assertNotContains(t, content, "ExpectedProductJsonProperties")
+	assertNotContains(t, content, "AllowedValidationProblemProperties")
+}
+
 func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 	gen, err := New()
 	if err != nil {
@@ -185,10 +206,15 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	assertContains(t, program, "AddControllers()")
 	assertContains(t, program, "MapControllers()")
 	infraDI := contentByPath["src/ProductService/ProductService.Infrastructure/DependencyInjection.cs"]
+	readme := contentByPath["README.md"]
 	assertContains(t, infraDI, "IReadinessProbe")
 	assertContains(t, infraDI, "public const int SqlConnectionTimeoutSeconds = 2")
 	assertContains(t, infraDI, "public const int SqlCommandTimeoutSeconds = 2")
 	assertContains(t, infraDI, "public const int SqlRetryCount = 1")
+	assertContains(t, infraDI, "A lost response after commit is ambiguous")
+	assertContains(t, infraDI, "idempotency and operation identity belong at the API/Application boundary")
+	assertContains(t, readme, "A connection loss after the database commits but before the acknowledgement leaves the outcome ambiguous")
+	assertContains(t, readme, "operation-identity/idempotency boundary")
 	assertContains(t, infraDI, "public const int ReadinessTimeoutSeconds = 2")
 	assertContains(t, infraDI, "readinessCts.CancelAfter(TimeSpan.FromSeconds(ResiliencePolicy.ReadinessTimeoutSeconds))")
 	assertContains(t, infraDI, "command.CommandTimeout = ResiliencePolicy.SqlCommandTimeoutSeconds")

@@ -151,11 +151,14 @@ public sealed class ProductApplicationTests
         var handler = new DeleteProductCommandHandler(repository);
 
         var missing = await handler.Handle(new DeleteProductCommand(Guid.NewGuid(), "token-v1"), CancellationToken.None);
+        var missingMalformed = await handler.Handle(new DeleteProductCommand(Guid.NewGuid(), "unknown-token"), CancellationToken.None);
         var conflict = await handler.Handle(new DeleteProductCommand(entity.Id, "stale-token"), CancellationToken.None);
         var invalid = await handler.Handle(new DeleteProductCommand(entity.Id, "unknown-token"), CancellationToken.None);
         var deleted = await handler.Handle(new DeleteProductCommand(entity.Id, "token-v1"), CancellationToken.None);
 
         Assert.Equal(ErrorType.NotFound, missing.FirstError.Type);
+        Assert.Equal(ErrorType.NotFound, missingMalformed.FirstError.Type);
+        Assert.Equal("Product.NotFound", missingMalformed.FirstError.Code);
         Assert.Equal(ErrorType.Conflict, conflict.FirstError.Type);
         Assert.Equal(ErrorType.Validation, invalid.FirstError.Type);
         Assert.False(deleted.IsError);

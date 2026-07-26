@@ -29,6 +29,12 @@ Application + Infrastructure <- WebApi
 
 Create, List, GetById, Update, and Delete are generated vertical slices under `Application/Features/{PluralEntity}`. FluentValidation runs through closed Application MediatR behavior registrations, handlers use the Application repository port and return `ErrorOr`, and WebApi dispatches every operation through `ISender`. List preserves its pagination exception and legacy `{ "error": ... }` 400 contract; concurrency-token failures use the same compact 400 contract, while field validation uses RFC-compatible ProblemDetails.
 
+Delete resolves the entity before checking a non-empty concurrency token. A missing entity therefore returns `NotFound` even when that token is malformed; an empty or whitespace token is rejected earlier by request validation. An existing entity returns a compact validation error for a malformed token and a conflict for a stale valid token.
+
+## Commit outcome and retries
+
+Infrastructure enables one bounded EF transient retry around database work, including `SaveChangesAsync`. A connection loss after the database commits but before the acknowledgement leaves the outcome ambiguous; an exception, retry result, or concurrency conflict does not prove that the write failed. Generated code does not provide idempotency keys or operation identities. Add a durable operation-identity/idempotency boundary at the API or Application edge when mutation retries must be safely reconciled.
+
 ## Value Objects
 
 Service-level Value Objects wrap supported scalar primitives and keep business validation in Domain. Create/update request contracts use primitive JSON values. Application constructs Value Objects, aggregates field-addressable validation issues, and does not call repositories when validation fails. WebApi maps validation failures to RFC-compatible 400 validation ProblemDetails. Persisted Value Object data is reconstituted through Domain factories; invalid stored values raise a typed Domain signal that Infrastructure logs with service/entity/operation/value-object context without logging the sensitive value.

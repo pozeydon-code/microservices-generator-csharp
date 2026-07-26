@@ -3684,6 +3684,83 @@ func TestModelUpdateBlocksStaleAndForceUnsafeGeneration(t *testing.T) {
 	}
 }
 
+func TestModelStalePlanRetryFailureKeepsGenerationLocked(t *testing.T) {
+	refreshErr := errors.New("refresh failed again")
+	model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
+		return application.GenerationPlan{}, refreshErr
+	}, func(application.GenerateRequest) (application.GenerateResult, error) {
+		t.Fatal("generation should remain blocked while the plan is stale")
+		return application.GenerateResult{}, nil
+	}, nil)
+	model.openScreen(screenGenerate)
+	model.status = statusFailed
+	model.err = errors.New("initial refresh failed")
+	model.errContext = "Refresh after save"
+
+	updated, retryCmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	model = updated.(Model)
+	if retryCmd == nil || model.status != statusRefreshing {
+		t.Fatalf("expected stale-plan refresh retry, got status=%v cmd=%v", model.status, retryCmd)
+	}
+	updated, _ = model.Update(retryCmd())
+	model = updated.(Model)
+	if model.status != statusFailed || !model.postSaveRefreshFailed() || model.err != refreshErr {
+		t.Fatalf("expected failed retry to preserve stale lock, got status=%v stale=%v err=%v", model.status, model.postSaveRefreshFailed(), model.err)
+	}
+	updated, command := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	model = updated.(Model)
+	if command != nil || model.status != statusFailed {
+		t.Fatalf("expected generation to stay blocked after failed retry, got status=%v cmd=%v", model.status, command)
+	}
+}
+
+func TestModelForceConfirmationRemainsExplicitBeforeGeneration(t *testing.T) {
+	called := false
+	plan := plannedFilesPlan(1)
+	plan.ForceRequired = true
+	model := workspaceModel(plan, application.GenerateRequest{Force: true}, nil, func(request application.GenerateRequest) (application.GenerateResult, error) {
+		called = true
+		if !request.Force {
+			t.Fatal("expected explicit force to reach generation callback")
+		}
+		return application.GenerateResult{Plan: plan, OutputDir: "/tmp/generated"}, nil
+	}, nil)
+	model.openScreen(screenGenerate)
+
+	updated, command := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	model = updated.(Model)
+	if command == nil || model.status != statusGenerating {
+		t.Fatalf("expected explicit force to allow generation, got status=%v cmd=%v", model.status, command)
+	}
+	updated, _ = model.Update(command())
+	model = updated.(Model)
+	if !called || model.status != statusGenerated {
+		t.Fatalf("expected forced generation to complete, got called=%v status=%v", called, model.status)
+	}
+}
+
+func TestModelViewsRemainSafeAtNarrowTerminalWidths(t *testing.T) {
+	for _, screen := range []workspaceScreen{screenOverview, screenProject, screenServices, screenEntities, screenValueObjects, screenPreview, screenGenerate, screenResult} {
+		for _, width := range []int{0, 1, 10, 19} {
+			t.Run(fmt.Sprintf("%s width %d", screen.label(), width), func(t *testing.T) {
+				model := workspaceModel(wizardPlan(), application.GenerateRequest{ConfigPath: "config.json", OutputDir: "/tmp/generated"}, nil, nil, nil)
+				model.openScreen(screen)
+				updated, command := model.Update(tea.WindowSizeMsg{Width: width, Height: 1})
+				if command != nil {
+					t.Fatal("expected no command from window resize")
+				}
+				view := stripANSI(updated.(Model).View())
+				if strings.TrimSpace(view) == "" {
+					t.Fatal("expected non-empty narrow view")
+				}
+				if strings.ContainsRune(view, '\x1b') {
+					t.Fatalf("expected stripped narrow view to contain no raw terminal escape sequence: %q", view)
+				}
+			})
+		}
+	}
+}
+
 func TestModelViewWorkflowScreensShowResponsiveContent(t *testing.T) {
 	plan := plannedFilesPlan(3)
 	plan.OutputDir = "/tmp/generated"

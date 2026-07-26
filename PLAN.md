@@ -19,7 +19,7 @@ This is the versionable roadmap for `microgen`, the CLI-first .NET CRUD microser
 - Reproducible cross-platform archives, checksums, GitHub artifact attestations, and SBOM publication are configured but still require repository-level review and verification before production distribution is claimed.
 - Slice C now provides deterministic Homebrew, winget, and Chocolatey metadata rendering and validation from an explicit GitHub Release `checksums.txt`; publication, ecosystem ownership, and clean-machine verification are not established.
 - The dependency policy is stored in the versioned manifest at `internal/generator/policy/dependency-policy.json` and verified in Go CI.
-- The quality follow-ups below remain open.
+- Slice D quality hardening is complete: the documented Value Object witnesses validate, delete ordering is covered at Application and HTTP boundaries, EF ambiguous-commit semantics are explicit, and focused TUI/output safety coverage is present.
 
 ## Architecture map
 
@@ -79,9 +79,11 @@ The distribution path must preserve deterministic generation and must **never ge
 
 ## Open quality follow-ups
 
-- Complete the README value-object example with both `validExample` and `invalidExample` values, matching the config contract.
-- Decide and test delete error ordering when both the entity is missing and the supplied concurrency token is malformed. The observable error must be intentional and documented.
-- Define EF retry behavior for ambiguous commit outcomes. Retries must not imply that a write definitely failed; document the idempotency/operation-identity boundary and add tests for the chosen handling.
+The Slice D quality follow-ups are closed. Future work must preserve these decisions:
+
+- README and generated configuration examples use string witnesses that satisfy or violate the declared rules, and the repository test validates the documented values.
+- Delete performs entity lookup before non-empty token decoding. A missing entity returns `NotFound` even for a malformed non-empty token; empty or whitespace tokens fail request validation first. Existing entities return validation for malformed tokens and conflict for stale valid tokens.
+- EF keeps bounded transient retries and timeouts. A lost response during commit remains ambiguous and must not be interpreted as a definite rollback. No idempotency key or operation identity is generated; mutation retry safety belongs at the API/application boundary.
 
 ## Prioritized next slices
 
@@ -122,7 +124,7 @@ The distribution path must preserve deterministic generation and must **never ge
 
 | Field | Plan |
 |---|---|
-| Objective | Close documented correctness gaps while preserving the CLI-first architecture and output trust boundary. |
+| Objective | Close documented correctness gaps while preserving the CLI-first architecture and output trust boundary. **Complete.** |
 | Scope | Fix the README value-object examples; specify delete malformed-token versus missing-entity ordering; resolve EF ambiguous-commit/idempotency guidance; add focused TUI tests for stale plans, force gating, narrow terminals, and output safety where coverage is missing. |
 | Non-goals | No generator rule duplication in TUI; no unsafe overwrite mode; no broad feature expansion such as nested value objects, providers, or Docker. |
 | Dependencies | Existing generated contracts, output writer ownership checks, current architecture tests, and the policy/release foundations where docs reference them. |

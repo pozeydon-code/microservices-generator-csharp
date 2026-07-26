@@ -3,6 +3,8 @@ package spec
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -362,6 +364,35 @@ func TestConfigValidateAcceptsDeclaredValueObjectFieldTypes(t *testing.T) {
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected value object field type to be valid, got %v", err)
+	}
+}
+
+func TestDocumentedValueObjectExamplesValidateAgainstTheirRules(t *testing.T) {
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatalf("read README: %v", err)
+	}
+	for _, expected := range []string{`"validExample": "Product Prime"`, `"invalidExample": "***"`} {
+		if !strings.Contains(string(readme), expected) {
+			t.Fatalf("README is missing documented value-object example %q", expected)
+		}
+	}
+
+	cfg := validConfig()
+	cfg.Services[0].ValueObjects = []ValueObject{{
+		Name: "ProductName",
+		Type: "string",
+		Validations: ValidationRules{
+			Required:       boolPtr(true),
+			MinLength:      intPtr(3),
+			MaxLength:      intPtr(100),
+			Pattern:        stringPtr("^[A-Za-z0-9 .'-]+$"),
+			ValidExample:   stringPtr("Product Prime"),
+			InvalidExample: stringPtr("***"),
+		},
+	}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected documented value-object examples to validate, got %v", err)
 	}
 }
 

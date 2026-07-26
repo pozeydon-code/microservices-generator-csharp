@@ -29,6 +29,9 @@ public static class DependencyInjection
             ConnectTimeout = Math.Min(Math.Max(new SqlConnectionStringBuilder(connectionString).ConnectTimeout, 1), ResiliencePolicy.SqlConnectionTimeoutSeconds)
         };
 
+        // SaveChangesAsync uses this bounded execution strategy. A lost response after commit is ambiguous,
+        // so an exception or retry result must not be treated as proof that a mutation failed. Mutation
+        // idempotency and operation identity belong at the API/Application boundary, not in this adapter.
         services.AddDbContext<{{ .Name }}DbContext>(options => options.UseSqlServer(
             connectionBuilder.ConnectionString,
             sql => sql.EnableRetryOnFailure(maxRetryCount: ResiliencePolicy.SqlRetryCount, maxRetryDelay: ResiliencePolicy.SqlRetryDelay, errorNumbersToAdd: null).CommandTimeout(ResiliencePolicy.SqlCommandTimeoutSeconds)));

@@ -20,8 +20,6 @@ namespace ProductService.WebApi.Tests.Features.Products;
 public sealed class ProductEndpointsTests
 {
     private static readonly string[] ExpectedValidationErrorKeys = ["name", "price"];
-    private static readonly string[] ExpectedProductJsonProperties = ["concurrencyToken", "id", "isActive", "name", "price", ];
-    private static readonly string[] AllowedValidationProblemProperties = ["errors", "status", "title", "traceId", "type"];
     private static readonly ProductDto Item = new(
         Id: Guid.Parse("11111111-1111-1111-1111-111111111111"),
         IsActive: true,
@@ -60,7 +58,7 @@ public sealed class ProductEndpointsTests
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateAuthenticatedClient();
-        var request = new CreateProductRequest { IsActive = true, Name = "Product Prime", Price = 0m,  };
+        var request = new CreateProductRequest { IsActive = true, Name = "Product Prime", Price = 0m, };
 
         var response = await client.PostAsJsonAsync("/products", request);
 
@@ -79,8 +77,8 @@ public sealed class ProductEndpointsTests
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateAuthenticatedClient();
-        var createResponse = await client.PostAsJsonAsync("/products", new CreateProductRequest { IsActive = true, Name = "", Price = 0m - 1m,  });
-        var updateResponse = await client.PutAsJsonAsync("/products/11111111-1111-1111-1111-111111111111", new UpdateProductRequest { IsActive = true, Name = "", Price = 0m - 1m,  ConcurrencyToken = ValidToken });
+        var createResponse = await client.PostAsJsonAsync("/products", new CreateProductRequest { IsActive = true, Name = "", Price = 0m - 1m, });
+        var updateResponse = await client.PutAsJsonAsync("/products/11111111-1111-1111-1111-111111111111", new UpdateProductRequest { IsActive = true, Name = "", Price = 0m - 1m, ConcurrencyToken = ValidToken });
 
         await AssertValidationProblem(createResponse, ExpectedValidationErrorKeys);
         await AssertValidationProblem(updateResponse, ExpectedValidationErrorKeys);
@@ -91,7 +89,7 @@ public sealed class ProductEndpointsTests
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateAuthenticatedClient();
-        var request = new UpdateProductRequest { IsActive = false, Name = "Product Prime2", Price = 999999.99m,  ConcurrencyToken = ValidToken };
+        var request = new UpdateProductRequest { IsActive = false, Name = "Product Prime2", Price = 999999.99m, ConcurrencyToken = ValidToken };
 
         var response = await client.PutAsJsonAsync("/products/11111111-1111-1111-1111-111111111111", request);
 
@@ -114,7 +112,7 @@ public sealed class ProductEndpointsTests
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateAuthenticatedClient();
-        var response = await client.PutAsJsonAsync("/products/11111111-1111-1111-1111-111111111111", new UpdateProductRequest { IsActive = false, Name = "Product Prime2", Price = 999999.99m,  ConcurrencyToken = token });
+        var response = await client.PutAsJsonAsync("/products/11111111-1111-1111-1111-111111111111", new UpdateProductRequest { IsActive = false, Name = "Product Prime2", Price = 999999.99m, ConcurrencyToken = token });
 
         Assert.Equal(expectedStatus, response.StatusCode);
         if (token == "unknown-token")
@@ -131,10 +129,11 @@ public sealed class ProductEndpointsTests
         using var client = factory.CreateAuthenticatedClient();
         var route = "/products";
 
+        Assert.Equal(HttpStatusCode.Conflict, (await client.DeleteAsync($"{route}/11111111-1111-1111-1111-111111111111?concurrencyToken=stale-token")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.DeleteAsync($"{route}/11111111-1111-1111-1111-111111111111?concurrencyToken=bad-token")).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"{route}/11111111-1111-1111-1111-111111111111?concurrencyToken={Uri.EscapeDataString(ValidToken)}")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync($"{route}/22222222-2222-2222-2222-222222222222?concurrencyToken={Uri.EscapeDataString(ValidToken)}")).StatusCode);
-        Assert.Equal(HttpStatusCode.Conflict, (await client.DeleteAsync($"{route}/33333333-3333-3333-3333-333333333333?concurrencyToken=stale-token")).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.DeleteAsync($"{route}/11111111-1111-1111-1111-111111111111?concurrencyToken=bad-token")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync($"{route}/33333333-3333-3333-3333-333333333333?concurrencyToken=bad-token")).StatusCode);
     }
 
     private static async Task AssertValidationProblem(HttpResponseMessage response, string[] expectedKeys)
@@ -204,9 +203,10 @@ public sealed class ProductEndpointsTests
     {
         public Task<ErrorOr<Deleted>> Handle(DeleteProductCommand request, CancellationToken cancellationToken)
         {
+            if (request.Id != Item.Id) return Task.FromResult<ErrorOr<Deleted>>(Error.NotFound(code: "Product.NotFound", description: "Product was not found."));
             if (request.ConcurrencyToken == "stale-token") return Task.FromResult<ErrorOr<Deleted>>(Error.Conflict(code: "Product.ConcurrencyConflict", description: "Product was changed by another request."));
             if (request.ConcurrencyToken != ValidToken) return Task.FromResult<ErrorOr<Deleted>>(Error.Validation(code: "ConcurrencyToken.Invalid", description: "Invalid concurrency token."));
-            return Task.FromResult<ErrorOr<Deleted>>(request.Id == Item.Id ? Result.Deleted : Error.NotFound(code: "Product.NotFound", description: "Product was not found."));
+            return Task.FromResult<ErrorOr<Deleted>>(Result.Deleted);
         }
     }
 }

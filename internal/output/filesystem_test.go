@@ -184,6 +184,22 @@ func TestPlanOutputRejectsSymlinkExistingAncestor(t *testing.T) {
 	}
 }
 
+func TestPlanOutputRejectsUnsafeGeneratedPathWithoutCreatingOutput(t *testing.T) {
+	outputDir := filepath.Join(t.TempDir(), "generated")
+
+	_, err := PlanOutput(outputDir, []generator.GeneratedFile{{Path: "../escape.txt", Content: []byte("unsafe")}}, false)
+
+	if err == nil {
+		t.Fatal("expected traversal error")
+	}
+	if !strings.Contains(err.Error(), "escapes the output directory") {
+		t.Fatalf("expected traversal message, got %v", err)
+	}
+	if _, statErr := os.Stat(outputDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected planning not to create output, stat err=%v", statErr)
+	}
+}
+
 func TestFilesystemWriterRefusesExistingDirectoryUnlessForcedAndOwned(t *testing.T) {
 	outputDir := t.TempDir()
 	writer := NewFilesystemWriter()
