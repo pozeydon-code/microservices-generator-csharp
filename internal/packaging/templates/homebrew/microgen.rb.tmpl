@@ -1,0 +1,34 @@
+class Microgen < Formula
+  desc "Deterministic .NET CRUD microservice generator"
+  homepage "https://github.com/{{ .Repository }}"
+  version "{{ .Version }}"
+  license "MIT"
+
+  on_macos do
+    if Hardware::CPU.arm?
+      url "{{ (index .Artifacts 3).URL }}"
+      sha256 "{{ (index .Artifacts 3).SHA256 }}"
+    else
+      url "{{ (index .Artifacts 2).URL }}"
+      sha256 "{{ (index .Artifacts 2).SHA256 }}"
+    end
+  end
+
+  on_linux do
+    if Hardware::CPU.arm?
+      url "{{ (index .Artifacts 1).URL }}"
+      sha256 "{{ (index .Artifacts 1).SHA256 }}"
+    else
+      url "{{ (index .Artifacts 0).URL }}"
+      sha256 "{{ (index .Artifacts 0).SHA256 }}"
+    end
+  end
+
+  def install
+    bin.install "microgen"
+  end
+
+  test do
+    system bin/"microgen", "version"
+  end
+end

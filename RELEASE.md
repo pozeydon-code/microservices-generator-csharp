@@ -1,6 +1,6 @@
 # Release Contract
 
-`microgen` releases are published from version tags such as `v1.2.3`. GitHub Releases are the public binary source for this slice. Homebrew, winget, and Chocolatey publication are intentionally not configured yet.
+`microgen` releases are published from version tags such as `v1.2.3`. GitHub Releases are the only public binary source. Package-manager metadata can now be rendered from an exact release, but Homebrew, winget, and Chocolatey publication are intentionally not configured.
 
 ## Local Validation
 
@@ -35,6 +35,32 @@ sha256sum -c checksums.txt
 ```
 
 On Windows, compare `Get-FileHash` SHA256 values with the corresponding `checksums.txt` entries. Inspect each `.spdx.json` document as SPDX JSON and verify the GitHub artifact attestation for the downloaded artifact through GitHub's attestation verification tooling or UI.
+
+## Package Metadata Handoff
+
+The package-manifest renderer consumes only an explicit release tag and that
+release's downloaded `checksums.txt`:
+
+```bash
+go run ./cmd/package-manifests \
+  --version v1.2.3 \
+  --checksums /path/to/checksums.txt \
+  --output ./package-manifests
+```
+
+It fails for non-semver/dynamic tags, missing or malformed checksums, archive
+name/version mismatches, placeholder hashes, and rendered metadata that does
+not associate each URL with the exact release checksum. It does not rebuild,
+download, or install a binary. See [`packaging/README.md`](packaging/README.md)
+for the manual `workflow_dispatch` handoff and clean-machine verification.
+
+The generated metadata covers the Homebrew formula, winget standard
+version/locale/installer manifests, and Chocolatey nuspec/install/uninstall
+scripts. Homebrew uses `brew upgrade`/`brew uninstall`; winget uses its package
+ID for upgrade/uninstall; Chocolatey uses normal `choco upgrade`/`choco uninstall`
+semantics and removes its registered shim. The winget and Chocolatey
+publisher/package identities are explicitly provisional until account and
+repository ownership is confirmed.
 
 ## Repository Configuration
 

@@ -1,0 +1,25 @@
+# Provisional identity: repository/package ownership is not established yet.
+PackageIdentifier: PozeydonCode.Microgen
+PackageVersion: {{ .Version }}
+Installers:
+  - Architecture: x64
+    InstallerType: zip
+    InstallerUrl: {{ (index .Artifacts 4).URL }}
+    InstallerSha256: {{ (index .Artifacts 4).SHA256 }}
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: microgen.exe
+        PortableCommandAlias: microgen
+  - Architecture: arm64
+    InstallerType: zip
+    InstallerUrl: {{ (index .Artifacts 5).URL }}
+    InstallerSha256: {{ (index .Artifacts 5).SHA256 }}
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: microgen.exe
+        PortableCommandAlias: microgen
+UpgradeBehavior: install
+Commands:
+  - microgen
+ManifestType: installer
+ManifestVersion: 1.6.0

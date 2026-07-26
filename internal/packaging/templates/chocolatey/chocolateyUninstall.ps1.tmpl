@@ -1,0 +1,4 @@
+$ErrorActionPreference = 'Stop'
+
+# Chocolatey removes the package tools directory after this normal uninstall hook.
+Uninstall-BinFile -Name 'microgen'

@@ -1,0 +1,31 @@
+$ErrorActionPreference = 'Stop'
+
+$toolsDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+$architecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+
+switch ($architecture.ToUpperInvariant()) {
+  'AMD64' {
+    $archiveName = '{{ (index .Artifacts 4).Name }}'
+    $url = '{{ (index .Artifacts 4).URL }}'
+    $checksum = '{{ (index .Artifacts 4).SHA256 }}'
+  }
+  'ARM64' {
+    $archiveName = '{{ (index .Artifacts 5).Name }}'
+    $url = '{{ (index .Artifacts 5).URL }}'
+    $checksum = '{{ (index .Artifacts 5).SHA256 }}'
+  }
+  default {
+    throw "microgen supports only Windows x64 and arm64 releases; detected '$architecture'"
+  }
+}
+
+$archivePath = Join-Path $toolsDir $archiveName
+Get-ChocolateyWebFile -PackageName $env:ChocolateyPackageName `
+  -FileFullPath $archivePath `
+  -Url64bit $url `
+  -Checksum64 $checksum `
+  -ChecksumType64 'SHA256'
+
+# The archive is extracted only after Get-ChocolateyWebFile verifies its SHA-256.
+Get-ChocolateyUnzip -FileFullPath $archivePath -Destination $toolsDir -PackageName $env:ChocolateyPackageName
+Install-BinFile -Name 'microgen' -Path (Join-Path $toolsDir 'microgen.exe')

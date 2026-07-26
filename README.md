@@ -80,7 +80,7 @@ microgen tui --new --config <path> --output <dir> [--force]
 
 ## Releases
 
-Tagged releases use the explicit GoReleaser v2 contract in `.goreleaser.yaml` and publish Linux, macOS, and Windows archives, SHA-256 checksums, SPDX JSON SBOMs, and GitHub artifact attestations. Validate the configuration locally with `goreleaser check` and a snapshot build; see [`RELEASE.md`](RELEASE.md) for stable names, independent verification, and repository permissions. Package-manager publication is not implemented yet, and the release workflow still requires repository configuration review before production distribution should be claimed.
+Tagged releases use the explicit GoReleaser v2 contract in `.goreleaser.yaml` and publish Linux, macOS, and Windows archives, SHA-256 checksums, SPDX JSON SBOMs, and GitHub artifact attestations. Validate the configuration locally with `goreleaser check` and a snapshot build; see [`RELEASE.md`](RELEASE.md) for stable names, independent verification, and repository permissions. Package-manager metadata foundations now render Homebrew, winget, and Chocolatey definitions from the exact tagged GitHub Release checksums, but no package repository is published and production distribution still requires ownership and clean-machine verification.
 
 `microgen tui` opens a terminal UI over the same planning and generation core. Use existing JSON with `--config <path>`, or start from scratch with `--new --config <path>` and a required `--output <dir>`. The starter config includes schema/generation defaults, solution metadata, and one service/entity with `Guid` identity plus `string` name fields so the generator can plan immediately; the TUI confirms that the starter config was created and can be edited incrementally.
 

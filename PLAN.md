@@ -17,7 +17,7 @@ This is the versionable roadmap for `microgen`, the CLI-first .NET CRUD microser
 
 - `microgen version` and an explicit tag-triggered release workflow now exist as a release foundation.
 - Reproducible cross-platform archives, checksums, GitHub artifact attestations, and SBOM publication are configured but still require repository-level review and verification before production distribution is claimed.
-- Homebrew, winget, and Chocolatey publication are not established.
+- Slice C now provides deterministic Homebrew, winget, and Chocolatey metadata rendering and validation from an explicit GitHub Release `checksums.txt`; publication, ecosystem ownership, and clean-machine verification are not established.
 - The dependency policy is stored in the versioned manifest at `internal/generator/policy/dependency-policy.json` and verified in Go CI.
 - The quality follow-ups below remain open.
 
@@ -75,7 +75,7 @@ The distribution path must preserve deterministic generation and must **never ge
 3. Use GitHub Releases as the public source of truth for binaries and release metadata.
 4. Publish checksums, signing/provenance metadata, and an SBOM with every release. Document independent verification.
 5. GoReleaser v2 is configured as the release automation candidate after stabilizing the version command and archive contract.
-6. Publish package-manager metadata from the same release artifacts: a Homebrew tap, winget manifests, and Chocolatey packages. An optional PowerShell release installer may be provided as a distribution asset, never as generated project output.
+6. Render package-manager metadata from the same tagged GitHub Release artifacts: a future owned Homebrew tap, winget manifests, and Chocolatey packages. The checked-in renderer and manual handoff workflow do not publish; an optional PowerShell release installer may be provided as a distribution asset, never as generated project output.
 
 ## Open quality follow-ups
 
@@ -112,10 +112,10 @@ The distribution path must preserve deterministic generation and must **never ge
 | Field | Plan |
 |---|---|
 | Objective | Make stable GitHub Release artifacts discoverable through common package managers without creating a second binary source. |
-| Scope | Add a Homebrew tap, winget manifests, and Chocolatey packages; optionally publish a PowerShell release installer asset; define upgrade, uninstall, and checksum verification behavior. |
+| Scope | Render and validate Homebrew formula, winget version/locale/installer manifests, and Chocolatey nuspec/scripts from an explicit release tag plus `checksums.txt`; document upgrade, uninstall, independent verification, and ownership-gated publication. |
 | Non-goals | No installer emitted into generated user projects; no package manager may rebuild or resolve a different binary; no publication before Slice B artifacts are verified. |
-| Dependencies | Slice B GitHub Release contract, signed artifacts, stable archive names, and package-manager account/repository ownership. |
-| Acceptance evidence | Each package-manager definition resolves to the matching GitHub Release asset and checksum; clean-machine install/upgrade/uninstall scenarios pass on supported hosts; failed verification stops installation. |
+| Dependencies | Slice B GitHub Release contract, stable archive names, and package-manager account/repository ownership for any publication. |
+| Acceptance evidence | The renderer requires all six current archive names and matching release checksums; each output resolves to an explicit GitHub Release asset; failed verification stops rendering. Clean-machine install/upgrade/uninstall scenarios and repository ownership remain required before publication. |
 | Review/commit boundary | One publication unit per ecosystem when definitions differ materially; keep manifests and their verification tests together. Rollback means withdrawing the package metadata, not rewriting released binaries. |
 
 ### D. Config/docs quality and TUI/output safety
