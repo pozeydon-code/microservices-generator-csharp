@@ -27,7 +27,7 @@ func TestConfigValidateDefaultsMissingSchemaVersionAndTargetFramework(t *testing
 }
 
 func TestConfigValidateAcceptsFlexibleTargetFrameworks(t *testing.T) {
-	for _, targetFramework := range []string{"net6.0", "net7.0", "net9.0", "net10.0", "net11.0"} {
+	for _, targetFramework := range []string{"net8.0", "net9.0", "net10.0", "net11.0", "net99.0"} {
 		t.Run(targetFramework, func(t *testing.T) {
 			cfg := validConfig()
 			cfg.SchemaVersion = ConfigSchemaVersion
@@ -43,6 +43,24 @@ func TestConfigValidateAcceptsFlexibleTargetFrameworks(t *testing.T) {
 	}
 }
 
+func TestConfigValidateRejectsTargetFrameworksBelowNet8(t *testing.T) {
+	for _, targetFramework := range []string{"net1.0", "net6.0", "net7.0"} {
+		t.Run(targetFramework, func(t *testing.T) {
+			cfg := validConfig()
+			cfg.Generation.TargetFramework = targetFramework
+
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			const expected = "generation.targetFramework must be net8.0 or newer (netN.0 with a numeric major version from 8 through 99)"
+			if !strings.Contains(err.Error(), expected) {
+				t.Fatalf("expected error to contain %q, got %v", expected, err)
+			}
+		})
+	}
+}
+
 func TestConfigValidateRejectsUnsupportedSchemaVersionAndInvalidTargetFramework(t *testing.T) {
 	cfg := validConfig()
 	cfg.SchemaVersion = 99
@@ -53,7 +71,7 @@ func TestConfigValidateRejectsUnsupportedSchemaVersionAndInvalidTargetFramework(
 		t.Fatal("expected validation error")
 	}
 	message := err.Error()
-	for _, expected := range []string{"schemaVersion must be 1", "generation.targetFramework must be netN.0"} {
+	for _, expected := range []string{"schemaVersion must be 1", "generation.targetFramework must be net8.0 or newer"} {
 		if !strings.Contains(message, expected) {
 			t.Fatalf("expected error to contain %q, got:\n%s", expected, message)
 		}
@@ -100,6 +118,13 @@ func TestDefaultSolutionFormat(t *testing.T) {
 				t.Fatalf("expected %s, got %s", tt.want, got)
 			}
 		})
+	}
+}
+
+func TestSupportedTargetFrameworksStartAtNet8(t *testing.T) {
+	want := []string{"net11.0", "net10.0", "net9.0", "net8.0"}
+	if got := SupportedTargetFrameworks(); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("expected supported target frameworks %v, got %v", want, got)
 	}
 }
 

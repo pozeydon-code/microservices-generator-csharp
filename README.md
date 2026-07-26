@@ -113,7 +113,7 @@ Configs may declare the current schema and generated .NET target framework:
 }
 ```
 
-Configs that omit `schemaVersion` are treated as legacy input and migrated to the current schema when loaded. Explicit schema versions must be valid integers for a supported schema; `schemaVersion: 0` and future versions are rejected. `generation.targetFramework` defaults to `net8.0` and accepts canonical `netN.0` target frameworks such as `net6.0`, `net7.0`, `net10.0`, and future major versions. TUI manual entry normalizes shorthand majors before saving, so typing `7` persists `net7.0`.
+Configs that omit `schemaVersion` are treated as legacy input and migrated to the current schema when loaded. Explicit schema versions must be valid integers for a supported schema; `schemaVersion: 0` and future versions are rejected. `generation.targetFramework` defaults to `net8.0` and accepts canonical `netN.0` target frameworks from `net8.0` through future major versions; older target frameworks are rejected because generated package policy starts at `net8.0`. TUI manual entry normalizes shorthand majors before saving, so typing `10` persists `net10.0`.
 
 `generation.solutionFormat` is optional. Explicit values are `sln` and `slnx`; when omitted, target frameworks below `net10.0` generate `{Solution}.sln`, while `net10.0` or newer generates `{Solution}.slnx` so modern .NET consumers start from the newer solution format.
 

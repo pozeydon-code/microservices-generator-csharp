@@ -12,12 +12,13 @@ import (
 )
 
 const (
-	ConfigSchemaVersion    = 1
-	DefaultTargetFramework = "net8.0"
-	MaxIdentifierLength    = 64
-	MaxServices            = 20
-	MaxEntitiesPerService  = 100
-	MaxFieldsPerEntity     = 100
+	ConfigSchemaVersion         = 1
+	DefaultTargetFramework      = "net8.0"
+	minimumTargetFrameworkMajor = 8
+	MaxIdentifierLength         = 64
+	MaxServices                 = 20
+	MaxEntitiesPerService       = 100
+	MaxFieldsPerEntity          = 100
 )
 
 type Config struct {
@@ -119,7 +120,7 @@ func (c Config) Validate() error {
 		problems = append(problems, fmt.Sprintf("schemaVersion must be %d", ConfigSchemaVersion))
 	}
 	if !IsSupportedTargetFramework(c.TargetFramework()) {
-		problems = append(problems, "generation.targetFramework must be netN.0 with a numeric major version from 1 through 99")
+		problems = append(problems, "generation.targetFramework must be net8.0 or newer (netN.0 with a numeric major version from 8 through 99)")
 	}
 	if !isSupportedSolutionFormat(c.Generation.SolutionFormat) {
 		problems = append(problems, "generation.solutionFormat must be sln or slnx")
@@ -253,8 +254,8 @@ func NormalizeTargetFramework(value string) (string, bool) {
 }
 
 func IsSupportedTargetFramework(value string) bool {
-	_, ok := TargetFrameworkMajor(value)
-	return ok
+	major, ok := TargetFrameworkMajor(value)
+	return ok && major >= minimumTargetFrameworkMajor
 }
 
 func DefaultSolutionFormat(targetFramework string) string {
@@ -333,7 +334,7 @@ func SupportedFieldTypes() []string {
 }
 
 func SupportedTargetFrameworks() []string {
-	return []string{"net11.0", "net10.0", "net9.0", "net8.0", "net7.0", "net6.0"}
+	return []string{"net11.0", "net10.0", "net9.0", "net8.0"}
 }
 
 func validateRequiredIdentifier(problems *[]string, path, value string) {

@@ -456,7 +456,7 @@ func TestGenerateDefaultsSolutionFileFormatFromTargetFramework(t *testing.T) {
 		expectedSolution   string
 		unexpectedSolution string
 	}{
-		{name: "below net10", targetFramework: "net7.0", expectedSolution: "CommercePlatform.sln", unexpectedSolution: "CommercePlatform.slnx"},
+		{name: "net8 below net10", targetFramework: "net8.0", expectedSolution: "CommercePlatform.sln", unexpectedSolution: "CommercePlatform.slnx"},
 		{name: "net10", targetFramework: "net10.0", expectedSolution: "CommercePlatform.slnx", unexpectedSolution: "CommercePlatform.sln"},
 		{name: "future", targetFramework: "net11.0", expectedSolution: "CommercePlatform.slnx", unexpectedSolution: "CommercePlatform.sln"},
 	}

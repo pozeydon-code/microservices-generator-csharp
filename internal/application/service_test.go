@@ -269,7 +269,7 @@ func TestServiceUpdateSolutionSettingsRejectsInvalidSettingsWithoutSaving(t *tes
 			settings: SolutionSettings{SolutionName: "1Bad", SolutionDescription: "Updated", TargetFramework: "net9.0"},
 			wantErr:  "solution.name must be a valid C# identifier",
 		},
-		{name: "invalid target framework", settings: SolutionSettings{SolutionName: "CommercePlatform", SolutionDescription: "Updated", TargetFramework: "latest"}, wantErr: "generation.targetFramework must be netN.0"},
+		{name: "invalid target framework", settings: SolutionSettings{SolutionName: "CommercePlatform", SolutionDescription: "Updated", TargetFramework: "latest"}, wantErr: "generation.targetFramework must be net8.0 or newer"},
 	}
 
 	for _, tt := range tests {

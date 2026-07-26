@@ -194,6 +194,11 @@ func TestLoadJSONSchemaVersionCompatibility(t *testing.T) {
 			expectedTarget:        "net9.0",
 		},
 		{
+			name:        "target framework below net8 is rejected",
+			content:     strings.Replace(validConfigJSON, `{`, `{"generation":{"targetFramework":"net7.0"},`, 1),
+			expectedErr: "generation.targetFramework must be net8.0 or newer",
+		},
+		{
 			name:        "future schema version is rejected",
 			content:     strings.Replace(validConfigJSON, `{`, `{"schemaVersion":2,`, 1),
 			expectedErr: "unsupported schemaVersion 2; current schemaVersion is 1",
