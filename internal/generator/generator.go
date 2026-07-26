@@ -36,7 +36,10 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		return nil, err
 	}
 
-	solution := buildSolutionView(cfg)
+	solution, err := buildSolutionView(cfg)
+	if err != nil {
+		return nil, err
+	}
 	var files []GeneratedFile
 
 	if err := g.appendRendered(&files, "Directory.Build.props", "directory-build-props.tmpl", solution); err != nil {

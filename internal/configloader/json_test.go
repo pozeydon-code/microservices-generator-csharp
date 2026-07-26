@@ -199,6 +199,11 @@ func TestLoadJSONSchemaVersionCompatibility(t *testing.T) {
 			expectedErr: "generation.targetFramework must be net8.0 or newer",
 		},
 		{
+			name:        "target framework without verified policy is rejected",
+			content:     strings.Replace(validConfigJSON, `{`, `{"generation":{"targetFramework":"net11.0"},`, 1),
+			expectedErr: "has no verified dependency policy entry",
+		},
+		{
 			name:        "future schema version is rejected",
 			content:     strings.Replace(validConfigJSON, `{`, `{"schemaVersion":2,`, 1),
 			expectedErr: "unsupported schemaVersion 2; current schemaVersion is 1",

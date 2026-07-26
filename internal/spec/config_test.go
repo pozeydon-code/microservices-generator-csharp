@@ -26,8 +26,8 @@ func TestConfigValidateDefaultsMissingSchemaVersionAndTargetFramework(t *testing
 	}
 }
 
-func TestConfigValidateAcceptsFlexibleTargetFrameworks(t *testing.T) {
-	for _, targetFramework := range []string{"net8.0", "net9.0", "net10.0", "net11.0", "net99.0"} {
+func TestConfigValidateAcceptsSupportedTargetFrameworks(t *testing.T) {
+	for _, targetFramework := range []string{"net8.0", "net9.0", "net10.0"} {
 		t.Run(targetFramework, func(t *testing.T) {
 			cfg := validConfig()
 			cfg.SchemaVersion = ConfigSchemaVersion
@@ -122,7 +122,7 @@ func TestDefaultSolutionFormat(t *testing.T) {
 }
 
 func TestSupportedTargetFrameworksStartAtNet8(t *testing.T) {
-	want := []string{"net11.0", "net10.0", "net9.0", "net8.0"}
+	want := []string{"net10.0", "net9.0", "net8.0"}
 	if got := SupportedTargetFrameworks(); fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("expected supported target frameworks %v, got %v", want, got)
 	}

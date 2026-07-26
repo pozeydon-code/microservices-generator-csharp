@@ -138,11 +138,14 @@ type FieldView struct {
 	Assertion          string
 }
 
-func buildSolutionView(cfg spec.Config) SolutionTemplateData {
+func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 	services := sortedServices(cfg.Services)
 	targetFramework := cfg.TargetFramework()
 	solutionFormat := cfg.SolutionFormat()
-	dependencyPolicy := dependencyPolicyForTargetFramework(targetFramework)
+	dependencyPolicy, ok := dependencyPolicyForTargetFramework(targetFramework)
+	if !ok {
+		return SolutionTemplateData{}, ValidateTargetFrameworkPolicy(targetFramework)
+	}
 	view := SolutionTemplateData{
 		Solution:                   cfg.Solution,
 		TargetFramework:            targetFramework,
@@ -210,7 +213,7 @@ func buildSolutionView(cfg spec.Config) SolutionTemplateData {
 	}
 	sort.Slice(view.Projects, func(i, j int) bool { return view.Projects[i].Path < view.Projects[j].Path })
 	view.ScaffoldPlan = buildScaffoldPlan(view)
-	return view
+	return view, nil
 }
 
 func projectView(serviceName, projectName string) ProjectView {

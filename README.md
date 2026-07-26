@@ -54,7 +54,7 @@ Create, List, GetById, Update, and Delete are CQRS vertical slices. Each entity 
 
 ## Generated dependency policy
 
-Generated workspaces centralize NuGet versions in `Directory.Packages.props`. The generator chooses ASP.NET Core, EF Core, SqlClient, and `System.Security.Cryptography.Xml` versions from a target-framework dependency policy table, so `net10.0` and future targets are deliberate generator behavior rather than scattered template literals. The Create slice pins verified stable `MediatR 14.2.0`, `FluentValidation 12.1.1`, `FluentValidation.DependencyInjectionExtensions 12.1.1`, and `ErrorOr 2.1.1`; their verified package assets support the generated `net8.0`, `net9.0`, and `net10.0` workspaces.
+Generated workspaces centralize NuGet versions in `Directory.Packages.props`. The generator emits only policy-backed `net8.0`, `net9.0`, and `net10.0` targets; a new target requires an explicit verified policy entry in `internal/generator/target_framework.go` before it can be selected or generated. ASP.NET Core and EF Core package versions are target-major aligned, the EF Core SQL Server package follows the same EF version, and `Microsoft.Data.SqlClient` remains independently pinned by verified compatibility and audit policy. `MediatR`, `FluentValidation`, and `ErrorOr` remain independently versioned because they are not ASP.NET Core or EF Core trains. The Create slice pins verified stable `MediatR 14.2.0`, `FluentValidation 12.1.1`, `FluentValidation.DependencyInjectionExtensions 12.1.1`, and `ErrorOr 2.1.1`.
 
 NuGet audit remains enabled in generated workspaces. `CentralPackageTransitivePinningEnabled` is also enabled so the central XML package pin can override vulnerable transitives; NuGet still rejects unsafe downgrades with NU1109 instead of hiding audit failures.
 
@@ -113,9 +113,9 @@ Configs may declare the current schema and generated .NET target framework:
 }
 ```
 
-Configs that omit `schemaVersion` are treated as legacy input and migrated to the current schema when loaded. Explicit schema versions must be valid integers for a supported schema; `schemaVersion: 0` and future versions are rejected. `generation.targetFramework` defaults to `net8.0` and accepts canonical `netN.0` target frameworks from `net8.0` through future major versions; older target frameworks are rejected because generated package policy starts at `net8.0`. TUI manual entry normalizes shorthand majors before saving, so typing `10` persists `net10.0`.
+Configs that omit `schemaVersion` are treated as legacy input and migrated to the current schema when loaded. Explicit schema versions must be valid integers for a supported schema; `schemaVersion: 0` and future versions are rejected. `generation.targetFramework` defaults to `net8.0` and accepts the policy-backed `net8.0`, `net9.0`, and `net10.0` targets. Older targets remain rejected by the net8.0 minimum validation, and any new target requires a verified dependency policy entry before it can be used. TUI manual entry normalizes shorthand majors before saving, so typing `10` persists `net10.0`.
 
-`generation.solutionFormat` is optional. Explicit values are `sln` and `slnx`; when omitted, target frameworks below `net10.0` generate `{Solution}.sln`, while `net10.0` or newer generates `{Solution}.slnx` so modern .NET consumers start from the newer solution format.
+`generation.solutionFormat` is optional. Explicit values are `sln` and `slnx`; when omitted, `net8.0` and `net9.0` generate `{Solution}.sln`, while `net10.0` generates `{Solution}.slnx` so modern .NET consumers start from the newer solution format.
 
 Each entity must contain exactly one identity field:
 

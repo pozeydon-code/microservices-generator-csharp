@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/pozeydon-code/generator-microservices-go/internal/generator"
 	"github.com/pozeydon-code/generator-microservices-go/internal/spec"
 )
 
@@ -35,6 +36,9 @@ func LoadJSON(path string) (spec.Config, error) {
 
 func SaveJSON(path string, cfg spec.Config) error {
 	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	if err := generator.ValidateTargetFrameworkPolicy(cfg.TargetFramework()); err != nil {
 		return err
 	}
 	if cfg.SchemaVersion == 0 {
@@ -110,6 +114,9 @@ func loadJSONConfig(content []byte) (spec.Config, error) {
 	}
 
 	if err := cfg.Validate(); err != nil {
+		return spec.Config{}, err
+	}
+	if err := generator.ValidateTargetFrameworkPolicy(cfg.TargetFramework()); err != nil {
 		return spec.Config{}, err
 	}
 

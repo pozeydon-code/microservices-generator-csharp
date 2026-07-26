@@ -1069,11 +1069,11 @@ type dotnetTargetFrameworkSuggester struct{}
 func (dotnetTargetFrameworkSuggester) SuggestedTargetFrameworks() []string {
 	output, err := exec.Command("dotnet", "--list-sdks").Output()
 	if err != nil {
-		return spec.SupportedTargetFrameworks()
+		return generator.SupportedTargetFrameworks()
 	}
 	frameworks := targetFrameworksFromSDKList(string(output))
 	if len(frameworks) == 0 {
-		return spec.SupportedTargetFrameworks()
+		return generator.SupportedTargetFrameworks()
 	}
 	return frameworks
 }
@@ -1087,7 +1087,7 @@ func targetFrameworksFromSDKList(output string) []string {
 		if err != nil {
 			continue
 		}
-		if framework, ok := spec.NormalizeTargetFramework(strconv.Itoa(major)); ok {
+		if framework, ok := spec.NormalizeTargetFramework(strconv.Itoa(major)); ok && generator.IsPolicyBackedTargetFramework(framework) {
 			frameworkMajor, _ := spec.TargetFrameworkMajor(framework)
 			seen[frameworkMajor] = struct{}{}
 		}
@@ -1140,7 +1140,10 @@ func (saver configSaverFunc) SaveConfig(path string, cfg spec.Config) error {
 type specValidator struct{}
 
 func (specValidator) ValidateConfig(cfg spec.Config) error {
-	return cfg.Validate()
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	return generator.ValidateTargetFrameworkPolicy(cfg.TargetFramework())
 }
 
 type filesystemWriter struct {

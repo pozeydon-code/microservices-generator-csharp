@@ -334,7 +334,7 @@ func SupportedFieldTypes() []string {
 }
 
 func SupportedTargetFrameworks() []string {
-	return []string{"net11.0", "net10.0", "net9.0", "net8.0"}
+	return []string{"net10.0", "net9.0", "net8.0"}
 }
 
 func validateRequiredIdentifier(problems *[]string, path, value string) {

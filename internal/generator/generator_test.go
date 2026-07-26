@@ -319,7 +319,6 @@ func TestGenerateDirectoryPackagesPropsUsesDependencyPolicy(t *testing.T) {
 		{name: "net8", targetFramework: "net8.0", aspNetCore: "8.0.28", aspNetCoreTest: "8.0.28", entityFramework: "8.0.28", sqlClient: "6.1.1", cryptographyXML: "8.0.4"},
 		{name: "net9", targetFramework: "net9.0", aspNetCore: "9.0.7", aspNetCoreTest: "9.0.7", entityFramework: "9.0.7", sqlClient: "6.1.1", cryptographyXML: "9.0.18"},
 		{name: "net10", targetFramework: "net10.0", aspNetCore: "10.0.0", aspNetCoreTest: "10.0.0", entityFramework: "10.0.0", sqlClient: "6.1.1", cryptographyXML: "10.0.10"},
-		{name: "net11", targetFramework: "net11.0", aspNetCore: "11.0.0", aspNetCoreTest: "11.0.0", entityFramework: "11.0.0", sqlClient: "6.1.1", cryptographyXML: "10.0.10"},
 	}
 
 	for _, tt := range tests {
@@ -345,6 +344,23 @@ func TestGenerateDirectoryPackagesPropsUsesDependencyPolicy(t *testing.T) {
 	}
 }
 
+func TestGenerateRejectsTargetFrameworkWithoutDependencyPolicy(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := testConfig()
+	cfg.Generation.TargetFramework = "net11.0"
+
+	_, err = gen.Generate(cfg)
+	if err == nil {
+		t.Fatal("expected generation to reject net11.0")
+	}
+	if !strings.Contains(err.Error(), "has no verified dependency policy entry") || !strings.Contains(err.Error(), "new target requires an explicit verified policy entry") {
+		t.Fatalf("expected explicit policy error, got %v", err)
+	}
+}
+
 func TestScaffoldPlanUsesTargetFrameworkAndCentralPackagePolicy(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -361,7 +377,10 @@ func TestScaffoldPlanUsesTargetFrameworkAndCentralPackagePolicy(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := testConfig()
 			cfg.Generation.TargetFramework = tt.targetFramework
-			view := buildSolutionView(cfg)
+			view, err := buildSolutionView(cfg)
+			if err != nil {
+				t.Fatalf("build solution view: %v", err)
+			}
 			commands := scaffoldCommandText(view.ScaffoldPlan)
 
 			assertContains(t, view.SolutionFileName, "CommercePlatform."+tt.solutionFormat)
@@ -463,7 +482,6 @@ func TestGenerateDefaultsSolutionFileFormatFromTargetFramework(t *testing.T) {
 	}{
 		{name: "net8 below net10", targetFramework: "net8.0", expectedSolution: "CommercePlatform.sln", unexpectedSolution: "CommercePlatform.slnx"},
 		{name: "net10", targetFramework: "net10.0", expectedSolution: "CommercePlatform.slnx", unexpectedSolution: "CommercePlatform.sln"},
-		{name: "future", targetFramework: "net11.0", expectedSolution: "CommercePlatform.slnx", unexpectedSolution: "CommercePlatform.sln"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

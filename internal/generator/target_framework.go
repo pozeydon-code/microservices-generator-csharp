@@ -2,6 +2,7 @@ package generator
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/pozeydon-code/generator-microservices-go/internal/spec"
 )
@@ -54,24 +55,36 @@ var dependencyPoliciesByTargetMajor = map[int]dependencyPolicy{
 	},
 }
 
-func dependencyPolicyForTargetFramework(targetFramework string) dependencyPolicy {
+func dependencyPolicyForTargetFramework(targetFramework string) (dependencyPolicy, bool) {
 	major, ok := spec.TargetFrameworkMajor(targetFramework)
-	if !ok || major <= 8 {
-		return dependencyPoliciesByTargetMajor[8]
+	if !ok {
+		return dependencyPolicy{}, false
 	}
-	if policy, ok := dependencyPoliciesByTargetMajor[major]; ok {
-		return policy
+	policy, ok := dependencyPoliciesByTargetMajor[major]
+	return policy, ok
+}
+
+func IsPolicyBackedTargetFramework(targetFramework string) bool {
+	_, ok := dependencyPolicyForTargetFramework(targetFramework)
+	return ok
+}
+
+func SupportedTargetFrameworks() []string {
+	majors := make([]int, 0, len(dependencyPoliciesByTargetMajor))
+	for major := range dependencyPoliciesByTargetMajor {
+		majors = append(majors, major)
 	}
-	majorAlignedVersion := fmt.Sprintf("%d.0.0", major)
-	return dependencyPolicy{
-		TargetMajor:                       major,
-		MediatRVersion:                    dependencyPoliciesByTargetMajor[10].MediatRVersion,
-		FluentValidationVersion:           dependencyPoliciesByTargetMajor[10].FluentValidationVersion,
-		ErrorOrVersion:                    dependencyPoliciesByTargetMajor[10].ErrorOrVersion,
-		AspNetCorePackageVersion:          majorAlignedVersion,
-		AspNetCoreTestingPackageVersion:   majorAlignedVersion,
-		EntityFrameworkCorePackageVersion: majorAlignedVersion,
-		SqlClientPackageVersion:           dependencyPoliciesByTargetMajor[10].SqlClientPackageVersion,
-		CryptographyXmlPackageVersion:     dependencyPoliciesByTargetMajor[10].CryptographyXmlPackageVersion,
+	sort.Sort(sort.Reverse(sort.IntSlice(majors)))
+	frameworks := make([]string, 0, len(majors))
+	for _, major := range majors {
+		frameworks = append(frameworks, fmt.Sprintf("net%d.0", major))
 	}
+	return frameworks
+}
+
+func ValidateTargetFrameworkPolicy(targetFramework string) error {
+	if IsPolicyBackedTargetFramework(targetFramework) {
+		return nil
+	}
+	return fmt.Errorf("generation.targetFramework %q has no verified dependency policy entry; a new target requires an explicit verified policy entry in internal/generator/target_framework.go", targetFramework)
 }

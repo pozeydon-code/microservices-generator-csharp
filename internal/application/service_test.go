@@ -270,6 +270,7 @@ func TestServiceUpdateSolutionSettingsRejectsInvalidSettingsWithoutSaving(t *tes
 			wantErr:  "solution.name must be a valid C# identifier",
 		},
 		{name: "invalid target framework", settings: SolutionSettings{SolutionName: "CommercePlatform", SolutionDescription: "Updated", TargetFramework: "latest"}, wantErr: "generation.targetFramework must be net8.0 or newer"},
+		{name: "target without verified policy", settings: SolutionSettings{SolutionName: "CommercePlatform", SolutionDescription: "Updated", TargetFramework: "net11.0"}, wantErr: "has no verified dependency policy entry"},
 	}
 
 	for _, tt := range tests {
@@ -368,7 +369,7 @@ func TestServiceUpdateSolutionSettingsNormalizesManualTargetFrameworkAndDefaults
 }
 
 func TestTargetFrameworkSuggestionsParseInstalledSDKMajorsNewestFirst(t *testing.T) {
-	got := targetFrameworksFromSDKList("8.0.404 [/sdk]\n10.0.110 [/sdk]\nnot-a-version [/sdk]\n10.0.111 [/sdk]\n")
+	got := targetFrameworksFromSDKList("8.0.404 [/sdk]\n10.0.110 [/sdk]\n11.0.100 [/sdk]\n99.0.100 [/sdk]\nnot-a-version [/sdk]\n10.0.111 [/sdk]\n")
 	want := []string{"net10.0", "net8.0"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("expected suggestions %#v, got %#v", want, got)
