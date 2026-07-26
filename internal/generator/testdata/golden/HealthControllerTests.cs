@@ -4,14 +4,14 @@ using Microsoft.Extensions.DependencyInjection;
 using ProductService.Application.Common;
 using Xunit;
 
-namespace ProductService.Api.Tests;
+namespace ProductService.WebApi.Tests;
 
-public sealed class HealthEndpointsTests
+public sealed class HealthControllerTests
 {
     [Fact]
     public async Task HealthLiveIsAnonymous()
     {
-        await using var factory = new TestApiFactory();
+        await using var factory = new TestWebApiFactory();
         using var client = factory.CreateClient();
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/live")).StatusCode);
     }
@@ -19,7 +19,7 @@ public sealed class HealthEndpointsTests
     [Fact]
     public async Task HealthReadyIsAnonymousAndReturnsGenericFailureWhenNotReady()
     {
-        await using var factory = new TestApiFactory(builder => builder.ConfigureTestServices(services =>
+        await using var factory = new TestWebApiFactory(builder => builder.ConfigureTestServices(services =>
             services.AddScoped<IReadinessProbe>(_ => new FakeReadinessProbe(ReadinessStatus.NotReady))));
         using var client = factory.CreateClient();
         var response = await client.GetAsync("/health/ready");

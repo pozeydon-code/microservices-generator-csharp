@@ -1,0 +1,9 @@
+using ErrorOr;
+using MediatR;
+
+namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Create;
+
+public sealed record Create{{ .Entity.Name }}Command : IRequest<ErrorOr<{{ .Entity.Name }}Dto>>
+{
+{{ range .Entity.NonIDFields }}    public {{ .ContractType }} {{ .Name }} { get; init; }{{ if eq .ContractType "string" }} = string.Empty;{{ end }}
+{{ end }}}

@@ -49,9 +49,9 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 		Files: []application.PlannedFile{
 			{Path: "README.md", Action: "replace"},
 			{Path: "src/ProductService/Product.cs", Action: "replace"},
-			{Path: "src/ProductService/ProductService.Api/ProductEndpoints.cs", Action: "create"},
+			{Path: "src/ProductService/ProductService.WebApi/Controllers/Products/ProductController.cs", Action: "create"},
 			{Path: "src/ProductService/ProductService.Domain/Product.cs", Action: "create"},
-			{Path: "tests/ProductService/ProductService.Api.Tests/ProductEndpointsTests.cs", Action: "create"},
+			{Path: "tests/ProductService/ProductService.WebApi.Tests/Features/Products/ProductControllerTests.cs", Action: "create"},
 			{Path: "tests/ProductService/ProductService.Domain.Tests/ProductTests.cs", Action: "create"},
 		},
 	}
@@ -113,7 +113,7 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	assertContains(t, view, "Files 1-5 of 6 (filter: all)")
 	assertContains(t, view, "Selected: 1/6 [REPLACE] README.md")
 	assertContains(t, view, "> [1/6] [REPLACE] README.md")
-	assertContains(t, view, "  [5/6] [CREATE] tests/ProductService/ProductService.Api.Tests/ProductEndpointsTests.cs")
+	assertContains(t, view, "  [5/6] [CREATE] tests/ProductService/ProductService.WebApi.Tests/Features/Products/ProductControllerTests.cs")
 	assertContains(t, view, readyHelp)
 	assertContains(t, view, "Back: esc | Exit: q/ctrl+c")
 

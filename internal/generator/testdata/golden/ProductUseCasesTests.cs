@@ -1,5 +1,6 @@
 using ProductService.Application.Common;
 using ProductService.Application.Features.Products;
+using ProductService.Application.Features.Products.Create;
 using ProductService.Domain.Features.Products;
 using DomainProduct = ProductService.Domain.Features.Products.Product;
 using ProductService.Domain.Common.ValueObjects;
@@ -27,6 +28,62 @@ public sealed class ProductUseCasesTests
 
         Assert.NotNull(created.ConcurrencyToken);
     }
+
+    [Fact]
+    public async Task CreateCommandHandlerPersistsEntityAndMapsSnapshot()
+    {
+        var repository = new FakeProductRepository();
+        var handler = new CreateProductCommandHandler(repository);
+
+        var result = await handler.Handle(new CreateProductCommand
+        {
+            IsActive = true,
+            Name = "Product Prime",
+            Price = 0m,
+        }, CancellationToken.None);
+
+        Assert.False(result.IsError);
+        Assert.Equal(1, repository.AddCalls);
+        var created = result.Value;
+        Assert.NotEqual(Guid.Empty, created.Id);
+        Assert.True(created.IsActive);
+        Assert.Equal("Product Prime", created.Name);
+        Assert.Equal(0m, created.Price);
+        Assert.Equal("token-v1", created.ConcurrencyToken);
+    }
+
+    [Fact]
+    public async Task CreateCommandValidatorAcceptsValidCommand()
+    {
+        var validator = new CreateProductCommandValidator();
+
+        var result = await validator.ValidateAsync(new CreateProductCommand
+        {
+            IsActive = true,
+            Name = "Product Prime",
+            Price = 0m,
+        });
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public async Task CreateCommandValidatorReportsDomainInvariantCodes()
+    {
+        var validator = new CreateProductCommandValidator();
+
+        var result = await validator.ValidateAsync(new CreateProductCommand
+        {
+            IsActive = true,
+            Name = "",
+            Price = 0m - 1m,
+        });
+
+        Assert.Contains(result.Errors, error => error.ErrorCode == "ProductName.Required");
+        Assert.Contains(result.Errors, error => error.ErrorCode == "ProductPrice.Minimum");
+    }
+
+
 
     [Fact]
     public async Task ListAppliesPaginationMetadata()

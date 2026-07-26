@@ -6,9 +6,12 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using ProductService.Application.Common;
 using ProductService.Application.Features.Products;
+using ProductService.Application.Features.Products.Create;
+using ErrorOr;
+using MediatR;
 using Xunit;
 
-namespace ProductService.Api.Tests.Features.Products;
+namespace ProductService.WebApi.Tests.Features.Products;
 
 public sealed class ProductEndpointsTests
 {
@@ -19,7 +22,7 @@ public sealed class ProductEndpointsTests
     [Fact]
     public async Task CrudRoutesRequireAuthentication()
     {
-        await using var factory = new TestApiFactory();
+        await using var factory = new TestWebApiFactory();
         using var client = factory.CreateClient();
         var response = await client.GetAsync("/products");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -105,16 +108,16 @@ public sealed class ProductEndpointsTests
         Assert.True(EqualityComparer<string>.Default.Equals("Product Prime", created.Name));
         Assert.True(EqualityComparer<decimal>.Default.Equals(0m, created.Price));
         Assert.Equal(ValidToken, created.ConcurrencyToken);
-        Assert.NotNull(FakeProductUseCases.LastCreateRequest);
-        Assert.True(EqualityComparer<bool>.Default.Equals(request.IsActive, FakeProductUseCases.LastCreateRequest.IsActive));
-        Assert.True(EqualityComparer<string>.Default.Equals(request.Name, FakeProductUseCases.LastCreateRequest.Name));
-        Assert.True(EqualityComparer<decimal>.Default.Equals(request.Price, FakeProductUseCases.LastCreateRequest.Price));
+        Assert.True(EqualityComparer<bool>.Default.Equals(request.IsActive, FakeCreateProductHandler.LastCommand!.IsActive));
+        Assert.True(EqualityComparer<string>.Default.Equals(request.Name, FakeCreateProductHandler.LastCommand!.Name));
+        Assert.True(EqualityComparer<decimal>.Default.Equals(request.Price, FakeCreateProductHandler.LastCommand!.Price));
 
     }
 
     [Fact]
     public async Task AuthorizedCreateMapsValidationOutcomeToProblemDetails()
     {
+        FakeCreateProductHandler.Reset();
         await using var factory = CreateFactory();
         using var client = factory.CreateAuthenticatedClient();
         var response = await client.PostAsJsonAsync("/products", new CreateProductRequest { IsActive = true, Name = "", Price = 0m - 1m,  });
@@ -129,8 +132,7 @@ public sealed class ProductEndpointsTests
         Assert.Equal("Validation failed", problem.Title);
         Assert.Equal(400, problem.Status);
         Assert.Equal(ExpectedValidationErrorKeys, problem.Errors.Keys.OrderBy(key => key, StringComparer.Ordinal).ToArray());
-        Assert.Equal(["ProductName.Required: ProductName.Required message."], problem.Errors["name"]);
-        Assert.Equal(["ProductPrice.Minimum: ProductPrice.Minimum message."], problem.Errors["price"]);
+        Assert.Null(FakeCreateProductHandler.LastCommand);
     }
 
     [Fact]
@@ -239,8 +241,29 @@ public sealed class ProductEndpointsTests
 
     private const string ValidToken = "token-v1";
 
-    private static TestApiFactory CreateFactory() => new(builder => builder.ConfigureTestServices(services =>
-        services.AddScoped<IProductUseCases, FakeProductUseCases>()));
+    private static TestWebApiFactory CreateFactory() => new(builder => builder.ConfigureTestServices(services =>
+    {
+        services.AddScoped<IProductUseCases, FakeProductUseCases>();
+        services.AddScoped<IRequestHandler<CreateProductCommand, ErrorOr<ProductDto>>, FakeCreateProductHandler>();
+    }));
+
+    private sealed class FakeCreateProductHandler : IRequestHandler<CreateProductCommand, ErrorOr<ProductDto>>
+    {
+        public static CreateProductCommand? LastCommand { get; private set; }
+
+        public static void Reset() => LastCommand = null;
+
+        public Task<ErrorOr<ProductDto>> Handle(CreateProductCommand request, CancellationToken cancellationToken)
+        {
+            LastCommand = request;
+            return Task.FromResult<ErrorOr<ProductDto>>(new ProductDto(
+                Id: Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                IsActive: request.IsActive,
+                Name: request.Name,
+                Price: request.Price,
+                ConcurrencyToken: ValidToken));
+        }
+    }
 
     private sealed class FakeProductUseCases : IProductUseCases
     {

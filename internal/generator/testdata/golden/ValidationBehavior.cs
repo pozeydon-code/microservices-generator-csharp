@@ -1,0 +1,36 @@
+using ErrorOr;
+using FluentValidation;
+using FluentValidation.Results;
+using MediatR;
+
+namespace ProductService.Application.Common;
+
+public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidator<TRequest>> validators) : IPipelineBehavior<TRequest, ErrorOr<TResponse>>
+    where TRequest : IRequest<ErrorOr<TResponse>>
+{
+    public async Task<ErrorOr<TResponse>> Handle(TRequest request, RequestHandlerDelegate<ErrorOr<TResponse>> next, CancellationToken cancellationToken)
+    {
+        var failures = new List<ValidationFailure>();
+        foreach (var validator in validators)
+        {
+            var result = await validator.ValidateAsync(request, cancellationToken);
+            failures.AddRange(result.Errors);
+        }
+
+        if (failures.Count == 0)
+        {
+            return await next(cancellationToken);
+        }
+
+        return failures
+            .Select(failure => Error.Validation(
+                code: failure.ErrorCode,
+                description: failure.ErrorMessage,
+                metadata: new Dictionary<string, object> { ["field"] = ToCamelCase(failure.PropertyName) }))
+            .ToList();
+    }
+
+    private static string ToCamelCase(string value) => string.IsNullOrEmpty(value)
+        ? string.Empty
+        : char.ToLowerInvariant(value[0]) + value[1..];
+}

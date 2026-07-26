@@ -1,11 +1,13 @@
 using ProductService.Application.Features.Products;
-using ProductService.Api.Features.Products;
+using ProductService.Application.Features.Products.Create;
 
-using ProductService.Api.Health;
+using ProductService.Application.Common;
 using ProductService.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.IdentityModel.Tokens;
+using FluentValidation;
+using MediatR;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -16,6 +18,13 @@ var telemetry = TelemetryOptions.From(builder.Configuration);
 
 builder.Logging.AddConsole();
 builder.Services.AddProblemDetails();
+builder.Services.AddControllers();
+builder.Services.AddMediatR(config =>
+{
+    config.RegisterServicesFromAssembly(typeof(CreateProductCommand).Assembly);
+    config.AddBehavior<ValidationBehavior<CreateProductCommand, ProductDto>>();
+});
+builder.Services.AddValidatorsFromAssemblyContaining<CreateProductCommandValidator>();
 builder.Services.AddHttpClient();
 builder.Services.AddRequestTimeouts(options => options.DefaultPolicy = new RequestTimeoutPolicy
 {
@@ -95,9 +104,7 @@ app.UseRequestTimeouts();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapHealthEndpoints();
-app.MapProductEndpoints();
-
+app.MapControllers();
 app.Run();
 
 public partial class Program;

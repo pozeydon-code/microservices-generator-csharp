@@ -1,11 +1,13 @@
 {{ range .Entities }}using {{ $.Name }}.Application.Features.{{ .FeatureName }};
-using {{ $.Name }}.Api.Features.{{ .FeatureName }};
+using {{ $.Name }}.Application.Features.{{ .FeatureName }}.Create;
 {{ end }}
-using {{ .Name }}.Api.Health;
+using {{ .Name }}.Application.Common;
 using {{ .Name }}.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.IdentityModel.Tokens;
+using FluentValidation;
+using MediatR;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -16,6 +18,13 @@ var telemetry = TelemetryOptions.From(builder.Configuration);
 
 builder.Logging.AddConsole();
 builder.Services.AddProblemDetails();
+builder.Services.AddControllers();
+builder.Services.AddMediatR(config =>
+{
+    config.RegisterServicesFromAssembly(typeof(Create{{ (index .Entities 0).Name }}Command).Assembly);
+{{ range .Entities }}    config.AddBehavior<ValidationBehavior<Create{{ .Name }}Command, {{ .Name }}Dto>>();
+{{ end }}});
+builder.Services.AddValidatorsFromAssemblyContaining<Create{{ (index .Entities 0).Name }}CommandValidator>();
 builder.Services.AddHttpClient();
 builder.Services.AddRequestTimeouts(options => options.DefaultPolicy = new RequestTimeoutPolicy
 {
@@ -95,9 +104,7 @@ app.UseRequestTimeouts();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapHealthEndpoints();
-{{ range .Entities }}app.Map{{ .Name }}Endpoints();
-{{ end }}
+app.MapControllers();
 app.Run();
 
 public partial class Program;

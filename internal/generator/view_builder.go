@@ -16,25 +16,31 @@ type SolutionTemplateData struct {
 	TargetFramework            string
 	SolutionFormat             string
 	SolutionFileName           string
+	MediatRVersion             string
+	FluentValidationVersion    string
+	ErrorOrVersion             string
 	AspNetCorePackageVersion   string
 	AspNetCoreTestingVersion   string
 	EntityFrameworkCoreVersion string
 	SqlClientVersion           string
 	CryptographyXmlVersion     string
+	ScaffoldPlan               ScaffoldPlan
 	Services                   []ServiceView
 	Projects                   []ProjectView
 }
 
 type ServiceView struct {
 	Name                       string
+	MediatRVersion             string
+	FluentValidationVersion    string
+	ErrorOrVersion             string
 	Entities                   []EntityView
 	DomainProject              ProjectView
 	ApplicationProject         ProjectView
 	InfrastructureProject      ProjectView
-	ApiProject                 ProjectView
-	HostProject                ProjectView
+	WebApiProject              ProjectView
 	ApplicationTestsProject    ProjectView
-	ApiTestsProject            ProjectView
+	WebApiTestsProject         ProjectView
 	ArchitectureTestsProject   ProjectView
 	InfrastructureTestsProject ProjectView
 	DomainTestsProject         ProjectView
@@ -142,6 +148,9 @@ func buildSolutionView(cfg spec.Config) SolutionTemplateData {
 		TargetFramework:            targetFramework,
 		SolutionFormat:             solutionFormat,
 		SolutionFileName:           cfg.Solution.Name + "." + solutionFormat,
+		MediatRVersion:             dependencyPolicy.MediatRVersion,
+		FluentValidationVersion:    dependencyPolicy.FluentValidationVersion,
+		ErrorOrVersion:             dependencyPolicy.ErrorOrVersion,
 		AspNetCorePackageVersion:   dependencyPolicy.AspNetCorePackageVersion,
 		AspNetCoreTestingVersion:   dependencyPolicy.AspNetCoreTestingPackageVersion,
 		EntityFrameworkCoreVersion: dependencyPolicy.EntityFrameworkCorePackageVersion,
@@ -150,15 +159,19 @@ func buildSolutionView(cfg spec.Config) SolutionTemplateData {
 		Services:                   make([]ServiceView, 0, len(services)),
 	}
 	for _, service := range services {
-		serviceView := ServiceView{Name: service.Name}
+		serviceView := ServiceView{
+			Name:                    service.Name,
+			MediatRVersion:          dependencyPolicy.MediatRVersion,
+			FluentValidationVersion: dependencyPolicy.FluentValidationVersion,
+			ErrorOrVersion:          dependencyPolicy.ErrorOrVersion,
+		}
 		serviceView.DomainProject = projectView(service.Name, service.Name+".Domain")
 		serviceView.ApplicationProject = projectView(service.Name, service.Name+".Application")
 		serviceView.InfrastructureProject = projectView(service.Name, service.Name+".Infrastructure")
-		serviceView.ApiProject = projectView(service.Name, service.Name+".Api")
-		serviceView.HostProject = projectView(service.Name, service.Name+".Host")
+		serviceView.WebApiProject = projectView(service.Name, service.Name+".WebApi")
 		serviceView.ApplicationTestsProject = testProjectView(service.Name, service.Name+".Application.Tests")
 		serviceView.DomainTestsProject = testProjectView(service.Name, service.Name+".Domain.Tests")
-		serviceView.ApiTestsProject = testProjectView(service.Name, service.Name+".Api.Tests")
+		serviceView.WebApiTestsProject = testProjectView(service.Name, service.Name+".WebApi.Tests")
 		serviceView.ArchitectureTestsProject = testProjectView(service.Name, service.Name+".Architecture.Tests")
 		serviceView.InfrastructureTestsProject = testProjectView(service.Name, service.Name+".Infrastructure.Tests")
 		serviceView.ValueObjects = valueObjectViews(service.ValueObjects)
@@ -193,9 +206,10 @@ func buildSolutionView(cfg spec.Config) SolutionTemplateData {
 			serviceView.ExpectedSchemaItems += len(entityView.Fields) + 1
 		}
 		view.Services = append(view.Services, serviceView)
-		view.Projects = append(view.Projects, serviceView.DomainProject, serviceView.ApplicationProject, serviceView.InfrastructureProject, serviceView.ApiProject, serviceView.HostProject, serviceView.DomainTestsProject, serviceView.ApplicationTestsProject, serviceView.ApiTestsProject, serviceView.ArchitectureTestsProject, serviceView.InfrastructureTestsProject)
+		view.Projects = append(view.Projects, serviceView.DomainProject, serviceView.ApplicationProject, serviceView.InfrastructureProject, serviceView.WebApiProject, serviceView.DomainTestsProject, serviceView.ApplicationTestsProject, serviceView.WebApiTestsProject, serviceView.ArchitectureTestsProject, serviceView.InfrastructureTestsProject)
 	}
 	sort.Slice(view.Projects, func(i, j int) bool { return view.Projects[i].Path < view.Projects[j].Path })
+	view.ScaffoldPlan = buildScaffoldPlan(view)
 	return view
 }
 

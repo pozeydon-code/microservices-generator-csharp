@@ -1,11 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <ItemGroup>
-    <ProjectReference Include="..\{{ .ApplicationProject.Directory }}\{{ .ApplicationProject.FileName }}" />
-    <ProjectReference Include="..\{{ .ApiProject.Directory }}\{{ .ApiProject.FileName }}" />
-    <ProjectReference Include="..\{{ .InfrastructureProject.Directory }}\{{ .InfrastructureProject.FileName }}" />
+    <ProjectReference Include="..\ProductService.Application\ProductService.Application.csproj" />
+    <ProjectReference Include="..\ProductService.Infrastructure\ProductService.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="ErrorOr" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="MediatR" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />

@@ -1,5 +1,6 @@
 using {{ .Service.Name }}.Application.Common;
 using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Create;
 using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
 using Domain{{ .Entity.Name }} = {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }}.{{ .Entity.Name }};
 {{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Common.ValueObjects;
@@ -25,6 +26,53 @@ public sealed class {{ .Entity.Name }}UseCasesTests
 {{ end }}
         Assert.NotNull(created.ConcurrencyToken);
     }
+
+    [Fact]
+    public async Task CreateCommandHandlerPersistsEntityAndMapsSnapshot()
+    {
+        var repository = new Fake{{ .Entity.Name }}Repository();
+        var handler = new Create{{ .Entity.Name }}CommandHandler(repository);
+
+        var result = await handler.Handle(new Create{{ .Entity.Name }}Command
+        {
+{{ range .Entity.NonIDFields }}            {{ .Name }} = {{ .SampleValue }},
+{{ end }}        }, CancellationToken.None);
+
+        Assert.False(result.IsError);
+        Assert.Equal(1, repository.AddCalls);
+        var created = result.Value;
+        Assert.NotEqual(Guid.Empty, created.Id);
+{{ range .Entity.NonIDFields }}        {{ .Assertion }}
+{{ end }}        Assert.Equal("token-v1", created.ConcurrencyToken);
+    }
+
+    [Fact]
+    public async Task CreateCommandValidatorAcceptsValidCommand()
+    {
+        var validator = new Create{{ .Entity.Name }}CommandValidator();
+
+        var result = await validator.ValidateAsync(new Create{{ .Entity.Name }}Command
+        {
+{{ range .Entity.NonIDFields }}            {{ .Name }} = {{ .SampleValue }},
+{{ end }}        });
+
+        Assert.True(result.IsValid);
+    }
+
+{{ if .Entity.HasValueObjectFields }}    [Fact]
+    public async Task CreateCommandValidatorReportsDomainInvariantCodes()
+    {
+        var validator = new Create{{ .Entity.Name }}CommandValidator();
+
+        var result = await validator.ValidateAsync(new Create{{ .Entity.Name }}Command
+        {
+{{ range .Entity.NonIDFields }}            {{ .Name }} = {{ if .IsValueObject }}{{ .InvalidValue }}{{ else }}{{ .SampleValue }}{{ end }},
+{{ end }}        });
+
+{{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        Assert.Contains(result.Errors, error => error.ErrorCode == "{{ .InvalidCode }}");
+{{ end }}{{ end }}    }
+
+{{ end }}
 
     [Fact]
     public async Task ListAppliesPaginationMetadata()

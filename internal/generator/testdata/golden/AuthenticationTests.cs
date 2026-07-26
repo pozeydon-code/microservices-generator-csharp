@@ -8,14 +8,14 @@ using Xunit;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 
-namespace ProductService.Api.Tests;
+namespace ProductService.WebApi.Tests;
 
 public sealed class AuthenticationTests
 {
     [Fact]
     public async Task ValidBearerGetsExpectedSuccessfulCrudBody()
     {
-        await using var factory = new TestApiFactory(builder => builder.ConfigureTestServices(services =>
+        await using var factory = new TestWebApiFactory(builder => builder.ConfigureTestServices(services =>
             services.AddScoped<IProductUseCases, AuthProductUseCases>()));
         using var client = factory.CreateAuthenticatedClient();
         var response = await client.GetAsync("/products");
@@ -42,7 +42,7 @@ public sealed class AuthenticationTests
     [InlineData("wrong-audience")]
     public async Task InvalidOrMissingBearerCannotReachCrudRoute(string? tokenKind)
     {
-        await using var factory = new TestApiFactory();
+        await using var factory = new TestWebApiFactory();
         using var client = tokenKind switch
         {
             null => factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") }),
@@ -60,7 +60,7 @@ public sealed class AuthenticationTests
     [Fact]
     public async Task PlainHttpRedirectsToHttps()
     {
-        await using var factory = new TestApiFactory();
+        await using var factory = new TestWebApiFactory();
         using var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
         {
             BaseAddress = new Uri("http://localhost"),
@@ -75,7 +75,7 @@ public sealed class AuthenticationTests
     [Fact]
     public async Task ProductionHttpsResponsesIncludeHsts()
     {
-        await using var factory = TestApiFactory.Production();
+        await using var factory = TestWebApiFactory.Production();
         using var client = factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
         var response = await client.GetAsync("/health/live");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -86,7 +86,7 @@ public sealed class AuthenticationTests
     public async Task SlowUseCaseTriggersRequestTimeoutAndCancellation()
     {
         SlowProductUseCases.CancellationObserved = false;
-        await using var factory = new TestApiFactory(builder => builder.ConfigureTestServices(services =>
+        await using var factory = new TestWebApiFactory(builder => builder.ConfigureTestServices(services =>
             services.AddScoped<IProductUseCases, SlowProductUseCases>()));
         using var client = factory.CreateAuthenticatedClient();
         var started = DateTimeOffset.UtcNow;
@@ -103,7 +103,7 @@ public sealed class AuthenticationTests
     [Fact]
     public async Task RequestTimeoutBudgetValidationHasExactBoundary()
     {
-        await using var rejectedFactory = new TestApiFactory(requestTimeoutSeconds: 9);
+        await using var rejectedFactory = new TestWebApiFactory(requestTimeoutSeconds: 9);
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {
             using var client = rejectedFactory.CreateClient();
@@ -111,12 +111,12 @@ public sealed class AuthenticationTests
         });
         Assert.Contains("at least 10 seconds", ex.ToString());
 
-        await using var acceptedBoundaryFactory = new TestApiFactory(requestTimeoutSeconds: 10);
+        await using var acceptedBoundaryFactory = new TestWebApiFactory(requestTimeoutSeconds: 10);
         using var acceptedBoundaryClient = acceptedBoundaryFactory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
         var boundaryResponse = await acceptedBoundaryClient.GetAsync("/health/live");
         Assert.Equal(HttpStatusCode.OK, boundaryResponse.StatusCode);
 
-        await using var defaultFactory = new TestApiFactory();
+        await using var defaultFactory = new TestWebApiFactory();
         using var defaultClient = defaultFactory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
         var defaultResponse = await defaultClient.GetAsync("/health/live");
         Assert.Equal(HttpStatusCode.OK, defaultResponse.StatusCode);

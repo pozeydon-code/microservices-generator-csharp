@@ -6,6 +6,10 @@
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="ErrorOr" Version="{{ .ErrorOrVersion }}" />
+    <PackageVersion Include="FluentValidation" Version="{{ .FluentValidationVersion }}" />
+    <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="{{ .FluentValidationVersion }}" />
+    <PackageVersion Include="MediatR" Version="{{ .MediatRVersion }}" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="{{ .AspNetCorePackageVersion }}" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="{{ .AspNetCoreTestingVersion }}" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="{{ .EntityFrameworkCoreVersion }}" />

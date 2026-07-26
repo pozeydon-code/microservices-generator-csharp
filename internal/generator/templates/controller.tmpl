@@ -1,0 +1,78 @@
+using {{ .Service.Name }}.Application.Common;
+using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Create;
+using {{ .Service.Name }}.WebApi.Common;
+using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+namespace {{ .Service.Name }}.WebApi.Controllers.{{ .Entity.FeatureName }};
+
+[ApiController]
+[Authorize]
+[Route("{{ .Entity.Route }}")]
+public sealed class {{ .Entity.Name }}Controller(I{{ .Entity.Name }}UseCases useCases, ISender sender) : ControllerBase
+{
+    [HttpGet(Name = "List{{ .Entity.PluralName }}")]
+    public async Task<ActionResult<PagedResult<{{ .Entity.Name }}Dto>>> List([FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await useCases.ListAsync(new PageRequest(page, pageSize), cancellationToken));
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("{id:guid}", Name = "Get{{ .Entity.Name }}ById")]
+    public async Task<ActionResult<{{ .Entity.Name }}Dto>> Get(Guid id, CancellationToken cancellationToken)
+    {
+        var item = await useCases.GetByIdAsync(id, cancellationToken);
+        return item is null ? NotFound() : Ok(item);
+    }
+
+    [HttpPost(Name = "Create{{ .Entity.Name }}")]
+    public async Task<ActionResult<{{ .Entity.Name }}Dto>> Create([FromBody] Create{{ .Entity.Name }}Request request, CancellationToken cancellationToken)
+    {
+        var created = await sender.Send(new Create{{ .Entity.Name }}Command
+        {
+{{ range .Entity.NonIDFields }}            {{ .Name }} = request.{{ .Name }},
+{{ end }}        }, cancellationToken);
+        if (created.IsError)
+        {
+            return ErrorOrProblemMapper.ToActionResult<{{ .Entity.Name }}Dto>(this, created.Errors);
+        }
+        return CreatedAtRoute("Get{{ .Entity.Name }}ById", new { id = created.Value.Id }, created.Value);
+    }
+
+    [HttpPut("{id:guid}", Name = "Update{{ .Entity.Name }}")]
+    public async Task<ActionResult<{{ .Entity.Name }}Dto>> Update(Guid id, [FromBody] Update{{ .Entity.Name }}Request request, CancellationToken cancellationToken)
+    {
+        var updated = await useCases.UpdateAsync(id, request, cancellationToken);
+        return updated.Status switch
+        {
+            MutationResultStatus.NotFound => NotFound(),
+            MutationResultStatus.Conflict => Conflict(),
+            MutationResultStatus.InvalidToken => BadRequest(new { error = "Invalid concurrency token." }),
+            MutationResultStatus.ValidationFailed => BadRequest(ValidationProblemMapper.ToProblem(updated.Validation!)),
+            MutationResultStatus.Updated => Ok(updated.Value),
+            _ => throw new InvalidOperationException($"Unexpected update result {updated.Status}.")
+        };
+    }
+
+    [HttpDelete("{id:guid}", Name = "Delete{{ .Entity.Name }}")]
+    public async Task<IActionResult> Delete(Guid id, [FromQuery] string? concurrencyToken, CancellationToken cancellationToken)
+    {
+        var deleted = await useCases.DeleteAsync(id, concurrencyToken ?? string.Empty, cancellationToken);
+        return deleted.Status switch
+        {
+            MutationResultStatus.NotFound => NotFound(),
+            MutationResultStatus.Conflict => Conflict(),
+            MutationResultStatus.InvalidToken => BadRequest(new { error = "Invalid concurrency token." }),
+            MutationResultStatus.Deleted => NoContent(),
+            _ => throw new InvalidOperationException($"Unexpected delete result {deleted.Status}.")
+        };
+    }
+}

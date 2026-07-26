@@ -5,31 +5,33 @@
 ## Services
 
 {{ range .Services -}}
-- `{{ .Name }}` Domain, Application, Api, Infrastructure, Host, and test projects.
+- `{{ .Name }}` Domain, Application, Infrastructure, WebApi, and test projects.
 {{ end }}
 ## Architecture
 
-Generated services use a five-project Clean Architecture model:
+Generated services use a four-project Clean Architecture model:
 
 | Project | Responsibility |
 |---|---|
 | `{Service}.Domain` | Entities with private setters and explicit create/update behavior. No framework, EF, persistence token, or rowversion dependency. |
-| `{Service}.Application` | Use cases, ports, DTOs, pagination contracts, and opaque concurrency tokens. References Domain only. |
-| `{Service}.Api` | HTTP endpoint adapter and health HTTP mapping. References Application only. |
+| `{Service}.Application` | Create CQRS commands/handlers/validators, existing use cases, ports, DTOs, pagination contracts, and opaque concurrency tokens. References Domain only. |
 | `{Service}.Infrastructure` | EF Core SQL Server adapter, shadow rowversion conversion, repository implementations, bounded retries/timeouts, and SQL/schema readiness adapter registration. |
-| `{Service}.Host` | Executable composition root for auth, HTTPS/HSTS, request timeout budget, OpenTelemetry, ProblemDetails, middleware, endpoint mapping, Infrastructure composition, and startup guards. |
+| `{Service}.WebApi` | ASP.NET Core controller presentation and executable composition root for auth, HTTPS/HSTS, request timeout budget, OpenTelemetry, ProblemDetails, middleware, health endpoints, Infrastructure composition, and startup guards. References Application and Infrastructure. |
 
 ```text
-Domain <- Application <- Api
 Domain <- Application <- Infrastructure
-Application + Api + Infrastructure <- Host
+Application + Infrastructure <- WebApi
 ```
 
-`{Service}.Architecture.Tests` inspects generated assembly references, project references, and source text to enforce these boundaries. Value Objects live in Domain; Application constructs them and API only maps validation outcomes to HTTP.
+`{Service}.Architecture.Tests` inspects generated assembly references, project references, and source text to enforce these boundaries. Value Objects live in Domain; Application constructs them and WebApi only maps validation outcomes to HTTP.
+
+## Create slice
+
+Create is the first migrated vertical slice. Its command and handler live under `Application/Features/{PluralEntity}/Create`, FluentValidation runs through an Application MediatR pipeline behavior, and the handler returns `ErrorOr` without referencing EF Core, ASP.NET Core, or Infrastructure. WebApi dispatches Create through `ISender` and maps validation, conflict, not-found, and unexpected errors to the HTTP contract. List, Get, Update, and Delete intentionally remain on the existing custom use-case path during this incremental migration.
 
 ## Value Objects
 
-Service-level Value Objects wrap supported scalar primitives and keep business validation in Domain. Create/update request contracts use primitive JSON values. Application constructs Value Objects, aggregates field-addressable validation issues, and does not call repositories when validation fails. API maps validation failures to RFC-compatible 400 validation ProblemDetails. Persisted Value Object data is reconstituted through Domain factories; invalid stored values raise a typed Domain signal that Infrastructure logs with service/entity/operation/value-object context without logging the sensitive value.
+Service-level Value Objects wrap supported scalar primitives and keep business validation in Domain. Create/update request contracts use primitive JSON values. Application constructs Value Objects, aggregates field-addressable validation issues, and does not call repositories when validation fails. WebApi maps validation failures to RFC-compatible 400 validation ProblemDetails. Persisted Value Object data is reconstituted through Domain factories; invalid stored values raise a typed Domain signal that Infrastructure logs with service/entity/operation/value-object context without logging the sensitive value.
 
 Supported rules: strings use `required`, `minLength`, `maxLength`, and `pattern`; numeric types use `minimum` and `maximum`; `Guid` uses `notEmpty`; `DateTime` uses `notDefault`; `bool` has no rules yet. Nested/composed Value Objects are intentionally out of scope for this slice.
 
@@ -37,12 +39,28 @@ Supported rules: strings use `required`, `minLength`, `maxLength`, and `pattern`
 
 This output is generated as source files only. It does not run dotnet, NuGet, migrations, shell commands, or database commands.
 
+## Dotnet scaffold plan
+
+The generator currently renders source files directly. This deterministic plan documents the base CLI scaffold the generated workspace is moving toward; review before executing it in a separate empty directory.
+
+Package versions are intentionally omitted from project/package commands. Generated `Directory.Packages.props` owns versions through central package management, including target-framework-specific EF Core and ASP.NET Core packages plus the compatible SqlClient policy pin. The Create slice uses verified stable `MediatR 14.2.0`, `FluentValidation 12.1.1`, `FluentValidation.DependencyInjectionExtensions 12.1.1`, and `ErrorOr 2.1.1`; the first three are consumed on `net8.0` and remain compatible with supported `net9.0` and `net10.0` targets through their `net8.0` assets where applicable.
+
+```bash
+{{ range .ScaffoldPlan.Commands }}{{ .Command }}
+{{ end }}```
+
+Versionless package plan:
+
+| Project | Package |
+|---|---|
+{{ range .ScaffoldPlan.PackageEntries }}| `{{ .Project }}` | `{{ .Package }}` |
+{{ end }}
 ## Configuration
 
-- Set `ConnectionStrings__DefaultConnection` to a SQL Server connection string. Host configuration passes it to Infrastructure; production strings should validate certificates, and `TrustServerCertificate=True` is a local-development exception only.
+- Set `ConnectionStrings__DefaultConnection` to a SQL Server connection string. WebApi configuration passes it to Infrastructure; production strings should validate certificates, and `TrustServerCertificate=True` is a local-development exception only.
 - Set `Authentication__Authority` and `Authentication__Audience` for JWT Bearer authentication. No signing secrets are generated.
 - CRUD endpoints require authorization. `/health/live` is anonymous and process-only. `/health/ready` checks SQL connectivity and verifies generated table, column type, nullability, max-length, and rowversion expectations. External readiness failures use a generic response; detailed failure reasons are written to logs only.
-- Hosts redirect HTTP to HTTPS and enable HSTS outside Development/Testing. Production traffic must use HTTPS all the way to the Host, including private backend TLS from a trusted reverse proxy, unless operators explicitly implement and audit trusted forwarded-header configuration.
+- WebApi projects redirect HTTP to HTTPS and enable HSTS outside Development/Testing. Production traffic must use HTTPS all the way to the WebApi, including private backend TLS from a trusted reverse proxy, unless operators explicitly implement and audit trusted forwarded-header configuration.
 - Configure OpenTelemetry OTLP export with `OTEL_EXPORTER_OTLP_ENDPOINT` and standard `OTEL_EXPORTER_OTLP_*` variables, or explicitly set `OTEL_SDK_DISABLED=true` to opt out. Generated code does not provision vendor alerts; start with deployment-specific HTTP 5xx and p95 latency alerts.
 
 ## Build and test
@@ -81,8 +99,8 @@ TARGET_DATABASE='<confirmed-database-name>'
 TARGET_SERVER='<confirmed-server-name-or-host,port>'
 test -n "$TARGET_DATABASE"
 test -n "$TARGET_SERVER"
-dotnet ef migrations add InitialCreate --project ./src/{{ .Name }}/{{ .Name }}.Infrastructure --startup-project ./src/{{ .Name }}/{{ .Name }}.Host
-dotnet ef migrations script --idempotent --project ./src/{{ .Name }}/{{ .Name }}.Infrastructure --startup-project ./src/{{ .Name }}/{{ .Name }}.Host --output ./artifacts/{{ .Name }}-migration.sql
+dotnet ef migrations add InitialCreate --project ./src/{{ .Name }}/{{ .Name }}.Infrastructure --startup-project ./src/{{ .Name }}/{{ .Name }}.WebApi
+dotnet ef migrations script --idempotent --project ./src/{{ .Name }}/{{ .Name }}.Infrastructure --startup-project ./src/{{ .Name }}/{{ .Name }}.WebApi --output ./artifacts/{{ .Name }}-migration.sql
 # Review ./artifacts/{{ .Name }}-migration.sql before continuing.
 sqlcmd -S "$TARGET_SERVER" -d master -Q "IF DB_ID('$TARGET_DATABASE') IS NULL THROW 50000, 'Target database not found.', 1; SELECT @@SERVERNAME AS server_name, DB_NAME(DB_ID('$TARGET_DATABASE')) AS database_name"
 sqlcmd -S "$TARGET_SERVER" -d master -Q "BACKUP DATABASE [$TARGET_DATABASE] TO DISK = N'/var/opt/mssql/backups/$TARGET_DATABASE-predeploy.bak' WITH COPY_ONLY, CHECKSUM"
@@ -98,8 +116,8 @@ Rollback limitations: database rollback is not automatically reversible after sc
 Fix-forward flow:
 
 ```bash
-dotnet ef migrations add FixForwardDescription --project ./src/{{ .Name }}/{{ .Name }}.Infrastructure --startup-project ./src/{{ .Name }}/{{ .Name }}.Host
-dotnet ef migrations script --idempotent --project ./src/{{ .Name }}/{{ .Name }}.Infrastructure --startup-project ./src/{{ .Name }}/{{ .Name }}.Host --output ./artifacts/{{ .Name }}-fix-forward.sql
+dotnet ef migrations add FixForwardDescription --project ./src/{{ .Name }}/{{ .Name }}.Infrastructure --startup-project ./src/{{ .Name }}/{{ .Name }}.WebApi
+dotnet ef migrations script --idempotent --project ./src/{{ .Name }}/{{ .Name }}.Infrastructure --startup-project ./src/{{ .Name }}/{{ .Name }}.WebApi --output ./artifacts/{{ .Name }}-fix-forward.sql
 # Review and validate ./artifacts/{{ .Name }}-fix-forward.sql in staging.
 sqlcmd -S "$TARGET_SERVER" -d "$TARGET_DATABASE" -b -i ./artifacts/{{ .Name }}-fix-forward.sql
 ```

@@ -72,6 +72,9 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		if err := g.appendRendered(&files, join("src", service.Name, service.ApplicationProject.Directory, "Common", "Readiness.cs"), "application-readiness.tmpl", service); err != nil {
 			return nil, err
 		}
+		if err := g.appendRendered(&files, join("src", service.Name, service.ApplicationProject.Directory, "Common", "ValidationBehavior.cs"), "validation-behavior.tmpl", service); err != nil {
+			return nil, err
+		}
 		if err := g.appendRendered(&files, join("src", service.Name, service.DomainProject.Directory, "Shared", "DomainResult.cs"), "domain-result.tmpl", service); err != nil {
 			return nil, err
 		}
@@ -81,19 +84,19 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		if err := g.appendRendered(&files, join("src", service.Name, service.InfrastructureProject.Directory, service.InfrastructureProject.FileName), "infrastructure-project.tmpl", service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("src", service.Name, service.ApiProject.Directory, service.ApiProject.FileName), "api-project.tmpl", service); err != nil {
+		if err := g.appendRendered(&files, join("src", service.Name, service.WebApiProject.Directory, service.WebApiProject.FileName), "webapi-project.tmpl", service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("src", service.Name, service.ApiProject.Directory, "Common", "ValidationProblemMapper.cs"), "api-validation-problem-mapper.tmpl", service); err != nil {
+		if err := g.appendRendered(&files, join("src", service.Name, service.WebApiProject.Directory, "Common", "ValidationProblemMapper.cs"), "webapi-validation-problem-mapper.tmpl", service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("src", service.Name, service.HostProject.Directory, service.HostProject.FileName), "host-project.tmpl", service); err != nil {
+		if err := g.appendRendered(&files, join("src", service.Name, service.WebApiProject.Directory, "Common", "ErrorOrProblemMapper.cs"), "webapi-error-mapper.tmpl", service); err != nil {
 			return nil, err
 		}
 		if err := g.appendRendered(&files, join("tests", service.Name, service.ApplicationTestsProject.Directory, service.ApplicationTestsProject.FileName), "application-tests-project.tmpl", service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("tests", service.Name, service.ApiTestsProject.Directory, service.ApiTestsProject.FileName), "api-tests-project.tmpl", service); err != nil {
+		if err := g.appendRendered(&files, join("tests", service.Name, service.WebApiTestsProject.Directory, service.WebApiTestsProject.FileName), "webapi-tests-project.tmpl", service); err != nil {
 			return nil, err
 		}
 		if err := g.appendRendered(&files, join("tests", service.Name, service.ArchitectureTestsProject.Directory, service.ArchitectureTestsProject.FileName), "architecture-tests-project.tmpl", service); err != nil {
@@ -119,19 +122,19 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 				return nil, err
 			}
 		}
-		if err := g.appendRendered(&files, join("src", service.Name, service.ApiProject.Directory, "Health", "HealthEndpoints.cs"), "health-endpoints.tmpl", service); err != nil {
+		if err := g.appendRendered(&files, join("src", service.Name, service.WebApiProject.Directory, "Health", "HealthController.cs"), "health-controller.tmpl", service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("tests", service.Name, service.ApiTestsProject.Directory, "TestApiFactory.cs"), "api-test-factory.tmpl", service); err != nil {
+		if err := g.appendRendered(&files, join("tests", service.Name, service.WebApiTestsProject.Directory, "TestWebApiFactory.cs"), "webapi-test-factory.tmpl", service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("tests", service.Name, service.ApiTestsProject.Directory, "TestJwtTokens.cs"), "jwt-test-helper.tmpl", service); err != nil {
+		if err := g.appendRendered(&files, join("tests", service.Name, service.WebApiTestsProject.Directory, "TestJwtTokens.cs"), "jwt-test-helper.tmpl", service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("tests", service.Name, service.ApiTestsProject.Directory, "HealthEndpointsTests.cs"), "health-tests.tmpl", service); err != nil {
+		if err := g.appendRendered(&files, join("tests", service.Name, service.WebApiTestsProject.Directory, "HealthControllerTests.cs"), "webapi-health-tests.tmpl", service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("tests", service.Name, service.ApiTestsProject.Directory, "AuthenticationTests.cs"), "auth-tests.tmpl", service); err != nil {
+		if err := g.appendRendered(&files, join("tests", service.Name, service.WebApiTestsProject.Directory, "AuthenticationTests.cs"), "webapi-auth-tests.tmpl", service); err != nil {
 			return nil, err
 		}
 		if err := g.appendRendered(&files, join("src", service.Name, service.InfrastructureProject.Directory, "DependencyInjection.cs"), "infrastructure-di.tmpl", service); err != nil {
@@ -143,13 +146,13 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		if err := g.appendRendered(&files, join("src", service.Name, service.InfrastructureProject.Directory, "Persistence", "ValueObjectPreflight.sql"), "value-object-preflight-sql.tmpl", service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("src", service.Name, service.HostProject.Directory, "Program.cs"), "program.tmpl", service); err != nil {
+		if err := g.appendRendered(&files, join("src", service.Name, service.WebApiProject.Directory, "Program.cs"), "program.tmpl", service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("src", service.Name, service.HostProject.Directory, "appsettings.json"), "appsettings.tmpl", service); err != nil {
+		if err := g.appendRendered(&files, join("src", service.Name, service.WebApiProject.Directory, "appsettings.json"), "appsettings.tmpl", service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("src", service.Name, service.HostProject.Directory, "appsettings.Development.json"), "appsettings-development.tmpl", service); err != nil {
+		if err := g.appendRendered(&files, join("src", service.Name, service.WebApiProject.Directory, "appsettings.Development.json"), "appsettings-development.tmpl", service); err != nil {
 			return nil, err
 		}
 
@@ -162,9 +165,12 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "I"+entity.Name+"UseCases.cs"), "service-interface.tmpl"},
 				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, entity.Name+"UseCases.cs"), "application-service.tmpl"},
 				{join("src", service.Name, service.InfrastructureProject.Directory, "Persistence", "Features", entity.FeatureName, entity.Name+"Repository.cs"), "repository-implementation.tmpl"},
-				{join("src", service.Name, service.ApiProject.Directory, "Features", entity.FeatureName, entity.Name+"Endpoints.cs"), "endpoints.tmpl"},
+				{join("src", service.Name, service.WebApiProject.Directory, "Controllers", entity.FeatureName, entity.Name+"Controller.cs"), "controller.tmpl"},
 				{join("tests", service.Name, service.ApplicationTestsProject.Directory, "Features", entity.FeatureName, entity.Name+"UseCasesTests.cs"), "application-tests.tmpl"},
-				{join("tests", service.Name, service.ApiTestsProject.Directory, "Features", entity.FeatureName, entity.Name+"EndpointsTests.cs"), "api-tests.tmpl"},
+				{join("tests", service.Name, service.WebApiTestsProject.Directory, "Features", entity.FeatureName, entity.Name+"ControllerTests.cs"), "webapi-tests.tmpl"},
+				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "Create", "Create"+entity.Name+"Command.cs"), "create-command.tmpl"},
+				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "Create", "Create"+entity.Name+"CommandHandler.cs"), "create-command-handler.tmpl"},
+				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "Create", "Create"+entity.Name+"CommandValidator.cs"), "create-command-validator.tmpl"},
 			}
 			for _, file := range entityFiles {
 				if err := g.appendRendered(&files, file.path, file.template, data); err != nil {

@@ -2,9 +2,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\ProductService\ProductService.Domain\ProductService.Domain.csproj" />
     <ProjectReference Include="..\..\..\src\ProductService\ProductService.Application\ProductService.Application.csproj" />
-    <ProjectReference Include="..\..\..\src\ProductService\ProductService.Api\ProductService.Api.csproj" />
+    <ProjectReference Include="..\..\..\src\ProductService\ProductService.WebApi\ProductService.WebApi.csproj" />
     <ProjectReference Include="..\..\..\src\ProductService\ProductService.Infrastructure\ProductService.Infrastructure.csproj" />
-    <ProjectReference Include="..\..\..\src\ProductService\ProductService.Host\ProductService.Host.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />

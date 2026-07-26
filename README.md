@@ -13,22 +13,22 @@ go run ./cmd/microgen generate --config examples/product-service.json --output .
 dotnet build ./out/CommercePlatform.sln -warnaserror
 ```
 
-Run a generated API with a connection string supplied by environment/configuration:
+Run a generated WebApi with a connection string supplied by environment/configuration:
 
 ```bash
 ConnectionStrings__DefaultConnection='Server=sql.example.com;Database=Products;Encrypt=True;TrustServerCertificate=False' \
 Authentication__Authority='https://issuer.example.com' \
 Authentication__Audience='ProductService' \
-  dotnet run --project ./out/src/ProductService/ProductService.Host/ProductService.Host.csproj
+  dotnet run --project ./out/src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj
 ```
 
 For local development only, `TrustServerCertificate=True` can be used against a trusted local SQL Server instance. Production connection strings should validate certificates.
 
 The generated `/health/live` endpoint does not access SQL Server. `/health/ready` checks database connectivity and verifies generated tables exist. Readiness failure responses are generic; detailed SQL/schema reasons are logged server-side only.
 
-Generated Hosts redirect HTTP to HTTPS and enable HSTS outside Development/Testing. Production traffic must use HTTPS all the way to the Host, including private backend TLS from a trusted reverse proxy, unless operators explicitly implement and audit trusted forwarded-header configuration. Do not treat arbitrary edge TLS termination as sufficient.
+Generated WebApi projects redirect HTTP to HTTPS and enable HSTS outside Development/Testing. Production traffic must use HTTPS all the way to the WebApi, including private backend TLS from a trusted reverse proxy, unless operators explicitly implement and audit trusted forwarded-header configuration. Do not treat arbitrary edge TLS termination as sufficient.
 
-Generated Hosts emit vendor-neutral OpenTelemetry traces and metrics with `service.name`, `service.version`, and `deployment.environment` resource attributes from deployment configuration. Configure `OTEL_EXPORTER_OTLP_ENDPOINT` for a collector or explicitly set `OTEL_SDK_DISABLED=true` to opt out; silent telemetry loss is not assumed safe. Production alert provisioning is deployment-specific; reasonable starting alerts are HTTP 5xx error rate above 2% for 5 minutes and p95 server latency above 1 second for 10 minutes.
+Generated WebApi projects emit vendor-neutral OpenTelemetry traces and metrics with `service.name`, `service.version`, and `deployment.environment` resource attributes from deployment configuration. Configure `OTEL_EXPORTER_OTLP_ENDPOINT` for a collector or explicitly set `OTEL_SDK_DISABLED=true` to opt out; silent telemetry loss is not assumed safe. Production alert provisioning is deployment-specific; reasonable starting alerts are HTTP 5xx error rate above 2% for 5 minutes and p95 server latency above 1 second for 10 minutes.
 
 ## Generated structure
 
@@ -38,23 +38,23 @@ For each configured service, `microgen` emits:
 |---|---|
 | `{Service}.Domain` | Enterprise entities, reusable Value Objects, and business validation; no framework, persistence, or rowversion dependency. |
 | `{Service}.Application` | Use cases, ports, DTOs, neutral validation outcomes, opaque concurrency tokens, and pagination contracts; references Domain only. |
-| `{Service}.Api` | HTTP endpoint adapter and health HTTP mapping; references Application only. |
 | `{Service}.Infrastructure` | EF Core SQL Server adapter, shadow rowversion conversion, bounded retries/timeouts, repositories, and SQL/schema readiness adapter registration. |
-| `{Service}.Host` | Executable composition root; wires auth, HTTPS/HSTS, request timeout budget, OpenTelemetry, ProblemDetails, middleware, API endpoints, Infrastructure, and startup guards. |
+| `{Service}.WebApi` | ASP.NET Core controller presentation and executable composition root; wires auth, HTTPS/HSTS, request timeout budget, OpenTelemetry, ProblemDetails, middleware, health endpoints, Infrastructure, and startup guards. References Application and Infrastructure. |
 | `{Service}.Architecture.Tests` | Runtime, project-file, and source-text tests proving generated dependency boundaries. |
 | root `.sln` or `.slnx` | References every generated project deterministically. |
 
 Dependency direction:
 
 ```text
-Domain <- Application <- Api
 Domain <- Application <- Infrastructure
-Application + Api + Infrastructure <- Host
+Application + Infrastructure <- WebApi
 ```
+
+Create is the first migrated CQRS vertical slice. Each entity gets an Application `Create` command, handler, and FluentValidation validator; MediatR dispatches the command through an Application pipeline behavior, and ErrorOr carries success or neutral errors to WebApi. The handler uses the existing Application repository port and Domain factory, then maps the opaque concurrency snapshot to the existing DTO. List, Get, Update, and Delete intentionally remain on the existing custom use-case path during this incremental migration.
 
 ## Generated dependency policy
 
-Generated workspaces centralize NuGet versions in `Directory.Packages.props`. The generator chooses ASP.NET Core, EF Core, SqlClient, and `System.Security.Cryptography.Xml` versions from a target-framework dependency policy table, so `net10.0` and future targets are deliberate generator behavior rather than scattered template literals.
+Generated workspaces centralize NuGet versions in `Directory.Packages.props`. The generator chooses ASP.NET Core, EF Core, SqlClient, and `System.Security.Cryptography.Xml` versions from a target-framework dependency policy table, so `net10.0` and future targets are deliberate generator behavior rather than scattered template literals. The Create slice pins verified stable `MediatR 14.2.0`, `FluentValidation 12.1.1`, `FluentValidation.DependencyInjectionExtensions 12.1.1`, and `ErrorOr 2.1.1`; their verified package assets support the generated `net8.0`, `net9.0`, and `net10.0` workspaces.
 
 NuGet audit remains enabled in generated workspaces. `CentralPackageTransitivePinningEnabled` is also enabled so the central XML package pin can override vulnerable transitives; NuGet still rejects unsafe downgrades with NU1109 instead of hiding audit failures.
 
@@ -152,11 +152,11 @@ Services can declare reusable Value Objects and then reference them from entity 
 
 Initial rule support is intentionally small: strings support `required`, `minLength`, `maxLength`, and `pattern`; numeric types support `minimum` and `maximum`; `Guid` supports `notEmpty`; `DateTime` supports `notDefault`; `bool` has no rules yet. Unknown or inapplicable rules fail config validation before output is created. Nested/composed Value Objects are not supported yet.
 
-Generated HTTP create/update contracts expose primitive values, not a Domain JSON shape. Application constructs Value Objects through Domain factories, aggregates field-addressable validation issues, and avoids repository mutation on validation failure. API maps those neutral validation outcomes to deterministic 400 validation ProblemDetails. Persisted Value Object data is reconstituted through Domain factories; invalid stored values raise a typed Domain signal that Infrastructure logs with service/entity/operation/value-object context without logging the sensitive value.
+Generated HTTP create/update contracts expose primitive values, not a Domain JSON shape. Application constructs Value Objects through Domain factories, aggregates field-addressable validation issues, and avoids repository mutation on validation failure. WebApi controllers map those neutral validation outcomes to deterministic 400 validation ProblemDetails. Persisted Value Object data is reconstituted through Domain factories; invalid stored values raise a typed Domain signal that Infrastructure logs with service/entity/operation/value-object context without logging the sensitive value.
 
 ## SQL Server and migrations
 
-Generated Infrastructure uses EF Core SQL Server with framework-aligned package versions pinned by the generator. The Host reads `ConnectionStrings:DefaultConnection`, including from `ConnectionStrings__DefaultConnection`, and passes configuration into Infrastructure composition. SQL command timeout/retry settings are bounded so database work fits inside the Host request timeout budget.
+Generated Infrastructure uses EF Core SQL Server with framework-aligned package versions pinned by the generator. The WebApi reads `ConnectionStrings:DefaultConnection`, including from `ConnectionStrings__DefaultConnection`, and passes configuration into Infrastructure composition. SQL command timeout/retry settings are bounded so database work fits inside the WebApi request timeout budget.
 JWT Bearer auth reads `Authentication:Authority` and `Authentication:Audience`, including `Authentication__Authority` and `Authentication__Audience`; no signing secrets are generated.
 
 Generated files do not contain credentials and do not run migrations, `EnsureCreated`, package installation, or database commands. Migration commands are manual user actions. A production runbook should include backup, target-environment verification, SQL review, apply, smoke test, readiness verification, repair criteria, and fix-forward planning:
@@ -166,8 +166,8 @@ TARGET_DATABASE='Products'
 TARGET_SERVER='<confirmed-server-name-or-host,port>'
 test -n "$TARGET_DATABASE"
 test -n "$TARGET_SERVER"
-dotnet ef migrations add InitialCreate --project ./out/src/ProductService/ProductService.Infrastructure --startup-project ./out/src/ProductService/ProductService.Host
-dotnet ef migrations script --idempotent --project ./out/src/ProductService/ProductService.Infrastructure --startup-project ./out/src/ProductService/ProductService.Host --output ./artifacts/ProductService-migration.sql
+dotnet ef migrations add InitialCreate --project ./out/src/ProductService/ProductService.Infrastructure --startup-project ./out/src/ProductService/ProductService.WebApi
+dotnet ef migrations script --idempotent --project ./out/src/ProductService/ProductService.Infrastructure --startup-project ./out/src/ProductService/ProductService.WebApi --output ./artifacts/ProductService-migration.sql
 # Review ./artifacts/ProductService-migration.sql before continuing.
 sqlcmd -S "$TARGET_SERVER" -d master -Q "IF DB_ID('$TARGET_DATABASE') IS NULL THROW 50000, 'Target database not found.', 1; SELECT @@SERVERNAME AS server_name, DB_NAME(DB_ID('$TARGET_DATABASE')) AS database_name"
 sqlcmd -S "$TARGET_SERVER" -d master -Q "BACKUP DATABASE [$TARGET_DATABASE] TO DISK = N'/var/opt/mssql/backups/$TARGET_DATABASE-predeploy.bak' WITH COPY_ONLY, CHECKSUM"
@@ -187,12 +187,12 @@ Run database updates only after reviewing the idempotent SQL script, taking a ba
 - Rejects invalid identifiers, duplicate names, excessive counts, Windows reserved path segment names, and invalid/missing entity `Id` fields.
 - Rejects fields that collide with generated C# type names for the enclosing entity.
 - Requires JWT Bearer authorization on CRUD routes; liveness remains anonymous.
-- Generated API tests exercise the real JwtBearer handler with deterministic test-only signing material; no production signing secret is generated.
+- Generated WebApi tests exercise the real JwtBearer handler with deterministic test-only signing material; no production signing secret is generated.
 - Uses server-side pagination defaults and maximums instead of unbounded list queries.
 - Uses Infrastructure-owned SQL Server shadow rowversion for optimistic concurrency while exposing only opaque Application tokens.
 - Generated readiness checks use SQL connectivity plus generated schema verification, including string max-length checks, with generic external failure responses.
 - Generated Infrastructure.Tests require `MICROGEN_TEST_SQLSERVER` and verify readiness schema drift, EF materialization, scalar mapping, opaque concurrency token refresh, update/delete, malformed-token handling, stale conflicts, corrupt persisted Value Object signals, and two-context races against SQL Server.
-- Generates Architecture.Tests that inspect assembly references and enforce Domain/Application/API dependency boundaries.
+- Generates Architecture.Tests that inspect assembly references and enforce Domain/Application/Infrastructure/WebApi dependency boundaries.
 - Publishes generated output through a private sibling staging directory.
 - Before `--force`, verifies manifest ownership, generated file hashes, and absence of unknown files or symlinks.
 - Preserves the previous generated directory and attempts rollback if publication fails.

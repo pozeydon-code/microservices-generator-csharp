@@ -6,9 +6,12 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using {{ .Service.Name }}.Application.Common;
 using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Create;
+using ErrorOr;
+using MediatR;
 using Xunit;
 
-namespace {{ .Service.Name }}.Api.Tests.Features.{{ .Entity.FeatureName }};
+namespace {{ .Service.Name }}.WebApi.Tests.Features.{{ .Entity.FeatureName }};
 
 public sealed class {{ .Entity.Name }}EndpointsTests
 {
@@ -19,7 +22,7 @@ public sealed class {{ .Entity.Name }}EndpointsTests
     [Fact]
     public async Task CrudRoutesRequireAuthentication()
     {
-        await using var factory = new TestApiFactory();
+        await using var factory = new TestWebApiFactory();
         using var client = factory.CreateClient();
         var response = await client.GetAsync("/{{ .Entity.Route }}");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -103,14 +106,14 @@ public sealed class {{ .Entity.Name }}EndpointsTests
         Assert.Equal(Guid.Parse("11111111-1111-1111-1111-111111111111"), created.Id);
 {{ range .Entity.NonIDFields }}        Assert.True(EqualityComparer<{{ .ContractType }}>.Default.Equals({{ .SampleValue }}, created.{{ .Name }}));
 {{ end }}        Assert.Equal(ValidToken, created.ConcurrencyToken);
-        Assert.NotNull(Fake{{ .Entity.Name }}UseCases.LastCreateRequest);
-{{ range .Entity.NonIDFields }}        Assert.True(EqualityComparer<{{ .ContractType }}>.Default.Equals(request.{{ .Name }}, Fake{{ $.Entity.Name }}UseCases.LastCreateRequest.{{ .Name }}));
+{{ range .Entity.NonIDFields }}        Assert.True(EqualityComparer<{{ .ContractType }}>.Default.Equals(request.{{ .Name }}, FakeCreate{{ $.Entity.Name }}Handler.LastCommand!.{{ .Name }}));
 {{ end }}
     }
 
 {{ if .Entity.HasValueObjectFields }}    [Fact]
     public async Task AuthorizedCreateMapsValidationOutcomeToProblemDetails()
     {
+        FakeCreate{{ .Entity.Name }}Handler.Reset();
         await using var factory = CreateFactory();
         using var client = factory.CreateAuthenticatedClient();
         var response = await client.PostAsJsonAsync("/{{ .Entity.Route }}", new Create{{ .Entity.Name }}Request { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ if .IsValueObject }}{{ .InvalidValue }}{{ else }}{{ .SampleValue }}{{ end }}, {{ end }} });
@@ -125,8 +128,8 @@ public sealed class {{ .Entity.Name }}EndpointsTests
         Assert.Equal("Validation failed", problem.Title);
         Assert.Equal(400, problem.Status);
         Assert.Equal(ExpectedValidationErrorKeys, problem.Errors.Keys.OrderBy(key => key, StringComparer.Ordinal).ToArray());
-{{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        Assert.Equal(["{{ .InvalidCode }}: {{ .InvalidCode }} message."], problem.Errors["{{ .CamelName }}"]);
-{{ end }}{{ end }}    }
+        Assert.Null(FakeCreate{{ .Entity.Name }}Handler.LastCommand);
+    }
 
     [Fact]
     public async Task AuthorizedUpdateMapsValidationOutcomeToProblemDetails()
@@ -239,8 +242,26 @@ public sealed class {{ .Entity.Name }}EndpointsTests
 
     private const string ValidToken = "token-v1";
 
-    private static TestApiFactory CreateFactory() => new(builder => builder.ConfigureTestServices(services =>
-        services.AddScoped<I{{ .Entity.Name }}UseCases, Fake{{ .Entity.Name }}UseCases>()));
+    private static TestWebApiFactory CreateFactory() => new(builder => builder.ConfigureTestServices(services =>
+    {
+        services.AddScoped<I{{ .Entity.Name }}UseCases, Fake{{ .Entity.Name }}UseCases>();
+        services.AddScoped<IRequestHandler<Create{{ .Entity.Name }}Command, ErrorOr<{{ .Entity.Name }}Dto>>, FakeCreate{{ .Entity.Name }}Handler>();
+    }));
+
+    private sealed class FakeCreate{{ .Entity.Name }}Handler : IRequestHandler<Create{{ .Entity.Name }}Command, ErrorOr<{{ .Entity.Name }}Dto>>
+    {
+        public static Create{{ .Entity.Name }}Command? LastCommand { get; private set; }
+
+        public static void Reset() => LastCommand = null;
+
+        public Task<ErrorOr<{{ .Entity.Name }}Dto>> Handle(Create{{ .Entity.Name }}Command request, CancellationToken cancellationToken)
+        {
+            LastCommand = request;
+            return Task.FromResult<ErrorOr<{{ .Entity.Name }}Dto>>(new {{ .Entity.Name }}Dto(
+{{ range .Entity.Fields }}                {{ .Name }}: {{ if eq .Name "Id" }}Guid.Parse("11111111-1111-1111-1111-111111111111"){{ else }}request.{{ .Name }}{{ end }},
+{{ end }}                ConcurrencyToken: ValidToken));
+        }
+    }
 
     private sealed class Fake{{ .Entity.Name }}UseCases : I{{ .Entity.Name }}UseCases
     {

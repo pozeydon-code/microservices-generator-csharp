@@ -3,7 +3,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.IdentityModel.Tokens;
 
-namespace ProductService.Api.Tests;
+namespace ProductService.WebApi.Tests;
 
 internal static class TestJwtTokens
 {

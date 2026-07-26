@@ -1,0 +1,37 @@
+using ErrorOr;
+using MediatR;
+using {{ .Service.Name }}.Application.Common;
+using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
+{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Common.ValueObjects;
+{{ end }}
+
+namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Create;
+
+public sealed class Create{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Repository repository) : IRequestHandler<Create{{ .Entity.Name }}Command, ErrorOr<{{ .Entity.Name }}Dto>>
+{
+    public async Task<ErrorOr<{{ .Entity.Name }}Dto>> Handle(Create{{ .Entity.Name }}Command command, CancellationToken cancellationToken)
+    {
+        List<Error> errors = [];
+{{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        var {{ .CamelName }}Result = {{ .DomainType }}.Create(command.{{ .Name }}, "{{ .CamelName }}");
+        errors.AddRange({{ .CamelName }}Result.Errors.Select(error => Error.Validation(
+            code: error.Code,
+            description: error.Message,
+            metadata: new Dictionary<string, object> { ["field"] = error.Field ?? "{{ .CamelName }}" })));
+{{ end }}{{ end }}        if (errors.Count > 0)
+        {
+            return errors;
+        }
+
+        var entity = {{ .Entity.Name }}.Create(new {{ .Entity.Name }}State
+        {
+{{ range .Entity.NonIDFields }}            {{ .Name }} = {{ if .IsValueObject }}{{ .CamelName }}Result.Value!{{ else }}command.{{ .Name }}{{ end }},
+{{ end }}        });
+        var snapshot = await repository.AddAsync(entity, cancellationToken);
+        return ToDto(snapshot);
+    }
+
+    private static {{ .Entity.Name }}Dto ToDto(EntitySnapshot<{{ .Entity.Name }}> snapshot) => new(
+{{ range $index, $field := .Entity.Fields }}{{ if $index }},
+{{ end }}        snapshot.Entity.{{ $field.ValueAccess }}{{ end }},
+        snapshot.ConcurrencyToken);
+}

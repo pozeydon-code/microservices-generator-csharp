@@ -1,0 +1,21 @@
+using FluentValidation;
+using FluentValidation.Results;
+{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Common.ValueObjects;
+{{ end }}
+
+namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Create;
+
+public sealed class Create{{ .Entity.Name }}CommandValidator : AbstractValidator<Create{{ .Entity.Name }}Command>
+{
+    public Create{{ .Entity.Name }}CommandValidator()
+    {
+{{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        RuleFor(command => command.{{ .Name }}).Custom((value, context) =>
+        {
+            var result = {{ .DomainType }}.Create(value, "{{ .CamelName }}");
+            foreach (var error in result.Errors)
+            {
+                context.AddFailure(new ValidationFailure(context.PropertyPath, error.Message) { ErrorCode = error.Code });
+            }
+        });
+{{ end }}{{ end }}    }
+}

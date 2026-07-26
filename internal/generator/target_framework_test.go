@@ -90,6 +90,9 @@ func TestDependencyPolicyForTargetFramework(t *testing.T) {
 			actual := dependencyPolicyForTargetFramework(tt.target)
 			expected := dependencyPolicy{
 				TargetMajor:                       tt.targetMajor,
+				MediatRVersion:                    "14.2.0",
+				FluentValidationVersion:           "12.1.1",
+				ErrorOrVersion:                    "2.1.1",
 				AspNetCorePackageVersion:          tt.aspNetCore,
 				AspNetCoreTestingPackageVersion:   tt.aspNetCoreTest,
 				EntityFrameworkCorePackageVersion: tt.entityFramework,

@@ -8,12 +8,12 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 
-namespace ProductService.Api.Tests;
+namespace ProductService.WebApi.Tests;
 
-public sealed class TestApiFactory(Action<IWebHostBuilder>? configure = null, string environment = "Testing", int? requestTimeoutSeconds = null) : WebApplicationFactory<Program>
+public sealed class TestWebApiFactory(Action<IWebHostBuilder>? configure = null, string environment = "Testing", int? requestTimeoutSeconds = null) : WebApplicationFactory<Program>
 {
-    public TestApiFactory() : this(null) { }
-    public static TestApiFactory Production() => new(null, "Production");
+    public TestWebApiFactory() : this(null) { }
+    public static TestWebApiFactory Production() => new(null, "Production");
 
     public HttpClient CreateAuthenticatedClient() => CreateBearerClient(TestJwtTokens.ValidToken());
 

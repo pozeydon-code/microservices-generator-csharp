@@ -1,0 +1,23 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using ProductService.Application.Common;
+
+namespace ProductService.WebApi.Health;
+
+[ApiController]
+[AllowAnonymous]
+[Route("health")]
+public sealed class HealthController(IReadinessProbe readiness) : ControllerBase
+{
+    [HttpGet("live", Name = "Liveness")]
+    public IActionResult Live() => Ok(new { status = "ok" });
+
+    [HttpGet("ready", Name = "Readiness")]
+    public async Task<IActionResult> Ready(CancellationToken cancellationToken)
+    {
+        var result = await readiness.CheckAsync(cancellationToken);
+        return result.Status == ReadinessStatus.Ready
+            ? Ok(new { status = "ready" })
+            : Problem("Service is not ready.", statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+}
