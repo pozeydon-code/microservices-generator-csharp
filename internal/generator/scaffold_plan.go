@@ -39,12 +39,6 @@ func buildScaffoldPlan(solution SolutionTemplateData) ScaffoldPlan {
 			newProjectCommand("xunit", solution.TargetFramework, service.InfrastructureTestsProject),
 		)
 
-		for _, project := range []ProjectView{service.DomainTestsProject, service.ApplicationTestsProject, service.WebApiTestsProject, service.ArchitectureTestsProject, service.InfrastructureTestsProject} {
-			for _, packageName := range []string{"coverlet.collector", "Microsoft.NET.Test.Sdk", "xunit", "xunit.runner.visualstudio"} {
-				plan.Commands = append(plan.Commands, removePackageCommand(project, packageName))
-			}
-		}
-
 		for _, project := range []ProjectView{service.DomainProject, service.ApplicationProject, service.InfrastructureProject, service.WebApiProject, service.DomainTestsProject, service.ApplicationTestsProject, service.WebApiTestsProject, service.ArchitectureTestsProject, service.InfrastructureTestsProject} {
 			plan.Commands = append(plan.Commands, ScaffoldCommand{Command: shellCommand("dotnet", "sln", "./"+solution.SolutionFileName, "add", "./"+project.Path)})
 		}
@@ -115,10 +109,6 @@ func projectReferenceCommand(from ProjectView, to ProjectView) ScaffoldCommand {
 	return ScaffoldCommand{Command: shellCommand("dotnet", "add", "./"+from.Path, "reference", "./"+to.Path)}
 }
 
-func removePackageCommand(project ProjectView, packageName string) ScaffoldCommand {
-	return ScaffoldCommand{Command: shellCommand("dotnet", "remove", "./"+project.Path, "package", packageName)}
-}
-
 func packageEntry(project ProjectView, packageName string) ScaffoldPackageEntry {
 	return ScaffoldPackageEntry{Project: project.Path, Package: packageName}
 }
@@ -151,7 +141,7 @@ func shellLiteral(parts []string, index int) bool {
 	}
 	if index == 1 {
 		switch value {
-		case "new", "sln", "add", "remove":
+		case "new", "sln", "add":
 			return true
 		}
 	}
@@ -166,8 +156,6 @@ func shellLiteral(parts []string, index int) bool {
 		case parts[1] == "sln" && value == "add":
 			return true
 		case parts[1] == "add" && value == "reference":
-			return true
-		case parts[1] == "remove" && value == "package":
 			return true
 		}
 	}

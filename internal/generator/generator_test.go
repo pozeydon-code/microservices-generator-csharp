@@ -47,7 +47,6 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 		{path: "Directory.Packages.props", goldenName: "Directory.Packages.props"},
 		{path: "README.md", goldenName: "README.md"},
 		{path: "microgen.json", goldenName: "microgen.json"},
-		{path: "scaffold.sh", goldenName: "scaffold.sh"},
 		{path: "src/ProductService/ProductService.Application/Common/PaginationPolicy.cs", goldenName: "PaginationPolicy.cs"},
 		{path: "src/ProductService/ProductService.Application/Common/Readiness.cs", goldenName: "Readiness.cs"},
 		{path: "src/ProductService/ProductService.Application/Common/Results.cs", goldenName: "Results.cs"},
@@ -377,7 +376,7 @@ func TestScaffoldPlanUsesTargetFrameworkAndCentralPackagePolicy(t *testing.T) {
 			assertContains(t, commands, "dotnet sln './CommercePlatform."+tt.solutionFormat+"' add './src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj'")
 			assertContains(t, commands, "dotnet add './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj' reference './src/ProductService/ProductService.Application/ProductService.Application.csproj'")
 			assertContains(t, commands, "dotnet add './src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj' reference './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj'")
-			assertContains(t, commands, "dotnet remove './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj' package 'coverlet.collector'")
+			assertNotContains(t, commands, "dotnet remove")
 			assertNotContains(t, commands, "--version")
 			assertNotContains(t, commands, "Version=")
 			assertNotContains(t, commands, tt.entityFramework)
@@ -395,68 +394,6 @@ func TestScaffoldPlanUsesTargetFrameworkAndCentralPackagePolicy(t *testing.T) {
 			assertContains(t, packages, "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj -> ErrorOr")
 			assertNotContains(t, packages, tt.entityFramework)
 			assertNotContains(t, packages, tt.sqlClient)
-		})
-	}
-}
-
-func TestGeneratedScaffoldScriptIsSafeAndVersionless(t *testing.T) {
-	gen, err := New()
-	if err != nil {
-		t.Fatalf("new generator: %v", err)
-	}
-
-	tests := []struct {
-		name            string
-		targetFramework string
-		solutionFormat  string
-		solutionFile    string
-	}{
-		{name: "net8 sln", targetFramework: "net8.0", solutionFormat: "sln", solutionFile: "CommercePlatform.sln"},
-		{name: "net10 slnx", targetFramework: "net10.0", solutionFormat: "slnx", solutionFile: "CommercePlatform.slnx"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := testConfig()
-			cfg.Generation.TargetFramework = tt.targetFramework
-			cfg.Generation.SolutionFormat = tt.solutionFormat
-
-			files, err := gen.Generate(cfg)
-			if err != nil {
-				t.Fatalf("generate: %v", err)
-			}
-			script := string(generatedContent(t, files, "scaffold.sh"))
-
-			for _, expected := range []string{
-				"#!/usr/bin/env bash\nset -euo pipefail",
-				"target_dir=\"${1:-.microgen-scaffold}\"",
-				"refusing non-empty target",
-				"cp -- \"$script_dir/Directory.Packages.props\" \"$target_dir/Directory.Packages.props\"",
-				"cp -- \"$script_dir/Directory.Build.props\" \"$target_dir/Directory.Build.props\"",
-				"dotnet new webapi --use-controllers --no-openapi --framework '" + tt.targetFramework + "'",
-				"dotnet sln './" + tt.solutionFile + "' add './src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj'",
-				"dotnet add 'src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj' package 'Microsoft.EntityFrameworkCore.SqlServer'",
-				"dotnet add 'src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj' package 'OpenTelemetry.Instrumentation.Http'",
-				"if grep -R -n --include='*.csproj' 'Version=' src tests; then",
-			} {
-				assertContains(t, script, expected)
-			}
-			solutionCommand := "dotnet new sln --name 'CommercePlatform'"
-			if tt.solutionFormat == "slnx" {
-				solutionCommand = "dotnet new sln --format 'slnx' --name 'CommercePlatform'"
-			}
-			assertContains(t, script, solutionCommand)
-			assertNotContains(t, script, "--version")
-			if tt.solutionFormat == "sln" {
-				assertNotContains(t, script, "dotnet new sln --format")
-			}
-			assertNotContains(t, script, "ProductService.Domain/ProductService.Domain.csproj' package")
-
-			copyIndex := strings.Index(script, "Directory.Packages.props")
-			packageIndex := strings.Index(script, "dotnet add 'src/ProductService/ProductService.Application/ProductService.Application.csproj' package")
-			if copyIndex < 0 || packageIndex < 0 || copyIndex >= packageIndex {
-				t.Fatalf("central package policy must be copied before package additions")
-			}
 		})
 	}
 }

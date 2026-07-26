@@ -36,17 +36,17 @@ Supported rules: strings use `required`, `minLength`, `maxLength`, and `pattern`
 
 ## Safety
 
-Generation itself does not run dotnet, NuGet, migrations, shell commands, or database commands. The generated `scaffold.sh` is a separate base scaffold validator.
+Generation itself does not run dotnet, NuGet, migrations, shell commands, or database commands. No executable scaffold or installer is emitted.
 
-## Dotnet scaffold plan
+## Dotnet scaffold command plan (documentation only)
 
-Run `bash scaffold.sh [target-directory]` from this generated workspace to create an SDK-backed validation target. The default target is `.microgen-scaffold`; an existing non-empty target is refused. The script copies `Directory.Packages.props` and `Directory.Build.props` before creating projects or adding packages, and generated file modes are intentionally unchanged, so invoke it with Bash.
+The following is a documentation-only plan for manually reproducing the SDK project structure. It is not an installer, script, or instruction to execute as generated output. Adapt and review each command for the installed SDK and the intended destination before running it.
 
-The target contains SDK-created Domain, Application, Infrastructure, WebApi, and test projects, solution membership, project references, and versionless package references. It is intentionally only a base scaffold validator; it does not generate the domain, application, controller, or other source templates emitted by the normal generator output.
+The solution command must match the generated file format: omit `--format` for `.sln` files because .NET 8 does not support that option, and use `--format 'slnx'` for `.slnx` files on .NET 10 or newer. The plan creates SDK-created Domain, Application, Infrastructure, WebApi, and test projects, solution membership, and project references; it does not generate the domain, application, controller, or other source templates emitted by the normal generator output.
 
 Package versions are intentionally omitted from project/package commands. Generated `Directory.Packages.props` owns versions through central package management, including target-framework-specific EF Core and ASP.NET Core packages plus the compatible SqlClient policy pin. The Create slice uses verified stable `MediatR 14.2.0`, `FluentValidation 12.1.1`, `FluentValidation.DependencyInjectionExtensions 12.1.1`, and `ErrorOr 2.1.1`; the first three are consumed on `net8.0` and remain compatible with supported `net9.0` and `net10.0` targets through their `net8.0` assets where applicable.
 
-```bash
+```text
 dotnet new sln --name 'CommercePlatform'
 dotnet new classlib --framework 'net8.0' --name 'ProductService.Domain' --output './src/ProductService/ProductService.Domain' --no-restore
 dotnet new classlib --framework 'net8.0' --name 'ProductService.Application' --output './src/ProductService/ProductService.Application' --no-restore
@@ -57,26 +57,6 @@ dotnet new xunit --framework 'net8.0' --name 'ProductService.Application.Tests' 
 dotnet new xunit --framework 'net8.0' --name 'ProductService.WebApi.Tests' --output './tests/ProductService/ProductService.WebApi.Tests' --no-restore
 dotnet new xunit --framework 'net8.0' --name 'ProductService.Architecture.Tests' --output './tests/ProductService/ProductService.Architecture.Tests' --no-restore
 dotnet new xunit --framework 'net8.0' --name 'ProductService.Infrastructure.Tests' --output './tests/ProductService/ProductService.Infrastructure.Tests' --no-restore
-dotnet remove './tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj' package 'coverlet.collector'
-dotnet remove './tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj' package 'Microsoft.NET.Test.Sdk'
-dotnet remove './tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj' package 'xunit'
-dotnet remove './tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj' package 'xunit.runner.visualstudio'
-dotnet remove './tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj' package 'coverlet.collector'
-dotnet remove './tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj' package 'Microsoft.NET.Test.Sdk'
-dotnet remove './tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj' package 'xunit'
-dotnet remove './tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj' package 'xunit.runner.visualstudio'
-dotnet remove './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj' package 'coverlet.collector'
-dotnet remove './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj' package 'Microsoft.NET.Test.Sdk'
-dotnet remove './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj' package 'xunit'
-dotnet remove './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj' package 'xunit.runner.visualstudio'
-dotnet remove './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj' package 'coverlet.collector'
-dotnet remove './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj' package 'Microsoft.NET.Test.Sdk'
-dotnet remove './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj' package 'xunit'
-dotnet remove './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj' package 'xunit.runner.visualstudio'
-dotnet remove './tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj' package 'coverlet.collector'
-dotnet remove './tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj' package 'Microsoft.NET.Test.Sdk'
-dotnet remove './tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj' package 'xunit'
-dotnet remove './tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj' package 'xunit.runner.visualstudio'
 dotnet sln './CommercePlatform.sln' add './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
 dotnet sln './CommercePlatform.sln' add './src/ProductService/ProductService.Application/ProductService.Application.csproj'
 dotnet sln './CommercePlatform.sln' add './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj'
