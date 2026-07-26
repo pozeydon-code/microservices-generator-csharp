@@ -1,10 +1,13 @@
 using {{ .Service.Name }}.Application.Common;
 using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
 using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Create;
+using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.GetById;
+using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.List;
 using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
 using Domain{{ .Entity.Name }} = {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }}.{{ .Entity.Name }};
 {{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Common.ValueObjects;
 {{ end }}
+using ErrorOr;
 using Xunit;
 
 namespace {{ .Service.Name }}.Application.Tests.Features.{{ .Entity.FeatureName }};
@@ -75,18 +78,38 @@ public sealed class {{ .Entity.Name }}UseCasesTests
 {{ end }}
 
     [Fact]
-    public async Task ListAppliesPaginationMetadata()
+    public async Task ListQueryHandlerAppliesPaginationMetadata()
     {
         var repository = new Fake{{ .Entity.Name }}Repository();
         repository.Items.Add(Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} }));
-        var useCases = new {{ .Entity.Name }}UseCases(repository);
+        var handler = new List{{ .Entity.Name }}QueryHandler(repository);
 
-        var page = await useCases.ListAsync(new PageRequest(1, 20), CancellationToken.None);
+        var result = await handler.Handle(new List{{ .Entity.Name }}Query(1, 20), CancellationToken.None);
 
+        Assert.False(result.IsError);
+        var page = result.Value;
         Assert.Single(page.Items);
         Assert.Equal(1, page.Page);
         Assert.Equal(20, page.PageSize);
         Assert.Equal(1, page.TotalCount);
+    }
+
+    [Fact]
+    public async Task ListQueryHandlerRejectsInvalidPagination()
+    {
+        var handler = new List{{ .Entity.Name }}QueryHandler(new Fake{{ .Entity.Name }}Repository());
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => handler.Handle(new List{{ .Entity.Name }}Query(0, 20), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ListQueryValidatorReportsPaginationCode()
+    {
+        var validator = new List{{ .Entity.Name }}QueryValidator();
+
+        var result = await validator.ValidateAsync(new List{{ .Entity.Name }}Query(0, 20));
+
+        Assert.Contains(result.Errors, error => error.ErrorCode == "Pagination.Page");
     }
 
 {{ if .Entity.HasValueObjectFields }}    [Fact]
@@ -132,14 +155,16 @@ public sealed class {{ .Entity.Name }}UseCasesTests
     }
 
 {{ end }}    [Fact]
-    public async Task ListAcceptsMinimumPaginationAndUsesZeroOffset()
+    public async Task ListQueryHandlerAcceptsMinimumPaginationAndUsesZeroOffset()
     {
         var repository = new Fake{{ .Entity.Name }}Repository();
         repository.Items.Add(Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} }));
-        var useCases = new {{ .Entity.Name }}UseCases(repository);
+        var handler = new List{{ .Entity.Name }}QueryHandler(repository);
 
-        var page = await useCases.ListAsync(new PageRequest(1, 1), CancellationToken.None);
+        var result = await handler.Handle(new List{{ .Entity.Name }}Query(1, 1), CancellationToken.None);
 
+        Assert.False(result.IsError);
+        var page = result.Value;
         Assert.Single(page.Items);
         Assert.Equal(0, repository.LastSkip);
         Assert.Equal(1, repository.LastTake);
@@ -163,13 +188,29 @@ public sealed class {{ .Entity.Name }}UseCasesTests
     }
 
     [Fact]
-    public async Task GetReturnsNullForMissingEntity()
+    public async Task GetByIdQueryHandlerMapsFoundSnapshot()
     {
-        var useCases = new {{ .Entity.Name }}UseCases(new Fake{{ .Entity.Name }}Repository());
+        var repository = new Fake{{ .Entity.Name }}Repository();
+        var entity = Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
+        repository.Items.Add(entity);
+        var handler = new Get{{ .Entity.Name }}ByIdQueryHandler(repository);
 
-        var found = await useCases.GetByIdAsync(Guid.NewGuid(), CancellationToken.None);
+        var result = await handler.Handle(new Get{{ .Entity.Name }}ByIdQuery(entity.Id), CancellationToken.None);
 
-        Assert.Null(found);
+        Assert.False(result.IsError);
+        Assert.Equal(entity.Id, result.Value.Id);
+        Assert.Equal("token-v1", result.Value.ConcurrencyToken);
+    }
+
+    [Fact]
+    public async Task GetByIdQueryHandlerReturnsNotFoundErrorForMissingEntity()
+    {
+        var handler = new Get{{ .Entity.Name }}ByIdQueryHandler(new Fake{{ .Entity.Name }}Repository());
+
+        var result = await handler.Handle(new Get{{ .Entity.Name }}ByIdQuery(Guid.NewGuid()), CancellationToken.None);
+
+        Assert.True(result.IsError);
+        Assert.Equal(ErrorType.NotFound, result.FirstError.Type);
     }
 
     [Fact]

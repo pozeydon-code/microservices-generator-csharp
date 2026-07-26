@@ -1,10 +1,13 @@
 using ProductService.Application.Common;
 using ProductService.Application.Features.Products;
 using ProductService.Application.Features.Products.Create;
+using ProductService.Application.Features.Products.GetById;
+using ProductService.Application.Features.Products.List;
 using ProductService.Domain.Features.Products;
 using DomainProduct = ProductService.Domain.Features.Products.Product;
 using ProductService.Domain.Common.ValueObjects;
 
+using ErrorOr;
 using Xunit;
 
 namespace ProductService.Application.Tests.Features.Products;
@@ -86,18 +89,38 @@ public sealed class ProductUseCasesTests
 
 
     [Fact]
-    public async Task ListAppliesPaginationMetadata()
+    public async Task ListQueryHandlerAppliesPaginationMetadata()
     {
         var repository = new FakeProductRepository();
         repository.Items.Add(DomainProduct.Create(new ProductState { IsActive = true, Name = ProductName.Create("Product Prime").Value!, Price = ProductPrice.Create(0m).Value!,  }));
-        var useCases = new ProductUseCases(repository);
+        var handler = new ListProductQueryHandler(repository);
 
-        var page = await useCases.ListAsync(new PageRequest(1, 20), CancellationToken.None);
+        var result = await handler.Handle(new ListProductQuery(1, 20), CancellationToken.None);
 
+        Assert.False(result.IsError);
+        var page = result.Value;
         Assert.Single(page.Items);
         Assert.Equal(1, page.Page);
         Assert.Equal(20, page.PageSize);
         Assert.Equal(1, page.TotalCount);
+    }
+
+    [Fact]
+    public async Task ListQueryHandlerRejectsInvalidPagination()
+    {
+        var handler = new ListProductQueryHandler(new FakeProductRepository());
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => handler.Handle(new ListProductQuery(0, 20), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ListQueryValidatorReportsPaginationCode()
+    {
+        var validator = new ListProductQueryValidator();
+
+        var result = await validator.ValidateAsync(new ListProductQuery(0, 20));
+
+        Assert.Contains(result.Errors, error => error.ErrorCode == "Pagination.Page");
     }
 
     [Fact]
@@ -155,14 +178,16 @@ public sealed class ProductUseCasesTests
     }
 
     [Fact]
-    public async Task ListAcceptsMinimumPaginationAndUsesZeroOffset()
+    public async Task ListQueryHandlerAcceptsMinimumPaginationAndUsesZeroOffset()
     {
         var repository = new FakeProductRepository();
         repository.Items.Add(DomainProduct.Create(new ProductState { IsActive = true, Name = ProductName.Create("Product Prime").Value!, Price = ProductPrice.Create(0m).Value!,  }));
-        var useCases = new ProductUseCases(repository);
+        var handler = new ListProductQueryHandler(repository);
 
-        var page = await useCases.ListAsync(new PageRequest(1, 1), CancellationToken.None);
+        var result = await handler.Handle(new ListProductQuery(1, 1), CancellationToken.None);
 
+        Assert.False(result.IsError);
+        var page = result.Value;
         Assert.Single(page.Items);
         Assert.Equal(0, repository.LastSkip);
         Assert.Equal(1, repository.LastTake);
@@ -186,13 +211,29 @@ public sealed class ProductUseCasesTests
     }
 
     [Fact]
-    public async Task GetReturnsNullForMissingEntity()
+    public async Task GetByIdQueryHandlerMapsFoundSnapshot()
     {
-        var useCases = new ProductUseCases(new FakeProductRepository());
+        var repository = new FakeProductRepository();
+        var entity = DomainProduct.Create(new ProductState { IsActive = true, Name = ProductName.Create("Product Prime").Value!, Price = ProductPrice.Create(0m).Value!,  });
+        repository.Items.Add(entity);
+        var handler = new GetProductByIdQueryHandler(repository);
 
-        var found = await useCases.GetByIdAsync(Guid.NewGuid(), CancellationToken.None);
+        var result = await handler.Handle(new GetProductByIdQuery(entity.Id), CancellationToken.None);
 
-        Assert.Null(found);
+        Assert.False(result.IsError);
+        Assert.Equal(entity.Id, result.Value.Id);
+        Assert.Equal("token-v1", result.Value.ConcurrencyToken);
+    }
+
+    [Fact]
+    public async Task GetByIdQueryHandlerReturnsNotFoundErrorForMissingEntity()
+    {
+        var handler = new GetProductByIdQueryHandler(new FakeProductRepository());
+
+        var result = await handler.Handle(new GetProductByIdQuery(Guid.NewGuid()), CancellationToken.None);
+
+        Assert.True(result.IsError);
+        Assert.Equal(ErrorType.NotFound, result.FirstError.Type);
     }
 
     [Fact]

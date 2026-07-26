@@ -50,7 +50,7 @@ Domain <- Application <- Infrastructure
 Application + Infrastructure <- WebApi
 ```
 
-Create is the first migrated CQRS vertical slice. Each entity gets an Application `Create` command, handler, and FluentValidation validator; MediatR dispatches the command through an Application pipeline behavior, and ErrorOr carries success or neutral errors to WebApi. The handler uses the existing Application repository port and Domain factory, then maps the opaque concurrency snapshot to the existing DTO. List, Get, Update, and Delete intentionally remain on the existing custom use-case path during this incremental migration.
+Create, List, and GetById are migrated CQRS vertical slices. Each entity gets an Application Create command plus List/GetById queries and handlers; MediatR dispatches the command through the closed Application validation behavior registrations, and ErrorOr carries success or neutral errors to WebApi. The handlers use the existing Application repository port, preserve pagination defaults/maxima and opaque concurrency DTO mapping, and map missing reads to not-found errors. Update and Delete intentionally remain on the existing custom use-case path during this incremental migration; invalid pagination preserves the legacy `{ "error": ... }` response contract.
 
 ## Generated dependency policy
 

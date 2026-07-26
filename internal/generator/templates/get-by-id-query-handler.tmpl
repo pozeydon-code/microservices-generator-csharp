@@ -1,0 +1,23 @@
+using ErrorOr;
+using MediatR;
+using {{ .Service.Name }}.Application.Common;
+using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
+
+namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.GetById;
+
+public sealed class Get{{ .Entity.Name }}ByIdQueryHandler(I{{ .Entity.Name }}Repository repository) : IRequestHandler<Get{{ .Entity.Name }}ByIdQuery, ErrorOr<{{ .Entity.Name }}Dto>>
+{
+    public async Task<ErrorOr<{{ .Entity.Name }}Dto>> Handle(Get{{ .Entity.Name }}ByIdQuery query, CancellationToken cancellationToken)
+    {
+        var snapshot = await repository.GetByIdAsync(query.Id, cancellationToken);
+        return snapshot is null
+            ? Error.NotFound(code: "{{ .Entity.Name }}.NotFound", description: "{{ .Entity.Name }} was not found.")
+            : ToDto(snapshot);
+    }
+
+    private static {{ .Entity.Name }}Dto ToDto(EntitySnapshot<{{ .Entity.Name }}> snapshot) => new(
+{{ range $index, $field := .Entity.Fields }}{{ if $index }},
+{{ end }}        snapshot.Entity.{{ $field.ValueAccess }}{{ end }},
+        snapshot.ConcurrencyToken);
+}

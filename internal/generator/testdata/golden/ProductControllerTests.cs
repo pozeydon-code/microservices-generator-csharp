@@ -7,6 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 using ProductService.Application.Common;
 using ProductService.Application.Features.Products;
 using ProductService.Application.Features.Products.Create;
+using ProductService.Application.Features.Products.GetById;
+using ProductService.Application.Features.Products.List;
 using ErrorOr;
 using MediatR;
 using Xunit;
@@ -18,6 +20,12 @@ public sealed class ProductEndpointsTests
     private static readonly string[] ExpectedValidationErrorKeys = ["name", "price"];
     private static readonly string[] ExpectedProductJsonProperties = ["concurrencyToken", "id", "isActive", "name", "price", ];
     private static readonly string[] AllowedValidationProblemProperties = ["errors", "status", "title", "traceId", "type"];
+    private static readonly ProductDto Item = new(
+        Id: Guid.Parse("11111111-1111-1111-1111-111111111111"),
+        IsActive: true,
+        Name: "Product Prime",
+        Price: 0m,
+        ConcurrencyToken: ValidToken);
 
     [Fact]
     public async Task CrudRoutesRequireAuthentication()
@@ -244,8 +252,31 @@ public sealed class ProductEndpointsTests
     private static TestWebApiFactory CreateFactory() => new(builder => builder.ConfigureTestServices(services =>
     {
         services.AddScoped<IProductUseCases, FakeProductUseCases>();
+        services.AddScoped<IRequestHandler<ListProductQuery, ErrorOr<PagedResult<ProductDto>>>, FakeListProductQueryHandler>();
+        services.AddScoped<IRequestHandler<GetProductByIdQuery, ErrorOr<ProductDto>>, FakeGetProductByIdQueryHandler>();
         services.AddScoped<IRequestHandler<CreateProductCommand, ErrorOr<ProductDto>>, FakeCreateProductHandler>();
     }));
+
+    private sealed class FakeListProductQueryHandler : IRequestHandler<ListProductQuery, ErrorOr<PagedResult<ProductDto>>>
+    {
+        public Task<ErrorOr<PagedResult<ProductDto>>> Handle(ListProductQuery request, CancellationToken cancellationToken)
+        {
+            var normalized = PaginationPolicy.Normalize(request.Page, request.PageSize);
+            return Task.FromResult<ErrorOr<PagedResult<ProductDto>>>(new PagedResult<ProductDto>([Item], normalized.Page, normalized.PageSize, 1));
+        }
+    }
+
+    private sealed class FakeGetProductByIdQueryHandler : IRequestHandler<GetProductByIdQuery, ErrorOr<ProductDto>>
+    {
+        public Task<ErrorOr<ProductDto>> Handle(GetProductByIdQuery request, CancellationToken cancellationToken)
+        {
+            if (request.Id == Item.Id)
+            {
+                return Task.FromResult<ErrorOr<ProductDto>>(Item);
+            }
+            return Task.FromResult<ErrorOr<ProductDto>>(Error.NotFound(code: "Product.NotFound", description: "Product was not found."));
+        }
+    }
 
     private sealed class FakeCreateProductHandler : IRequestHandler<CreateProductCommand, ErrorOr<ProductDto>>
     {
@@ -269,18 +300,6 @@ public sealed class ProductEndpointsTests
     {
         public static CreateProductRequest? LastCreateRequest { get; private set; }
         public static UpdateProductRequest? LastUpdateRequest { get; private set; }
-        private static readonly ProductDto Item = new(
-            Id: Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            IsActive: true,
-            Name: "Product Prime",
-            Price: 0m,
-            ConcurrencyToken: ValidToken);
-        public Task<PagedResult<ProductDto>> ListAsync(PageRequest request, CancellationToken cancellationToken)
-        {
-            var normalized = PaginationPolicy.Normalize(request.Page, request.PageSize);
-            return Task.FromResult(new PagedResult<ProductDto>([Item], normalized.Page, normalized.PageSize, 1));
-        }
-        public Task<ProductDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult(id == Item.Id ? Item : null);
         public Task<MutationValidationResult<ProductDto>> CreateAsync(CreateProductRequest request, CancellationToken cancellationToken)
         {
             LastCreateRequest = request;

@@ -1,6 +1,8 @@
 using ProductService.Application.Common;
 using ProductService.Application.Features.Products;
 using ProductService.Application.Features.Products.Create;
+using ProductService.Application.Features.Products.GetById;
+using ProductService.Application.Features.Products.List;
 using ProductService.WebApi.Common;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -18,7 +20,10 @@ public sealed class ProductController(IProductUseCases useCases, ISender sender)
     {
         try
         {
-            return Ok(await useCases.ListAsync(new PageRequest(page, pageSize), cancellationToken));
+            var result = await sender.Send(new ListProductQuery(page, pageSize), cancellationToken);
+            return result.IsError
+                ? ErrorOrProblemMapper.ToActionResult<PagedResult<ProductDto>>(this, result.Errors)
+                : Ok(result.Value);
         }
         catch (ArgumentOutOfRangeException ex)
         {
@@ -29,8 +34,10 @@ public sealed class ProductController(IProductUseCases useCases, ISender sender)
     [HttpGet("{id:guid}", Name = "GetProductById")]
     public async Task<ActionResult<ProductDto>> Get(Guid id, CancellationToken cancellationToken)
     {
-        var item = await useCases.GetByIdAsync(id, cancellationToken);
-        return item is null ? NotFound() : Ok(item);
+        var result = await sender.Send(new GetProductByIdQuery(id), cancellationToken);
+        return result.IsError
+            ? ErrorOrProblemMapper.ToActionResult<ProductDto>(this, result.Errors)
+            : Ok(result.Value);
     }
 
     [HttpPost(Name = "CreateProduct")]

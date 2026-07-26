@@ -1,5 +1,6 @@
 using ProductService.Application.Features.Products;
 using ProductService.Application.Features.Products.Create;
+using ProductService.Application.Features.Products.List;
 
 using ProductService.Application.Common;
 using ProductService.Infrastructure;
@@ -23,6 +24,7 @@ builder.Services.AddMediatR(config =>
 {
     config.RegisterServicesFromAssembly(typeof(CreateProductCommand).Assembly);
     config.AddBehavior<ValidationBehavior<CreateProductCommand, ProductDto>>();
+    config.AddBehavior<ValidationBehavior<ListProductQuery, PagedResult<ProductDto>>>();
 });
 builder.Services.AddValidatorsFromAssemblyContaining<CreateProductCommandValidator>();
 builder.Services.AddHttpClient();

@@ -54,8 +54,13 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 		{path: "src/ProductService/ProductService.Application/Features/Products/Create/CreateProductCommand.cs", goldenName: "CreateProductCommand.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/Create/CreateProductCommandHandler.cs", goldenName: "CreateProductCommandHandler.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/Create/CreateProductCommandValidator.cs", goldenName: "CreateProductCommandValidator.cs"},
+		{path: "src/ProductService/ProductService.Application/Features/Products/GetById/GetProductByIdQuery.cs", goldenName: "GetProductByIdQuery.cs"},
+		{path: "src/ProductService/ProductService.Application/Features/Products/GetById/GetProductByIdQueryHandler.cs", goldenName: "GetProductByIdQueryHandler.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/IProductRepository.cs", goldenName: "IProductRepository.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/IProductUseCases.cs", goldenName: "IProductUseCases.cs"},
+		{path: "src/ProductService/ProductService.Application/Features/Products/List/ListProductQuery.cs", goldenName: "ListProductQuery.cs"},
+		{path: "src/ProductService/ProductService.Application/Features/Products/List/ListProductQueryHandler.cs", goldenName: "ListProductQueryHandler.cs"},
+		{path: "src/ProductService/ProductService.Application/Features/Products/List/ListProductQueryValidator.cs", goldenName: "ListProductQueryValidator.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/ProductContracts.cs", goldenName: "ProductContracts.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/ProductUseCases.cs", goldenName: "ProductUseCases.cs"},
 		{path: "src/ProductService/ProductService.Application/ProductService.Application.csproj", goldenName: "ProductService.Application.csproj"},
@@ -241,6 +246,45 @@ func TestGenerateCreateCQRSSliceUsesApplicationPipelineAndWebApiMapping(t *testi
 	assertContains(t, packages, `PackageVersion Include="MediatR" Version="14.2.0"`)
 	assertContains(t, packages, `PackageVersion Include="FluentValidation" Version="12.1.1"`)
 	assertContains(t, packages, `PackageVersion Include="ErrorOr" Version="2.1.1"`)
+}
+
+func TestGenerateReadCQRSSliceUsesQueriesAndPreservesLegacyPaginationContract(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	files, err := gen.Generate(testConfig())
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	listQuery := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/List/ListProductQuery.cs"))
+	listHandler := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/List/ListProductQueryHandler.cs"))
+	listValidator := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/List/ListProductQueryValidator.cs"))
+	getQuery := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/GetById/GetProductByIdQuery.cs"))
+	getHandler := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/GetById/GetProductByIdQueryHandler.cs"))
+	interfaceSource := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/IProductUseCases.cs"))
+	service := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/ProductUseCases.cs"))
+	controller := string(generatedContent(t, files, "src/ProductService/ProductService.WebApi/Controllers/Products/ProductController.cs"))
+	program := string(generatedContent(t, files, "src/ProductService/ProductService.WebApi/Program.cs"))
+
+	assertContains(t, listQuery, "IRequest<ErrorOr<PagedResult<ProductDto>>>")
+	assertContains(t, listHandler, "PaginationPolicy.Normalize(query.Page, query.PageSize)")
+	assertContains(t, listHandler, "repository.ListAsync(normalized.Offset, normalized.PageSize, cancellationToken)")
+	assertContains(t, listValidator, "ErrorCode = \"Pagination.Page\"")
+	assertContains(t, getQuery, "IRequest<ErrorOr<ProductDto>>")
+	assertContains(t, getHandler, "Error.NotFound(code: \"Product.NotFound\"")
+	assertContains(t, getHandler, "snapshot.ConcurrencyToken")
+	assertNotContains(t, interfaceSource, "ListAsync")
+	assertNotContains(t, interfaceSource, "GetByIdAsync")
+	assertNotContains(t, service, "public async Task<PagedResult<ProductDto>> ListAsync")
+	assertNotContains(t, service, "public async Task<ProductDto?> GetByIdAsync")
+	assertContains(t, controller, "sender.Send(new ListProductQuery(page, pageSize)")
+	assertContains(t, controller, "sender.Send(new GetProductByIdQuery(id)")
+	assertNotContains(t, controller, "useCases.ListAsync")
+	assertNotContains(t, controller, "useCases.GetByIdAsync")
+	assertContains(t, program, "AddBehavior<ValidationBehavior<ListProductQuery, PagedResult<ProductDto>>>()")
+	assertNotContains(t, program, "AddBehavior<ValidationBehavior<GetProductByIdQuery, ProductDto>>()")
 }
 
 func TestGenerateDirectoryPackagesPropsUsesDependencyPolicy(t *testing.T) {

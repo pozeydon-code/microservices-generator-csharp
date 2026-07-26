@@ -4,6 +4,9 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using {{ .Name }}.Application.Common;
 using {{ .Name }}.Application.Features.{{ (index .Entities 0).FeatureName }};
+using {{ .Name }}.Application.Features.{{ (index .Entities 0).FeatureName }}.List;
+using ErrorOr;
+using MediatR;
 using Xunit;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
@@ -16,7 +19,7 @@ public sealed class AuthenticationTests
     public async Task ValidBearerGetsExpectedSuccessfulCrudBody()
     {
         await using var factory = new TestWebApiFactory(builder => builder.ConfigureTestServices(services =>
-            services.AddScoped<I{{ (index .Entities 0).Name }}UseCases, Auth{{ (index .Entities 0).Name }}UseCases>()));
+            services.AddScoped<IRequestHandler<List{{ (index .Entities 0).Name }}Query, ErrorOr<PagedResult<{{ (index .Entities 0).Name }}Dto>>>, AuthList{{ (index .Entities 0).Name }}QueryHandler>()));
         using var client = factory.CreateAuthenticatedClient();
         var response = await client.GetAsync("/{{ (index .Entities 0).Route }}");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -83,16 +86,16 @@ public sealed class AuthenticationTests
     [Fact]
     public async Task SlowUseCaseTriggersRequestTimeoutAndCancellation()
     {
-        Slow{{ (index .Entities 0).Name }}UseCases.CancellationObserved = false;
+        SlowList{{ (index .Entities 0).Name }}QueryHandler.CancellationObserved = false;
         await using var factory = new TestWebApiFactory(builder => builder.ConfigureTestServices(services =>
-            services.AddScoped<I{{ (index .Entities 0).Name }}UseCases, Slow{{ (index .Entities 0).Name }}UseCases>()));
+            services.AddScoped<IRequestHandler<List{{ (index .Entities 0).Name }}Query, ErrorOr<PagedResult<{{ (index .Entities 0).Name }}Dto>>>, SlowList{{ (index .Entities 0).Name }}QueryHandler>()));
         using var client = factory.CreateAuthenticatedClient();
         var started = DateTimeOffset.UtcNow;
         var response = await client.GetAsync("/{{ (index .Entities 0).Route }}");
         var elapsed = DateTimeOffset.UtcNow - started;
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.True(elapsed < TimeSpan.FromSeconds(20));
-        Assert.True(Slow{{ (index .Entities 0).Name }}UseCases.CancellationObserved);
+        Assert.True(SlowList{{ (index .Entities 0).Name }}QueryHandler.CancellationObserved);
         var problem = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>();
         Assert.NotNull(problem);
         Assert.True(problem.ContainsKey("status"));
@@ -120,22 +123,18 @@ public sealed class AuthenticationTests
         Assert.Equal(HttpStatusCode.OK, defaultResponse.StatusCode);
     }
 
-    private sealed class Auth{{ (index .Entities 0).Name }}UseCases : I{{ (index .Entities 0).Name }}UseCases
+    private sealed class AuthList{{ (index .Entities 0).Name }}QueryHandler : IRequestHandler<List{{ (index .Entities 0).Name }}Query, ErrorOr<PagedResult<{{ (index .Entities 0).Name }}Dto>>>
     {
         private static readonly {{ (index .Entities 0).Name }}Dto Item = new(
 {{ range (index .Entities 0).Fields }}            {{ .Name }}: {{ if eq .Name "Id" }}Guid.Parse("11111111-1111-1111-1111-111111111111"){{ else }}{{ .SampleValue }}{{ end }},
 {{ end }}            ConcurrencyToken: "token-v1");
-        public Task<PagedResult<{{ (index .Entities 0).Name }}Dto>> ListAsync(PageRequest request, CancellationToken cancellationToken) => Task.FromResult(new PagedResult<{{ (index .Entities 0).Name }}Dto>([Item], 1, 20, 1));
-        public Task<{{ (index .Entities 0).Name }}Dto?> GetByIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult<{{ (index .Entities 0).Name }}Dto?>(Item);
-        public Task<MutationValidationResult<{{ (index .Entities 0).Name }}Dto>> CreateAsync(Create{{ (index .Entities 0).Name }}Request request, CancellationToken cancellationToken) => Task.FromResult(new MutationValidationResult<{{ (index .Entities 0).Name }}Dto>(MutationResultStatus.Created, Item));
-        public Task<MutationValidationResult<{{ (index .Entities 0).Name }}Dto>> UpdateAsync(Guid id, Update{{ (index .Entities 0).Name }}Request request, CancellationToken cancellationToken) => Task.FromResult(new MutationValidationResult<{{ (index .Entities 0).Name }}Dto>(MutationResultStatus.Updated, Item));
-        public Task<MutationResult<bool>> DeleteAsync(Guid id, string concurrencyToken, CancellationToken cancellationToken) => Task.FromResult(new MutationResult<bool>(MutationResultStatus.Deleted, true));
+        public Task<ErrorOr<PagedResult<{{ (index .Entities 0).Name }}Dto>>> Handle(List{{ (index .Entities 0).Name }}Query request, CancellationToken cancellationToken) => Task.FromResult<ErrorOr<PagedResult<{{ (index .Entities 0).Name }}Dto>>>(new PagedResult<{{ (index .Entities 0).Name }}Dto>([Item], 1, 20, 1));
     }
 
-    private sealed class Slow{{ (index .Entities 0).Name }}UseCases : I{{ (index .Entities 0).Name }}UseCases
+    private sealed class SlowList{{ (index .Entities 0).Name }}QueryHandler : IRequestHandler<List{{ (index .Entities 0).Name }}Query, ErrorOr<PagedResult<{{ (index .Entities 0).Name }}Dto>>>
     {
         public static bool CancellationObserved { get; set; }
-        public async Task<PagedResult<{{ (index .Entities 0).Name }}Dto>> ListAsync(PageRequest request, CancellationToken cancellationToken)
+        public async Task<ErrorOr<PagedResult<{{ (index .Entities 0).Name }}Dto>>> Handle(List{{ (index .Entities 0).Name }}Query request, CancellationToken cancellationToken)
         {
             using var registration = cancellationToken.UnsafeRegister(_ => CancellationObserved = true, null);
             try
@@ -149,9 +148,5 @@ public sealed class AuthenticationTests
             }
             throw new InvalidOperationException("Timeout test should cancel before completion.");
         }
-        public Task<{{ (index .Entities 0).Name }}Dto?> GetByIdAsync(Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<MutationValidationResult<{{ (index .Entities 0).Name }}Dto>> CreateAsync(Create{{ (index .Entities 0).Name }}Request request, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<MutationValidationResult<{{ (index .Entities 0).Name }}Dto>> UpdateAsync(Guid id, Update{{ (index .Entities 0).Name }}Request request, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<MutationResult<bool>> DeleteAsync(Guid id, string concurrencyToken, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 }

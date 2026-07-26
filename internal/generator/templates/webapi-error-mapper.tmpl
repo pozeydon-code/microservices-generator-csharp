@@ -9,7 +9,12 @@ public static class ErrorOrProblemMapper
     {
         if (errors.Any(error => error.Type == ErrorType.Validation))
         {
-            return controller.BadRequest(ToValidationProblem(errors.Where(error => error.Type == ErrorType.Validation)));
+            var validationErrors = errors.Where(error => error.Type == ErrorType.Validation).ToArray();
+            if (validationErrors.All(error => error.Code.StartsWith("Pagination.", StringComparison.Ordinal)))
+            {
+                return controller.BadRequest(new { error = validationErrors[0].Description });
+            }
+            return controller.BadRequest(ToValidationProblem(validationErrors));
         }
 
         var error = errors[0];

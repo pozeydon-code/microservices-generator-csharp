@@ -1,0 +1,24 @@
+using ErrorOr;
+using MediatR;
+using {{ .Service.Name }}.Application.Common;
+using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
+{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Common.ValueObjects;
+{{ end }}
+
+namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.List;
+
+public sealed class List{{ .Entity.Name }}QueryHandler(I{{ .Entity.Name }}Repository repository) : IRequestHandler<List{{ .Entity.Name }}Query, ErrorOr<PagedResult<{{ .Entity.Name }}Dto>>>
+{
+    public async Task<ErrorOr<PagedResult<{{ .Entity.Name }}Dto>>> Handle(List{{ .Entity.Name }}Query query, CancellationToken cancellationToken)
+    {
+        var normalized = PaginationPolicy.Normalize(query.Page, query.PageSize);
+        var result = await repository.ListAsync(normalized.Offset, normalized.PageSize, cancellationToken);
+        return new PagedResult<{{ .Entity.Name }}Dto>(result.Items.Select(ToDto).ToList(), normalized.Page, normalized.PageSize, result.TotalCount);
+    }
+
+    private static {{ .Entity.Name }}Dto ToDto(EntitySnapshot<{{ .Entity.Name }}> snapshot) => new(
+{{ range $index, $field := .Entity.Fields }}{{ if $index }},
+{{ end }}        snapshot.Entity.{{ $field.ValueAccess }}{{ end }},
+        snapshot.ConcurrencyToken);
+}

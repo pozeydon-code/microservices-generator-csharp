@@ -1,0 +1,8 @@
+using ErrorOr;
+using MediatR;
+using {{ .Service.Name }}.Application.Common;
+using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+
+namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.List;
+
+public sealed record List{{ .Entity.Name }}Query(int? Page, int? PageSize) : IRequest<ErrorOr<PagedResult<{{ .Entity.Name }}Dto>>>;

@@ -4,6 +4,9 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using ProductService.Application.Common;
 using ProductService.Application.Features.Products;
+using ProductService.Application.Features.Products.List;
+using ErrorOr;
+using MediatR;
 using Xunit;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
@@ -16,7 +19,7 @@ public sealed class AuthenticationTests
     public async Task ValidBearerGetsExpectedSuccessfulCrudBody()
     {
         await using var factory = new TestWebApiFactory(builder => builder.ConfigureTestServices(services =>
-            services.AddScoped<IProductUseCases, AuthProductUseCases>()));
+            services.AddScoped<IRequestHandler<ListProductQuery, ErrorOr<PagedResult<ProductDto>>>, AuthListProductQueryHandler>()));
         using var client = factory.CreateAuthenticatedClient();
         var response = await client.GetAsync("/products");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -85,16 +88,16 @@ public sealed class AuthenticationTests
     [Fact]
     public async Task SlowUseCaseTriggersRequestTimeoutAndCancellation()
     {
-        SlowProductUseCases.CancellationObserved = false;
+        SlowListProductQueryHandler.CancellationObserved = false;
         await using var factory = new TestWebApiFactory(builder => builder.ConfigureTestServices(services =>
-            services.AddScoped<IProductUseCases, SlowProductUseCases>()));
+            services.AddScoped<IRequestHandler<ListProductQuery, ErrorOr<PagedResult<ProductDto>>>, SlowListProductQueryHandler>()));
         using var client = factory.CreateAuthenticatedClient();
         var started = DateTimeOffset.UtcNow;
         var response = await client.GetAsync("/products");
         var elapsed = DateTimeOffset.UtcNow - started;
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.True(elapsed < TimeSpan.FromSeconds(20));
-        Assert.True(SlowProductUseCases.CancellationObserved);
+        Assert.True(SlowListProductQueryHandler.CancellationObserved);
         var problem = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>();
         Assert.NotNull(problem);
         Assert.True(problem.ContainsKey("status"));
@@ -122,7 +125,7 @@ public sealed class AuthenticationTests
         Assert.Equal(HttpStatusCode.OK, defaultResponse.StatusCode);
     }
 
-    private sealed class AuthProductUseCases : IProductUseCases
+    private sealed class AuthListProductQueryHandler : IRequestHandler<ListProductQuery, ErrorOr<PagedResult<ProductDto>>>
     {
         private static readonly ProductDto Item = new(
             Id: Guid.Parse("11111111-1111-1111-1111-111111111111"),
@@ -130,17 +133,13 @@ public sealed class AuthenticationTests
             Name: "Product Prime",
             Price: 0m,
             ConcurrencyToken: "token-v1");
-        public Task<PagedResult<ProductDto>> ListAsync(PageRequest request, CancellationToken cancellationToken) => Task.FromResult(new PagedResult<ProductDto>([Item], 1, 20, 1));
-        public Task<ProductDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult<ProductDto?>(Item);
-        public Task<MutationValidationResult<ProductDto>> CreateAsync(CreateProductRequest request, CancellationToken cancellationToken) => Task.FromResult(new MutationValidationResult<ProductDto>(MutationResultStatus.Created, Item));
-        public Task<MutationValidationResult<ProductDto>> UpdateAsync(Guid id, UpdateProductRequest request, CancellationToken cancellationToken) => Task.FromResult(new MutationValidationResult<ProductDto>(MutationResultStatus.Updated, Item));
-        public Task<MutationResult<bool>> DeleteAsync(Guid id, string concurrencyToken, CancellationToken cancellationToken) => Task.FromResult(new MutationResult<bool>(MutationResultStatus.Deleted, true));
+        public Task<ErrorOr<PagedResult<ProductDto>>> Handle(ListProductQuery request, CancellationToken cancellationToken) => Task.FromResult<ErrorOr<PagedResult<ProductDto>>>(new PagedResult<ProductDto>([Item], 1, 20, 1));
     }
 
-    private sealed class SlowProductUseCases : IProductUseCases
+    private sealed class SlowListProductQueryHandler : IRequestHandler<ListProductQuery, ErrorOr<PagedResult<ProductDto>>>
     {
         public static bool CancellationObserved { get; set; }
-        public async Task<PagedResult<ProductDto>> ListAsync(PageRequest request, CancellationToken cancellationToken)
+        public async Task<ErrorOr<PagedResult<ProductDto>>> Handle(ListProductQuery request, CancellationToken cancellationToken)
         {
             using var registration = cancellationToken.UnsafeRegister(_ => CancellationObserved = true, null);
             try
@@ -154,9 +153,5 @@ public sealed class AuthenticationTests
             }
             throw new InvalidOperationException("Timeout test should cancel before completion.");
         }
-        public Task<ProductDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<MutationValidationResult<ProductDto>> CreateAsync(CreateProductRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<MutationValidationResult<ProductDto>> UpdateAsync(Guid id, UpdateProductRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<MutationResult<bool>> DeleteAsync(Guid id, string concurrencyToken, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 }

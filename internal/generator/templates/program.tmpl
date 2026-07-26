@@ -1,5 +1,6 @@
 {{ range .Entities }}using {{ $.Name }}.Application.Features.{{ .FeatureName }};
 using {{ $.Name }}.Application.Features.{{ .FeatureName }}.Create;
+using {{ $.Name }}.Application.Features.{{ .FeatureName }}.List;
 {{ end }}
 using {{ .Name }}.Application.Common;
 using {{ .Name }}.Infrastructure;
@@ -23,6 +24,7 @@ builder.Services.AddMediatR(config =>
 {
     config.RegisterServicesFromAssembly(typeof(Create{{ (index .Entities 0).Name }}Command).Assembly);
 {{ range .Entities }}    config.AddBehavior<ValidationBehavior<Create{{ .Name }}Command, {{ .Name }}Dto>>();
+    config.AddBehavior<ValidationBehavior<List{{ .Name }}Query, PagedResult<{{ .Name }}Dto>>>();
 {{ end }}});
 builder.Services.AddValidatorsFromAssemblyContaining<Create{{ (index .Entities 0).Name }}CommandValidator>();
 builder.Services.AddHttpClient();

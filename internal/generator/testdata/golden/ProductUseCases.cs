@@ -7,19 +7,6 @@ namespace ProductService.Application.Features.Products;
 
 public sealed class ProductUseCases(IProductRepository repository) : IProductUseCases
 {
-    public async Task<PagedResult<ProductDto>> ListAsync(PageRequest request, CancellationToken cancellationToken)
-    {
-        var normalized = PaginationPolicy.Normalize(request.Page, request.PageSize);
-        var result = await repository.ListAsync(normalized.Offset, normalized.PageSize, cancellationToken);
-        return new PagedResult<ProductDto>(result.Items.Select(ToDto).ToList(), normalized.Page, normalized.PageSize, result.TotalCount);
-    }
-
-    public async Task<ProductDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
-    {
-        var snapshot = await repository.GetByIdAsync(id, cancellationToken);
-        return snapshot is null ? null : ToDto(snapshot);
-    }
-
     public async Task<MutationValidationResult<ProductDto>> CreateAsync(CreateProductRequest request, CancellationToken cancellationToken)
     {
         var state = CreateState(request);
