@@ -9,6 +9,7 @@ import (
 
 	"github.com/pozeydon-code/generator-microservices-go/internal/application"
 	"github.com/pozeydon-code/generator-microservices-go/internal/tui"
+	"github.com/pozeydon-code/generator-microservices-go/internal/version"
 )
 
 const (
@@ -26,6 +27,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	switch args[0] {
+	case "version":
+		return runVersion(args[1:], stdout, stderr)
 	case "generate":
 		return runGenerate(args[1:], stdout, stderr)
 	case "tui":
@@ -38,6 +41,21 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		printUsage(stderr)
 		return ExitUsage
 	}
+}
+
+func runVersion(args []string, stdout, stderr io.Writer) int {
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" {
+			printUsage(stdout)
+			return ExitOK
+		}
+	}
+	if len(args) > 0 {
+		fmt.Fprintf(stderr, "unexpected arguments: %s\n", strings.Join(args, " "))
+		return ExitUsage
+	}
+	fmt.Fprint(stdout, version.Format(version.Current()))
+	return ExitOK
 }
 
 func runTUI(args []string, stdout, stderr io.Writer) int {
@@ -151,7 +169,8 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 }
 
 func printUsage(writer io.Writer) {
-	fmt.Fprintln(writer, "Usage: microgen generate --config <path> --output <dir> [--force]")
+	fmt.Fprintln(writer, "Usage: microgen version")
+	fmt.Fprintln(writer, "       microgen generate --config <path> --output <dir> [--force]")
 	fmt.Fprintln(writer, "       microgen tui --config <path> --output <dir> [--force] [--new]")
 	fmt.Fprintln(writer, "  --new creates a starter config at --config and refuses to overwrite an existing file.")
 	fmt.Fprintln(writer, "  --force replaces only a verified microgen-owned generated directory.")

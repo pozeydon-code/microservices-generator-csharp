@@ -16,6 +16,7 @@ type SolutionTemplateData struct {
 	TargetFramework            string
 	SolutionFormat             string
 	SolutionFileName           string
+	PackageVersions            []PackageVersion
 	MediatRVersion             string
 	FluentValidationVersion    string
 	ErrorOrVersion             string
@@ -27,6 +28,12 @@ type SolutionTemplateData struct {
 	ScaffoldPlan               ScaffoldPlan
 	Services                   []ServiceView
 	Projects                   []ProjectView
+}
+
+type PackageVersion struct {
+	Name    string
+	Version string
+	Comment string
 }
 
 type ServiceView struct {
@@ -151,22 +158,23 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 		TargetFramework:            targetFramework,
 		SolutionFormat:             solutionFormat,
 		SolutionFileName:           cfg.Solution.Name + "." + solutionFormat,
-		MediatRVersion:             dependencyPolicy.MediatRVersion,
-		FluentValidationVersion:    dependencyPolicy.FluentValidationVersion,
-		ErrorOrVersion:             dependencyPolicy.ErrorOrVersion,
-		AspNetCorePackageVersion:   dependencyPolicy.AspNetCorePackageVersion,
-		AspNetCoreTestingVersion:   dependencyPolicy.AspNetCoreTestingPackageVersion,
-		EntityFrameworkCoreVersion: dependencyPolicy.EntityFrameworkCorePackageVersion,
-		SqlClientVersion:           dependencyPolicy.SqlClientPackageVersion,
-		CryptographyXmlVersion:     dependencyPolicy.CryptographyXmlPackageVersion,
+		PackageVersions:            dependencyPackageVersions(dependencyPolicy),
+		MediatRVersion:             dependencyPackageVersion(dependencyPolicy, "MediatR"),
+		FluentValidationVersion:    dependencyPackageVersion(dependencyPolicy, "FluentValidation"),
+		ErrorOrVersion:             dependencyPackageVersion(dependencyPolicy, "ErrorOr"),
+		AspNetCorePackageVersion:   dependencyPackageVersion(dependencyPolicy, "Microsoft.AspNetCore.Authentication.JwtBearer"),
+		AspNetCoreTestingVersion:   dependencyPackageVersion(dependencyPolicy, "Microsoft.AspNetCore.Mvc.Testing"),
+		EntityFrameworkCoreVersion: dependencyPackageVersion(dependencyPolicy, "Microsoft.EntityFrameworkCore.Design"),
+		SqlClientVersion:           dependencyPackageVersion(dependencyPolicy, "Microsoft.Data.SqlClient"),
+		CryptographyXmlVersion:     dependencyPackageVersion(dependencyPolicy, "System.Security.Cryptography.Xml"),
 		Services:                   make([]ServiceView, 0, len(services)),
 	}
 	for _, service := range services {
 		serviceView := ServiceView{
 			Name:                    service.Name,
-			MediatRVersion:          dependencyPolicy.MediatRVersion,
-			FluentValidationVersion: dependencyPolicy.FluentValidationVersion,
-			ErrorOrVersion:          dependencyPolicy.ErrorOrVersion,
+			MediatRVersion:          dependencyPackageVersion(dependencyPolicy, "MediatR"),
+			FluentValidationVersion: dependencyPackageVersion(dependencyPolicy, "FluentValidation"),
+			ErrorOrVersion:          dependencyPackageVersion(dependencyPolicy, "ErrorOr"),
 		}
 		serviceView.DomainProject = projectView(service.Name, service.Name+".Domain")
 		serviceView.ApplicationProject = projectView(service.Name, service.Name+".Application")

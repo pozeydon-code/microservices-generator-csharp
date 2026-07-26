@@ -34,6 +34,40 @@ func TestRunGenerateSucceeds(t *testing.T) {
 	}
 }
 
+func TestRunVersionUsesDevelopmentMetadata(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"version"}, &stdout, &stderr)
+
+	if code != ExitOK {
+		t.Fatalf("expected success, got code %d stderr %q", code, stderr.String())
+	}
+	if want := "microgen version: dev\ncommit: unknown\ndate: unknown\n"; stdout.String() != want {
+		t.Fatalf("expected version output %q, got %q", want, stdout.String())
+	}
+	if stderr.String() != "" {
+		t.Fatalf("expected empty stderr, got %q", stderr.String())
+	}
+}
+
+func TestRunVersionRejectsUnexpectedArguments(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"version", "extra"}, &stdout, &stderr)
+
+	if code != ExitUsage {
+		t.Fatalf("expected usage error, got code %d", code)
+	}
+	if stdout.String() != "" {
+		t.Fatalf("expected empty stdout, got %q", stdout.String())
+	}
+	if stderr.String() != "unexpected arguments: extra\n" {
+		t.Fatalf("expected argument error, got %q", stderr.String())
+	}
+}
+
 func TestRunGenerateReturnsNonZeroForInvalidConfig(t *testing.T) {
 	configPath := writeTempConfig(t, `{"solution":{"name":"1Bad"},"services":[]}`)
 	parent := t.TempDir()
@@ -316,7 +350,7 @@ func TestRunReturnsUsageErrorForUnknownCommand(t *testing.T) {
 	if stdout.String() != "" {
 		t.Fatalf("expected empty stdout, got %q", stdout.String())
 	}
-	expectedStderr := "unknown command \"unknown\"\nUsage: microgen generate --config <path> --output <dir> [--force]\n       microgen tui --config <path> --output <dir> [--force] [--new]\n  --new creates a starter config at --config and refuses to overwrite an existing file.\n  --force replaces only a verified microgen-owned generated directory.\n"
+	expectedStderr := "unknown command \"unknown\"\nUsage: microgen version\n       microgen generate --config <path> --output <dir> [--force]\n       microgen tui --config <path> --output <dir> [--force] [--new]\n  --new creates a starter config at --config and refuses to overwrite an existing file.\n  --force replaces only a verified microgen-owned generated directory.\n"
 	if stderr.String() != expectedStderr {
 		t.Fatalf("expected stderr %q, got %q", expectedStderr, stderr.String())
 	}
@@ -342,7 +376,7 @@ func TestRunGenerateHelpExitsOK(t *testing.T) {
 			if code != ExitOK {
 				t.Fatalf("expected OK exit code, got %d stderr %q", code, stderr.String())
 			}
-			expectedStdout := "Usage: microgen generate --config <path> --output <dir> [--force]\n       microgen tui --config <path> --output <dir> [--force] [--new]\n  --new creates a starter config at --config and refuses to overwrite an existing file.\n  --force replaces only a verified microgen-owned generated directory.\n"
+			expectedStdout := "Usage: microgen version\n       microgen generate --config <path> --output <dir> [--force]\n       microgen tui --config <path> --output <dir> [--force] [--new]\n  --new creates a starter config at --config and refuses to overwrite an existing file.\n  --force replaces only a verified microgen-owned generated directory.\n"
 			if stdout.String() != expectedStdout {
 				t.Fatalf("expected stdout %q, got %q", expectedStdout, stdout.String())
 			}

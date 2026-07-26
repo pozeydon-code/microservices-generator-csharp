@@ -1,0 +1,78 @@
+version: 2
+project_name: microgen
+
+builds:
+  - id: microgen
+    main: ./cmd/microgen
+    binary: microgen
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    ldflags:
+      - >-
+        -s -w
+        -X github.com/pozeydon-code/generator-microservices-go/internal/version.Version={{ .Version }}
+        -X github.com/pozeydon-code/generator-microservices-go/internal/version.Commit={{ .Commit }}
+        -X github.com/pozeydon-code/generator-microservices-go/internal/version.Date={{ .CommitDate }}
+
+archives:
+  - id: default
+    ids:
+      - microgen
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    builds_info:
+      group: root
+      owner: root
+      mode: 0755
+      mtime: "{{ .CommitTimestamp }}"
+    files:
+      - src: LICENSE
+        dst: LICENSE
+        info:
+          mode: 0644
+          mtime: "{{ .CommitTimestamp }}"
+      - src: README.md
+        dst: README.md
+        info:
+          mode: 0644
+          mtime: "{{ .CommitTimestamp }}"
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+sboms:
+  - id: archive
+    artifacts: archive
+    documents:
+      - "${artifact}.spdx.json"
+    cmd: syft
+    args:
+      - "$artifact"
+      - "--output"
+      - "spdx-json=$document"
+
+release:
+  prerelease: auto
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

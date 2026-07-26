@@ -6,24 +6,7 @@
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="ErrorOr" Version="{{ .ErrorOrVersion }}" />
-    <PackageVersion Include="FluentValidation" Version="{{ .FluentValidationVersion }}" />
-    <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="{{ .FluentValidationVersion }}" />
-    <PackageVersion Include="MediatR" Version="{{ .MediatRVersion }}" />
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="{{ .AspNetCorePackageVersion }}" />
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="{{ .AspNetCoreTestingVersion }}" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="{{ .EntityFrameworkCoreVersion }}" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="{{ .EntityFrameworkCoreVersion }}" />
-    <PackageVersion Include="Microsoft.Data.SqlClient" Version="{{ .SqlClientVersion }}" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.16.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.16.0" />
-    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.14.0" />
-    <!-- Pinned for NuGet audit safety when EF/Core build transitives request vulnerable XML versions. -->
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="{{ .CryptographyXmlVersion }}" />
-    <PackageVersion Include="xunit" Version="2.9.3" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
-  </ItemGroup>
+{{ range .PackageVersions }}{{ if .Comment }}    {{ .Comment }}
+{{ end }}    <PackageVersion Include="{{ .Name }}" Version="{{ .Version }}" />
+{{ end }}  </ItemGroup>
 </Project>

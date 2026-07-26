@@ -15,10 +15,10 @@ This is the versionable roadmap for `microgen`, the CLI-first .NET CRUD microser
 
 ### Not complete
 
-- There is no `microgen version` command or public release workflow.
-- Reproducible cross-platform archives, checksums, signatures/provenance, and SBOM publication are not established.
+- `microgen version` and an explicit tag-triggered release workflow now exist as a release foundation.
+- Reproducible cross-platform archives, checksums, GitHub artifact attestations, and SBOM publication are configured but still require repository-level review and verification before production distribution is claimed.
 - Homebrew, winget, and Chocolatey publication are not established.
-- The dependency policy is currently implemented in Go source and should become a versioned data manifest with automated update verification.
+- The dependency policy is stored in the versioned manifest at `internal/generator/policy/dependency-policy.json` and verified in Go CI.
 - The quality follow-ups below remain open.
 
 ## Architecture map
@@ -63,7 +63,7 @@ These commits are the implementation baseline for the roadmap:
 - `Microsoft.Data.SqlClient` is independently pinned and audited; it is not inferred from the ASP.NET or EF train.
 - MediatR, FluentValidation, and ErrorOr are independently versioned and must be explicitly verified rather than forced into framework-major alignment.
 - Generation never resolves dynamic `latest` package versions and never installs packages. A target is selectable only when an explicit verified policy exists.
-- Today, the policy table is in `internal/generator/target_framework.go`. Future target support should move policy data into a versioned manifest, with tests that verify package compatibility and automated dependency-update PRs that change the manifest deliberately.
+- Policy data is loaded from `internal/generator/policy/dependency-policy.json`; `internal/generator/target_framework.go` owns typed loading and validation only. Updates must change the manifest deliberately, keep `verified: true` only for independently verified pins, and pass `go test ./internal/generator -run '^Test(DependencyPolicy|LoadDependencyPolicies|ValidateTargetFrameworkPolicy)' -count=1` before the full Go and generated .NET checks.
 - Adding a target requires a policy entry, generated `Directory.Packages.props` evidence, restore/build/test evidence, and a reviewable policy change. No target should be added by fallback version synthesis.
 
 ## Public distribution roadmap
@@ -74,7 +74,7 @@ The distribution path must preserve deterministic generation and must **never ge
 2. Add reproducible cross-platform builds for Linux, macOS, and Windows, with stable archive names and a release verification job.
 3. Use GitHub Releases as the public source of truth for binaries and release metadata.
 4. Publish checksums, signing/provenance metadata, and an SBOM with every release. Document independent verification.
-5. Evaluate GoReleaser as the release automation candidate after the version command and archive contract are stable.
+5. GoReleaser v2 is configured as the release automation candidate after stabilizing the version command and archive contract.
 6. Publish package-manager metadata from the same release artifacts: a Homebrew tap, winget manifests, and Chocolatey packages. An optional PowerShell release installer may be provided as a distribution asset, never as generated project output.
 
 ## Open quality follow-ups
