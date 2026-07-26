@@ -1,5 +1,7 @@
 package generator
 
+import "strings"
+
 type ScaffoldPlan struct {
 	Commands       []ScaffoldCommand
 	PackageEntries []ScaffoldPackageEntry
@@ -15,8 +17,13 @@ type ScaffoldPackageEntry struct {
 }
 
 func buildScaffoldPlan(solution SolutionTemplateData) ScaffoldPlan {
+	solutionCommand := []string{"dotnet", "new", "sln"}
+	if solution.SolutionFormat == "slnx" {
+		solutionCommand = append(solutionCommand, "--format", solution.SolutionFormat)
+	}
+	solutionCommand = append(solutionCommand, "--name", solution.Solution.Name)
 	plan := ScaffoldPlan{
-		Commands: []ScaffoldCommand{{Command: "dotnet new sln --format " + solution.SolutionFormat + " --name " + solution.Solution.Name}},
+		Commands: []ScaffoldCommand{{Command: shellCommand(solutionCommand...)}},
 	}
 
 	for _, service := range solution.Services {
@@ -24,7 +31,7 @@ func buildScaffoldPlan(solution SolutionTemplateData) ScaffoldPlan {
 			newProjectCommand("classlib", solution.TargetFramework, service.DomainProject),
 			newProjectCommand("classlib", solution.TargetFramework, service.ApplicationProject),
 			newProjectCommand("classlib", solution.TargetFramework, service.InfrastructureProject),
-			newProjectCommand("webapi --use-controllers", solution.TargetFramework, service.WebApiProject),
+			newProjectCommand("webapi --use-controllers --no-openapi", solution.TargetFramework, service.WebApiProject),
 			newProjectCommand("xunit", solution.TargetFramework, service.DomainTestsProject),
 			newProjectCommand("xunit", solution.TargetFramework, service.ApplicationTestsProject),
 			newProjectCommand("xunit", solution.TargetFramework, service.WebApiTestsProject),
@@ -32,8 +39,14 @@ func buildScaffoldPlan(solution SolutionTemplateData) ScaffoldPlan {
 			newProjectCommand("xunit", solution.TargetFramework, service.InfrastructureTestsProject),
 		)
 
+		for _, project := range []ProjectView{service.DomainTestsProject, service.ApplicationTestsProject, service.WebApiTestsProject, service.ArchitectureTestsProject, service.InfrastructureTestsProject} {
+			for _, packageName := range []string{"coverlet.collector", "Microsoft.NET.Test.Sdk", "xunit", "xunit.runner.visualstudio"} {
+				plan.Commands = append(plan.Commands, removePackageCommand(project, packageName))
+			}
+		}
+
 		for _, project := range []ProjectView{service.DomainProject, service.ApplicationProject, service.InfrastructureProject, service.WebApiProject, service.DomainTestsProject, service.ApplicationTestsProject, service.WebApiTestsProject, service.ArchitectureTestsProject, service.InfrastructureTestsProject} {
-			plan.Commands = append(plan.Commands, ScaffoldCommand{Command: "dotnet sln ./" + solution.SolutionFileName + " add ./" + project.Path})
+			plan.Commands = append(plan.Commands, ScaffoldCommand{Command: shellCommand("dotnet", "sln", "./"+solution.SolutionFileName, "add", "./"+project.Path)})
 		}
 
 		plan.Commands = append(plan.Commands,
@@ -93,11 +106,17 @@ func buildScaffoldPlan(solution SolutionTemplateData) ScaffoldPlan {
 }
 
 func newProjectCommand(templateName, targetFramework string, project ProjectView) ScaffoldCommand {
-	return ScaffoldCommand{Command: "dotnet new " + templateName + " --framework " + targetFramework + " --name " + project.Name + " --output ./" + projectDirectory(project.Path)}
+	parts := append([]string{"dotnet", "new"}, strings.Fields(templateName)...)
+	parts = append(parts, "--framework", targetFramework, "--name", project.Name, "--output", "./"+projectDirectory(project.Path), "--no-restore")
+	return ScaffoldCommand{Command: shellCommand(parts...)}
 }
 
 func projectReferenceCommand(from ProjectView, to ProjectView) ScaffoldCommand {
-	return ScaffoldCommand{Command: "dotnet add ./" + from.Path + " reference ./" + to.Path}
+	return ScaffoldCommand{Command: shellCommand("dotnet", "add", "./"+from.Path, "reference", "./"+to.Path)}
+}
+
+func removePackageCommand(project ProjectView, packageName string) ScaffoldCommand {
+	return ScaffoldCommand{Command: shellCommand("dotnet", "remove", "./"+project.Path, "package", packageName)}
 }
 
 func packageEntry(project ProjectView, packageName string) ScaffoldPackageEntry {
@@ -111,4 +130,50 @@ func projectDirectory(projectPath string) string {
 		}
 	}
 	return "."
+}
+
+func shellCommand(parts ...string) string {
+	quoted := make([]string, len(parts))
+	for index, part := range parts {
+		if shellLiteral(parts, index) {
+			quoted[index] = part
+			continue
+		}
+		quoted[index] = shellQuote(part)
+	}
+	return strings.Join(quoted, " ")
+}
+
+func shellLiteral(parts []string, index int) bool {
+	value := parts[index]
+	if index == 0 || strings.HasPrefix(value, "--") {
+		return true
+	}
+	if index == 1 {
+		switch value {
+		case "new", "sln", "add", "remove":
+			return true
+		}
+	}
+	if len(parts) > 1 && parts[1] == "new" && index == 2 {
+		switch value {
+		case "sln", "classlib", "webapi", "xunit":
+			return true
+		}
+	}
+	if len(parts) > 3 && index == 3 {
+		switch {
+		case parts[1] == "sln" && value == "add":
+			return true
+		case parts[1] == "add" && value == "reference":
+			return true
+		case parts[1] == "remove" && value == "package":
+			return true
+		}
+	}
+	return false
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }

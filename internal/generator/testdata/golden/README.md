@@ -36,52 +36,74 @@ Supported rules: strings use `required`, `minLength`, `maxLength`, and `pattern`
 
 ## Safety
 
-This output is generated as source files only. It does not run dotnet, NuGet, migrations, shell commands, or database commands.
+Generation itself does not run dotnet, NuGet, migrations, shell commands, or database commands. The generated `scaffold.sh` is a separate base scaffold validator.
 
 ## Dotnet scaffold plan
 
-The generator currently renders source files directly. This deterministic plan documents the base CLI scaffold the generated workspace is moving toward; review before executing it in a separate empty directory.
+Run `bash scaffold.sh [target-directory]` from this generated workspace to create an SDK-backed validation target. The default target is `.microgen-scaffold`; an existing non-empty target is refused. The script copies `Directory.Packages.props` and `Directory.Build.props` before creating projects or adding packages, and generated file modes are intentionally unchanged, so invoke it with Bash.
+
+The target contains SDK-created Domain, Application, Infrastructure, WebApi, and test projects, solution membership, project references, and versionless package references. It is intentionally only a base scaffold validator; it does not generate the domain, application, controller, or other source templates emitted by the normal generator output.
 
 Package versions are intentionally omitted from project/package commands. Generated `Directory.Packages.props` owns versions through central package management, including target-framework-specific EF Core and ASP.NET Core packages plus the compatible SqlClient policy pin. The Create slice uses verified stable `MediatR 14.2.0`, `FluentValidation 12.1.1`, `FluentValidation.DependencyInjectionExtensions 12.1.1`, and `ErrorOr 2.1.1`; the first three are consumed on `net8.0` and remain compatible with supported `net9.0` and `net10.0` targets through their `net8.0` assets where applicable.
 
 ```bash
-dotnet new sln --format sln --name CommercePlatform
-dotnet new classlib --framework net8.0 --name ProductService.Domain --output ./src/ProductService/ProductService.Domain
-dotnet new classlib --framework net8.0 --name ProductService.Application --output ./src/ProductService/ProductService.Application
-dotnet new classlib --framework net8.0 --name ProductService.Infrastructure --output ./src/ProductService/ProductService.Infrastructure
-dotnet new webapi --use-controllers --framework net8.0 --name ProductService.WebApi --output ./src/ProductService/ProductService.WebApi
-dotnet new xunit --framework net8.0 --name ProductService.Domain.Tests --output ./tests/ProductService/ProductService.Domain.Tests
-dotnet new xunit --framework net8.0 --name ProductService.Application.Tests --output ./tests/ProductService/ProductService.Application.Tests
-dotnet new xunit --framework net8.0 --name ProductService.WebApi.Tests --output ./tests/ProductService/ProductService.WebApi.Tests
-dotnet new xunit --framework net8.0 --name ProductService.Architecture.Tests --output ./tests/ProductService/ProductService.Architecture.Tests
-dotnet new xunit --framework net8.0 --name ProductService.Infrastructure.Tests --output ./tests/ProductService/ProductService.Infrastructure.Tests
-dotnet sln ./CommercePlatform.sln add ./src/ProductService/ProductService.Domain/ProductService.Domain.csproj
-dotnet sln ./CommercePlatform.sln add ./src/ProductService/ProductService.Application/ProductService.Application.csproj
-dotnet sln ./CommercePlatform.sln add ./src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj
-dotnet sln ./CommercePlatform.sln add ./src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj
-dotnet sln ./CommercePlatform.sln add ./tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj
-dotnet sln ./CommercePlatform.sln add ./tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj
-dotnet sln ./CommercePlatform.sln add ./tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj
-dotnet sln ./CommercePlatform.sln add ./tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj
-dotnet sln ./CommercePlatform.sln add ./tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj
-dotnet add ./src/ProductService/ProductService.Application/ProductService.Application.csproj reference ./src/ProductService/ProductService.Domain/ProductService.Domain.csproj
-dotnet add ./src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj reference ./src/ProductService/ProductService.Application/ProductService.Application.csproj
-dotnet add ./src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj reference ./src/ProductService/ProductService.Domain/ProductService.Domain.csproj
-dotnet add ./src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj reference ./src/ProductService/ProductService.Application/ProductService.Application.csproj
-dotnet add ./src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj reference ./src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj
-dotnet add ./tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj reference ./src/ProductService/ProductService.Domain/ProductService.Domain.csproj
-dotnet add ./tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj reference ./src/ProductService/ProductService.Application/ProductService.Application.csproj
-dotnet add ./tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj reference ./src/ProductService/ProductService.Domain/ProductService.Domain.csproj
-dotnet add ./tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj reference ./src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj
-dotnet add ./tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj reference ./src/ProductService/ProductService.Application/ProductService.Application.csproj
-dotnet add ./tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj reference ./src/ProductService/ProductService.Domain/ProductService.Domain.csproj
-dotnet add ./tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj reference ./src/ProductService/ProductService.Domain/ProductService.Domain.csproj
-dotnet add ./tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj reference ./src/ProductService/ProductService.Application/ProductService.Application.csproj
-dotnet add ./tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj reference ./src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj
-dotnet add ./tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj reference ./src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj
-dotnet add ./tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj reference ./src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj
-dotnet add ./tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj reference ./src/ProductService/ProductService.Application/ProductService.Application.csproj
-dotnet add ./tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj reference ./src/ProductService/ProductService.Domain/ProductService.Domain.csproj
+dotnet new sln --name 'CommercePlatform'
+dotnet new classlib --framework 'net8.0' --name 'ProductService.Domain' --output './src/ProductService/ProductService.Domain' --no-restore
+dotnet new classlib --framework 'net8.0' --name 'ProductService.Application' --output './src/ProductService/ProductService.Application' --no-restore
+dotnet new classlib --framework 'net8.0' --name 'ProductService.Infrastructure' --output './src/ProductService/ProductService.Infrastructure' --no-restore
+dotnet new webapi --use-controllers --no-openapi --framework 'net8.0' --name 'ProductService.WebApi' --output './src/ProductService/ProductService.WebApi' --no-restore
+dotnet new xunit --framework 'net8.0' --name 'ProductService.Domain.Tests' --output './tests/ProductService/ProductService.Domain.Tests' --no-restore
+dotnet new xunit --framework 'net8.0' --name 'ProductService.Application.Tests' --output './tests/ProductService/ProductService.Application.Tests' --no-restore
+dotnet new xunit --framework 'net8.0' --name 'ProductService.WebApi.Tests' --output './tests/ProductService/ProductService.WebApi.Tests' --no-restore
+dotnet new xunit --framework 'net8.0' --name 'ProductService.Architecture.Tests' --output './tests/ProductService/ProductService.Architecture.Tests' --no-restore
+dotnet new xunit --framework 'net8.0' --name 'ProductService.Infrastructure.Tests' --output './tests/ProductService/ProductService.Infrastructure.Tests' --no-restore
+dotnet remove './tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj' package 'coverlet.collector'
+dotnet remove './tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj' package 'Microsoft.NET.Test.Sdk'
+dotnet remove './tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj' package 'xunit'
+dotnet remove './tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj' package 'xunit.runner.visualstudio'
+dotnet remove './tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj' package 'coverlet.collector'
+dotnet remove './tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj' package 'Microsoft.NET.Test.Sdk'
+dotnet remove './tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj' package 'xunit'
+dotnet remove './tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj' package 'xunit.runner.visualstudio'
+dotnet remove './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj' package 'coverlet.collector'
+dotnet remove './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj' package 'Microsoft.NET.Test.Sdk'
+dotnet remove './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj' package 'xunit'
+dotnet remove './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj' package 'xunit.runner.visualstudio'
+dotnet remove './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj' package 'coverlet.collector'
+dotnet remove './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj' package 'Microsoft.NET.Test.Sdk'
+dotnet remove './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj' package 'xunit'
+dotnet remove './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj' package 'xunit.runner.visualstudio'
+dotnet remove './tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj' package 'coverlet.collector'
+dotnet remove './tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj' package 'Microsoft.NET.Test.Sdk'
+dotnet remove './tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj' package 'xunit'
+dotnet remove './tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj' package 'xunit.runner.visualstudio'
+dotnet sln './CommercePlatform.sln' add './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
+dotnet sln './CommercePlatform.sln' add './src/ProductService/ProductService.Application/ProductService.Application.csproj'
+dotnet sln './CommercePlatform.sln' add './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj'
+dotnet sln './CommercePlatform.sln' add './src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj'
+dotnet sln './CommercePlatform.sln' add './tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj'
+dotnet sln './CommercePlatform.sln' add './tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj'
+dotnet sln './CommercePlatform.sln' add './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj'
+dotnet sln './CommercePlatform.sln' add './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj'
+dotnet sln './CommercePlatform.sln' add './tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj'
+dotnet add './src/ProductService/ProductService.Application/ProductService.Application.csproj' reference './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
+dotnet add './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj' reference './src/ProductService/ProductService.Application/ProductService.Application.csproj'
+dotnet add './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj' reference './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
+dotnet add './src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj' reference './src/ProductService/ProductService.Application/ProductService.Application.csproj'
+dotnet add './src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj' reference './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj'
+dotnet add './tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj' reference './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
+dotnet add './tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj' reference './src/ProductService/ProductService.Application/ProductService.Application.csproj'
+dotnet add './tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj' reference './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
+dotnet add './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj' reference './src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj'
+dotnet add './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj' reference './src/ProductService/ProductService.Application/ProductService.Application.csproj'
+dotnet add './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj' reference './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
+dotnet add './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj' reference './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
+dotnet add './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj' reference './src/ProductService/ProductService.Application/ProductService.Application.csproj'
+dotnet add './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj' reference './src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj'
+dotnet add './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj' reference './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj'
+dotnet add './tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj' reference './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj'
+dotnet add './tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj' reference './src/ProductService/ProductService.Application/ProductService.Application.csproj'
+dotnet add './tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj' reference './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
 ```
 
 Versionless package plan:

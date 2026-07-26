@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if (( $# > 1 )); then
+  printf 'usage: %s [target-directory]\n' "$0" >&2
+  exit 2
+fi
+
+target_dir="${1:-.microgen-scaffold}"
+if [[ -L "$target_dir" ]]; then
+  printf 'refusing symlink target: %s\n' "$target_dir" >&2
+  exit 1
+fi
+if [[ -e "$target_dir" && ! -d "$target_dir" ]]; then
+  printf 'refusing non-directory target: %s\n' "$target_dir" >&2
+  exit 1
+fi
+if [[ -d "$target_dir" ]] && [[ -n "$(find "$target_dir" -mindepth 1 -print -quit)" ]]; then
+  printf 'refusing non-empty target: %s\n' "$target_dir" >&2
+  exit 1
+fi
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+mkdir -p -- "$target_dir"
+cp -- "$script_dir/Directory.Packages.props" "$target_dir/Directory.Packages.props"
+cp -- "$script_dir/Directory.Build.props" "$target_dir/Directory.Build.props"
+cd -- "$target_dir"
+
+{{ range .ScaffoldPlan.Commands }}{{ .Command }}
+{{ end }}
+{{ range .ScaffoldPlan.PackageEntries }}dotnet add '{{ .Project }}' package '{{ .Package }}'
+{{ end }}
+
+if grep -R -n --include='*.csproj' 'Version=' src tests; then
+  printf 'central package management check failed: a generated project contains a version attribute\n' >&2
+  exit 1
+fi

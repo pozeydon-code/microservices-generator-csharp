@@ -13,6 +13,16 @@ go run ./cmd/microgen generate --config examples/product-service.json --output .
 dotnet build ./out/CommercePlatform.sln -warnaserror
 ```
 
+The generated root also contains `scaffold.sh`, which creates an isolated SDK-backed validation target with base projects, solution references, and central package management:
+
+```bash
+bash ./out/scaffold.sh /tmp/microgen-scaffold
+dotnet restore /tmp/microgen-scaffold/CommercePlatform.sln
+dotnet build /tmp/microgen-scaffold/CommercePlatform.sln -warnaserror
+```
+
+This script is a base scaffold validator, not a replacement for the generator output. It does not generate domain, application, controller, or other source templates. Invoke it with `bash scaffold.sh`; generated file modes are intentionally preserved by the existing output writer.
+
 Run a generated WebApi with a connection string supplied by environment/configuration:
 
 ```bash
