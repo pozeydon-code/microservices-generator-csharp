@@ -54,15 +54,19 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 		{path: "src/ProductService/ProductService.Application/Features/Products/Create/CreateProductCommand.cs", goldenName: "CreateProductCommand.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/Create/CreateProductCommandHandler.cs", goldenName: "CreateProductCommandHandler.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/Create/CreateProductCommandValidator.cs", goldenName: "CreateProductCommandValidator.cs"},
+		{path: "src/ProductService/ProductService.Application/Features/Products/Delete/DeleteProductCommand.cs", goldenName: "DeleteProductCommand.cs"},
+		{path: "src/ProductService/ProductService.Application/Features/Products/Delete/DeleteProductCommandHandler.cs", goldenName: "DeleteProductCommandHandler.cs"},
+		{path: "src/ProductService/ProductService.Application/Features/Products/Delete/DeleteProductCommandValidator.cs", goldenName: "DeleteProductCommandValidator.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/GetById/GetProductByIdQuery.cs", goldenName: "GetProductByIdQuery.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/GetById/GetProductByIdQueryHandler.cs", goldenName: "GetProductByIdQueryHandler.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/IProductRepository.cs", goldenName: "IProductRepository.cs"},
-		{path: "src/ProductService/ProductService.Application/Features/Products/IProductUseCases.cs", goldenName: "IProductUseCases.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/List/ListProductQuery.cs", goldenName: "ListProductQuery.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/List/ListProductQueryHandler.cs", goldenName: "ListProductQueryHandler.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/List/ListProductQueryValidator.cs", goldenName: "ListProductQueryValidator.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/ProductContracts.cs", goldenName: "ProductContracts.cs"},
-		{path: "src/ProductService/ProductService.Application/Features/Products/ProductUseCases.cs", goldenName: "ProductUseCases.cs"},
+		{path: "src/ProductService/ProductService.Application/Features/Products/Update/UpdateProductCommand.cs", goldenName: "UpdateProductCommand.cs"},
+		{path: "src/ProductService/ProductService.Application/Features/Products/Update/UpdateProductCommandHandler.cs", goldenName: "UpdateProductCommandHandler.cs"},
+		{path: "src/ProductService/ProductService.Application/Features/Products/Update/UpdateProductCommandValidator.cs", goldenName: "UpdateProductCommandValidator.cs"},
 		{path: "src/ProductService/ProductService.Application/ProductService.Application.csproj", goldenName: "ProductService.Application.csproj"},
 		{path: "src/ProductService/ProductService.Domain/Features/Products/Product.cs", goldenName: "Product.cs"},
 		{path: "src/ProductService/ProductService.Domain/ProductService.Domain.csproj", goldenName: "ProductService.Domain.csproj"},
@@ -76,14 +80,13 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 		{path: "src/ProductService/ProductService.Infrastructure/Persistence/ValueObjectPreflight.sql", goldenName: "ValueObjectPreflight.sql"},
 		{path: "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj", goldenName: "ProductService.Infrastructure.csproj"},
 		{path: "src/ProductService/ProductService.WebApi/Common/ErrorOrProblemMapper.cs", goldenName: "ErrorOrProblemMapper.cs"},
-		{path: "src/ProductService/ProductService.WebApi/Common/ValidationProblemMapper.cs", goldenName: "ValidationProblemMapper.cs"},
 		{path: "src/ProductService/ProductService.WebApi/Controllers/Products/ProductController.cs", goldenName: "ProductController.cs"},
 		{path: "src/ProductService/ProductService.WebApi/Health/HealthController.cs", goldenName: "HealthController.cs"},
 		{path: "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj", goldenName: "ProductService.WebApi.csproj"},
 		{path: "src/ProductService/ProductService.WebApi/Program.cs", goldenName: "Program.cs"},
 		{path: "src/ProductService/ProductService.WebApi/appsettings.Development.json", goldenName: "appsettings.Development.json"},
 		{path: "src/ProductService/ProductService.WebApi/appsettings.json", goldenName: "appsettings.json"},
-		{path: "tests/ProductService/ProductService.Application.Tests/Features/Products/ProductUseCasesTests.cs", goldenName: "ProductUseCasesTests.cs"},
+		{path: "tests/ProductService/ProductService.Application.Tests/Features/Products/ProductApplicationTests.cs", goldenName: "ProductApplicationTests.cs"},
 		{path: "tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj", goldenName: "ProductService.Application.Tests.csproj"},
 		{path: "tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj", goldenName: "ProductService.Architecture.Tests.csproj"},
 		{path: "tests/ProductService/ProductService.Architecture.Tests/ProductServiceArchitectureTests.cs", goldenName: "ProductServiceArchitectureTests.cs"},
@@ -263,8 +266,12 @@ func TestGenerateReadCQRSSliceUsesQueriesAndPreservesLegacyPaginationContract(t 
 	listValidator := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/List/ListProductQueryValidator.cs"))
 	getQuery := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/GetById/GetProductByIdQuery.cs"))
 	getHandler := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/GetById/GetProductByIdQueryHandler.cs"))
-	interfaceSource := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/IProductUseCases.cs"))
-	service := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/ProductUseCases.cs"))
+	updateCommand := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/Update/UpdateProductCommand.cs"))
+	updateHandler := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/Update/UpdateProductCommandHandler.cs"))
+	updateValidator := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/Update/UpdateProductCommandValidator.cs"))
+	deleteCommand := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/Delete/DeleteProductCommand.cs"))
+	deleteHandler := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/Delete/DeleteProductCommandHandler.cs"))
+	deleteValidator := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Features/Products/Delete/DeleteProductCommandValidator.cs"))
 	controller := string(generatedContent(t, files, "src/ProductService/ProductService.WebApi/Controllers/Products/ProductController.cs"))
 	program := string(generatedContent(t, files, "src/ProductService/ProductService.WebApi/Program.cs"))
 
@@ -275,16 +282,24 @@ func TestGenerateReadCQRSSliceUsesQueriesAndPreservesLegacyPaginationContract(t 
 	assertContains(t, getQuery, "IRequest<ErrorOr<ProductDto>>")
 	assertContains(t, getHandler, "Error.NotFound(code: \"Product.NotFound\"")
 	assertContains(t, getHandler, "snapshot.ConcurrencyToken")
-	assertNotContains(t, interfaceSource, "ListAsync")
-	assertNotContains(t, interfaceSource, "GetByIdAsync")
-	assertNotContains(t, service, "public async Task<PagedResult<ProductDto>> ListAsync")
-	assertNotContains(t, service, "public async Task<ProductDto?> GetByIdAsync")
+	assertContains(t, updateCommand, "IRequest<ErrorOr<ProductDto>>")
+	assertContains(t, updateCommand, "ConcurrencyToken")
+	assertContains(t, updateHandler, "repository.UpdateAsync(snapshot.Entity, command.ConcurrencyToken")
+	assertContains(t, updateValidator, "ConcurrencyToken.Required")
+	assertContains(t, deleteCommand, "IRequest<ErrorOr<Deleted>>")
+	assertContains(t, deleteHandler, "Result.Deleted")
+	assertContains(t, deleteValidator, "ConcurrencyToken.Required")
 	assertContains(t, controller, "sender.Send(new ListProductQuery(page, pageSize)")
 	assertContains(t, controller, "sender.Send(new GetProductByIdQuery(id)")
 	assertNotContains(t, controller, "useCases.ListAsync")
 	assertNotContains(t, controller, "useCases.GetByIdAsync")
+	assertContains(t, controller, "sender.Send(new UpdateProductCommand")
+	assertContains(t, controller, "sender.Send(new DeleteProductCommand")
 	assertContains(t, program, "AddBehavior<ValidationBehavior<ListProductQuery, PagedResult<ProductDto>>>()")
 	assertNotContains(t, program, "AddBehavior<ValidationBehavior<GetProductByIdQuery, ProductDto>>()")
+	assertContains(t, program, "AddBehavior<ValidationBehavior<UpdateProductCommand, ProductDto>>()")
+	assertContains(t, program, "AddBehavior<ValidationBehavior<DeleteProductCommand, Deleted>>()")
+	assertNotContains(t, program, "IProductUseCases")
 }
 
 func TestGenerateDirectoryPackagesPropsUsesDependencyPolicy(t *testing.T) {
@@ -613,7 +628,7 @@ func TestGenerateCreateTestsAssertAllSupportedScalarRequestFields(t *testing.T) 
 	if err != nil {
 		t.Fatalf("generate all-scalar config: %v", err)
 	}
-	content := string(generatedContent(t, files, "tests/ProductService/ProductService.Application.Tests/Features/Products/ProductUseCasesTests.cs"))
+	content := string(generatedContent(t, files, "tests/ProductService/ProductService.Application.Tests/Features/Products/ProductApplicationTests.cs"))
 	for _, expected := range []string{
 		"Assert.True(created.IsAvailable);",
 		"Assert.Equal(new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc), created.PublishedAt);",
@@ -649,7 +664,7 @@ func TestGenerateRecordEntityTestsUseDomainAliases(t *testing.T) {
 				t.Fatalf("generate: %v", err)
 			}
 
-			applicationTests := string(generatedContent(t, files, "tests/RecordService/RecordService.Application.Tests/Features/Records/RecordUseCasesTests.cs"))
+			applicationTests := string(generatedContent(t, files, "tests/RecordService/RecordService.Application.Tests/Features/Records/RecordApplicationTests.cs"))
 			infrastructureTests := string(generatedContent(t, files, "tests/RecordService/RecordService.Infrastructure.Tests/RecordServiceInfrastructureTests.cs"))
 
 			for _, content := range []string{applicationTests, infrastructureTests} {
@@ -782,9 +797,9 @@ func TestGenerateRequestContractsUseInitPropertiesForHundredFields(t *testing.T)
 	assertContains(t, contracts, "public string Field099 { get; init; } = string.Empty;")
 	assertNotContains(t, contracts, "public sealed record CreateHundredRecordRequest(")
 	assertNotContains(t, contracts, "public sealed record UpdateHundredRecordRequest(")
-	tests := string(generatedContent(t, files, "tests/HundredFieldService/HundredFieldService.Application.Tests/Features/HundredRecords/HundredRecordUseCasesTests.cs"))
-	assertContains(t, tests, "CreateAsync(new() { Field001 =")
-	assertContains(t, tests, "ConcurrencyToken = validToken")
+	tests := string(generatedContent(t, files, "tests/HundredFieldService/HundredFieldService.Application.Tests/Features/HundredRecords/HundredRecordApplicationTests.cs"))
+	assertContains(t, tests, "new CreateHundredRecordCommand")
+	assertContains(t, tests, "ConcurrencyToken = \"token-v1\"")
 	assertNotContains(t, tests, "new UpdateHundredRecordRequest(")
 }
 

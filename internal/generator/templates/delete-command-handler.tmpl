@@ -1,0 +1,34 @@
+using ErrorOr;
+using MediatR;
+using {{ .Service.Name }}.Application.Common;
+using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
+
+namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Delete;
+
+public sealed class Delete{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Repository repository) : IRequestHandler<Delete{{ .Entity.Name }}Command, ErrorOr<Deleted>>
+{
+    public async Task<ErrorOr<Deleted>> Handle(Delete{{ .Entity.Name }}Command command, CancellationToken cancellationToken)
+    {
+        var snapshot = await repository.GetByIdAsync(command.Id, cancellationToken);
+        if (snapshot is null)
+        {
+            return Error.NotFound(code: "{{ .Entity.Name }}.NotFound", description: "{{ .Entity.Name }} was not found.");
+        }
+        if (string.IsNullOrWhiteSpace(command.ConcurrencyToken))
+        {
+            return Error.Validation(code: "ConcurrencyToken.Required", description: "Concurrency token is required.", metadata: new Dictionary<string, object> { ["field"] = "concurrencyToken" });
+        }
+
+        var status = await repository.DeleteAsync(snapshot.Entity, command.ConcurrencyToken, cancellationToken);
+        if (status == SaveResultStatus.Conflict)
+        {
+            return Error.Conflict(code: "{{ .Entity.Name }}.ConcurrencyConflict", description: "{{ .Entity.Name }} was changed by another request.");
+        }
+        if (status == SaveResultStatus.InvalidToken)
+        {
+            return Error.Validation(code: "ConcurrencyToken.Invalid", description: "Invalid concurrency token.", metadata: new Dictionary<string, object> { ["field"] = "concurrencyToken" });
+        }
+
+        return Result.Deleted;
+    }
+}

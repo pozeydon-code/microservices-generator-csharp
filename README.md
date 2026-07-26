@@ -37,7 +37,7 @@ For each configured service, `microgen` emits:
 | Project | Responsibility |
 |---|---|
 | `{Service}.Domain` | Enterprise entities, reusable Value Objects, and business validation; no framework, persistence, or rowversion dependency. |
-| `{Service}.Application` | Use cases, ports, DTOs, neutral validation outcomes, opaque concurrency tokens, and pagination contracts; references Domain only. |
+| `{Service}.Application` | CQRS commands/queries, handlers, FluentValidation validators, repository ports, DTOs, opaque concurrency tokens, and pagination contracts; references Domain only. |
 | `{Service}.Infrastructure` | EF Core SQL Server adapter, shadow rowversion conversion, bounded retries/timeouts, repositories, and SQL/schema readiness adapter registration. |
 | `{Service}.WebApi` | ASP.NET Core controller presentation and executable composition root; wires auth, HTTPS/HSTS, request timeout budget, OpenTelemetry, ProblemDetails, middleware, health endpoints, Infrastructure, and startup guards. References Application and Infrastructure. |
 | `{Service}.Architecture.Tests` | Runtime, project-file, and source-text tests proving generated dependency boundaries. |
@@ -50,7 +50,7 @@ Domain <- Application <- Infrastructure
 Application + Infrastructure <- WebApi
 ```
 
-Create, List, and GetById are migrated CQRS vertical slices. Each entity gets an Application Create command plus List/GetById queries and handlers; MediatR dispatches the command through the closed Application validation behavior registrations, and ErrorOr carries success or neutral errors to WebApi. The handlers use the existing Application repository port, preserve pagination defaults/maxima and opaque concurrency DTO mapping, and map missing reads to not-found errors. Update and Delete intentionally remain on the existing custom use-case path during this incremental migration; invalid pagination preserves the legacy `{ "error": ... }` response contract.
+Create, List, GetById, Update, and Delete are CQRS vertical slices. Each entity gets Application commands/queries, handlers, and validators under its plural feature directory; MediatR dispatches every operation through closed validation behavior registrations, and ErrorOr carries success or neutral errors to WebApi. Handlers use the existing Application repository port, preserve pagination defaults/maxima and opaque concurrency DTO mapping, and map missing records and persistence conflicts without leaking infrastructure details. Invalid pagination and invalid concurrency tokens preserve the compact legacy `{ "error": ... }` response contract; field validation uses ProblemDetails.
 
 ## Generated dependency policy
 

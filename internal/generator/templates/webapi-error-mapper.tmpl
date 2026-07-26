@@ -14,6 +14,10 @@ public static class ErrorOrProblemMapper
             {
                 return controller.BadRequest(new { error = validationErrors[0].Description });
             }
+            if (validationErrors.All(error => error.Code.StartsWith("ConcurrencyToken.", StringComparison.Ordinal)))
+            {
+                return controller.BadRequest(new { error = validationErrors[0].Description });
+            }
             return controller.BadRequest(ToValidationProblem(validationErrors));
         }
 

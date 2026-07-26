@@ -1,0 +1,18 @@
+using FluentValidation;
+using FluentValidation.Results;
+
+namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Delete;
+
+public sealed class Delete{{ .Entity.Name }}CommandValidator : AbstractValidator<Delete{{ .Entity.Name }}Command>
+{
+    public Delete{{ .Entity.Name }}CommandValidator()
+    {
+        RuleFor(command => command.ConcurrencyToken).Custom((value, context) =>
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                context.AddFailure(new ValidationFailure(context.PropertyPath, "Concurrency token is required.") { ErrorCode = "ConcurrencyToken.Required" });
+            }
+        });
+    }
+}

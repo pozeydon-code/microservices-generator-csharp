@@ -1,0 +1,11 @@
+using ErrorOr;
+using MediatR;
+
+namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Update;
+
+public sealed record Update{{ .Entity.Name }}Command : IRequest<ErrorOr<{{ .Entity.Name }}Dto>>
+{
+    public required Guid Id { get; init; }
+{{ range .Entity.NonIDFields }}    public {{ .ContractType }} {{ .Name }} { get; init; }{{ if eq .ContractType "string" }} = string.Empty;{{ end }}
+{{ end }}    public string ConcurrencyToken { get; init; } = string.Empty;
+}

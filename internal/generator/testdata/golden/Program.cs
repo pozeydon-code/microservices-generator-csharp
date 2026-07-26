@@ -1,8 +1,11 @@
 using ProductService.Application.Features.Products;
 using ProductService.Application.Features.Products.Create;
+using ProductService.Application.Features.Products.Delete;
 using ProductService.Application.Features.Products.List;
+using ProductService.Application.Features.Products.Update;
 
 using ProductService.Application.Common;
+using ErrorOr;
 using ProductService.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Timeouts;
@@ -24,6 +27,8 @@ builder.Services.AddMediatR(config =>
 {
     config.RegisterServicesFromAssembly(typeof(CreateProductCommand).Assembly);
     config.AddBehavior<ValidationBehavior<CreateProductCommand, ProductDto>>();
+    config.AddBehavior<ValidationBehavior<UpdateProductCommand, ProductDto>>();
+    config.AddBehavior<ValidationBehavior<DeleteProductCommand, Deleted>>();
     config.AddBehavior<ValidationBehavior<ListProductQuery, PagedResult<ProductDto>>>();
 });
 builder.Services.AddValidatorsFromAssemblyContaining<CreateProductCommandValidator>();
@@ -84,8 +89,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 builder.Services.AddAuthorization();
-builder.Services.AddScoped<IProductUseCases, ProductUseCases>();
-
 builder.Services.AddInfrastructure(builder.Configuration);
 
 var app = builder.Build();

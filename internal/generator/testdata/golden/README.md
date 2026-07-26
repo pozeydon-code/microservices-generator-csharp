@@ -13,7 +13,7 @@ Generated services use a four-project Clean Architecture model:
 | Project | Responsibility |
 |---|---|
 | `{Service}.Domain` | Entities with private setters and explicit create/update behavior. No framework, EF, persistence token, or rowversion dependency. |
-| `{Service}.Application` | Create CQRS commands/handlers/validators, List/GetById CQRS queries/handlers, remaining mutation use cases, ports, DTOs, pagination contracts, and opaque concurrency tokens. References Domain only. |
+| `{Service}.Application` | CQRS commands/handlers/validators for Create/Update/Delete, List/GetById CQRS queries/handlers, repository ports, DTOs, pagination contracts, and opaque concurrency tokens. References Domain only. |
 | `{Service}.Infrastructure` | EF Core SQL Server adapter, shadow rowversion conversion, repository implementations, bounded retries/timeouts, and SQL/schema readiness adapter registration. |
 | `{Service}.WebApi` | ASP.NET Core controller presentation and executable composition root for auth, HTTPS/HSTS, request timeout budget, OpenTelemetry, ProblemDetails, middleware, health endpoints, Infrastructure composition, and startup guards. References Application and Infrastructure. |
 
@@ -24,9 +24,9 @@ Application + Infrastructure <- WebApi
 
 `{Service}.Architecture.Tests` inspects generated assembly references, project references, and source text to enforce these boundaries. Value Objects live in Domain; Application constructs them and WebApi only maps validation outcomes to HTTP.
 
-## Create slice
+## CQRS slices
 
-Create, List, and GetById are migrated vertical slices. Create commands and List/GetById queries live under `Application/Features/{PluralEntity}`, FluentValidation runs through closed Application MediatR behavior registrations for generated validators, and the handlers return `ErrorOr` without referencing EF Core, ASP.NET Core, or Infrastructure. WebApi dispatches all three read/create operations through `ISender`; List preserves its pagination exception and legacy `{ "error": ... }` 400 contract, while GetById maps missing records through the existing ErrorOr mapper. Update and Delete intentionally remain on the existing custom use-case path during this incremental migration.
+Create, List, GetById, Update, and Delete are generated vertical slices under `Application/Features/{PluralEntity}`. FluentValidation runs through closed Application MediatR behavior registrations, handlers use the Application repository port and return `ErrorOr`, and WebApi dispatches every operation through `ISender`. List preserves its pagination exception and legacy `{ "error": ... }` 400 contract; concurrency-token failures use the same compact 400 contract, while field validation uses RFC-compatible ProblemDetails.
 
 ## Value Objects
 

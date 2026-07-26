@@ -1,9 +1,12 @@
 using {{ .Service.Name }}.Application.Common;
 using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
 using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Create;
+using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Delete;
 using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.GetById;
 using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.List;
+using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Update;
 using {{ .Service.Name }}.WebApi.Common;
+using ErrorOr;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,7 +16,7 @@ namespace {{ .Service.Name }}.WebApi.Controllers.{{ .Entity.FeatureName }};
 [ApiController]
 [Authorize]
 [Route("{{ .Entity.Route }}")]
-public sealed class {{ .Entity.Name }}Controller(I{{ .Entity.Name }}UseCases useCases, ISender sender) : ControllerBase
+public sealed class {{ .Entity.Name }}Controller(ISender sender) : ControllerBase
 {
     [HttpGet(Name = "List{{ .Entity.PluralName }}")]
     public async Task<ActionResult<PagedResult<{{ .Entity.Name }}Dto>>> List([FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken)
@@ -57,29 +60,25 @@ public sealed class {{ .Entity.Name }}Controller(I{{ .Entity.Name }}UseCases use
     [HttpPut("{id:guid}", Name = "Update{{ .Entity.Name }}")]
     public async Task<ActionResult<{{ .Entity.Name }}Dto>> Update(Guid id, [FromBody] Update{{ .Entity.Name }}Request request, CancellationToken cancellationToken)
     {
-        var updated = await useCases.UpdateAsync(id, request, cancellationToken);
-        return updated.Status switch
+        var updated = await sender.Send(new Update{{ .Entity.Name }}Command
         {
-            MutationResultStatus.NotFound => NotFound(),
-            MutationResultStatus.Conflict => Conflict(),
-            MutationResultStatus.InvalidToken => BadRequest(new { error = "Invalid concurrency token." }),
-            MutationResultStatus.ValidationFailed => BadRequest(ValidationProblemMapper.ToProblem(updated.Validation!)),
-            MutationResultStatus.Updated => Ok(updated.Value),
-            _ => throw new InvalidOperationException($"Unexpected update result {updated.Status}.")
-        };
+            Id = id,
+{{ range .Entity.NonIDFields }}            {{ .Name }} = request.{{ .Name }},
+{{ end }}            ConcurrencyToken = request.ConcurrencyToken,
+        }, cancellationToken);
+        return updated.IsError
+            ? ErrorOrProblemMapper.ToActionResult<{{ .Entity.Name }}Dto>(this, updated.Errors)
+            : Ok(updated.Value);
     }
 
     [HttpDelete("{id:guid}", Name = "Delete{{ .Entity.Name }}")]
     public async Task<IActionResult> Delete(Guid id, [FromQuery] string? concurrencyToken, CancellationToken cancellationToken)
     {
-        var deleted = await useCases.DeleteAsync(id, concurrencyToken ?? string.Empty, cancellationToken);
-        return deleted.Status switch
+        var deleted = await sender.Send(new Delete{{ .Entity.Name }}Command(id, concurrencyToken ?? string.Empty), cancellationToken);
+        if (deleted.IsError)
         {
-            MutationResultStatus.NotFound => NotFound(),
-            MutationResultStatus.Conflict => Conflict(),
-            MutationResultStatus.InvalidToken => BadRequest(new { error = "Invalid concurrency token." }),
-            MutationResultStatus.Deleted => NoContent(),
-            _ => throw new InvalidOperationException($"Unexpected delete result {deleted.Status}.")
-        };
+            return ErrorOrProblemMapper.ToActionResult<Deleted>(this, deleted.Errors).Result!;
+        }
+        return NoContent();
     }
 }

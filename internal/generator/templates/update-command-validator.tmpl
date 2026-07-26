@@ -1,0 +1,28 @@
+using FluentValidation;
+using FluentValidation.Results;
+{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Common.ValueObjects;
+{{ end }}
+
+namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Update;
+
+public sealed class Update{{ .Entity.Name }}CommandValidator : AbstractValidator<Update{{ .Entity.Name }}Command>
+{
+    public Update{{ .Entity.Name }}CommandValidator()
+    {
+{{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        RuleFor(command => command.{{ .Name }}).Custom((value, context) =>
+        {
+            var result = {{ .DomainType }}.Create(value, "{{ .CamelName }}");
+            foreach (var error in result.Errors)
+            {
+                context.AddFailure(new ValidationFailure(context.PropertyPath, error.Message) { ErrorCode = error.Code });
+            }
+        });
+{{ end }}{{ end }}        RuleFor(command => command.ConcurrencyToken).Custom((value, context) =>
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                context.AddFailure(new ValidationFailure(context.PropertyPath, "Concurrency token is required.") { ErrorCode = "ConcurrencyToken.Required" });
+            }
+        });
+    }
+}

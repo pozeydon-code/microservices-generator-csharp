@@ -1,9 +1,12 @@
 using ProductService.Application.Common;
 using ProductService.Application.Features.Products;
 using ProductService.Application.Features.Products.Create;
+using ProductService.Application.Features.Products.Delete;
 using ProductService.Application.Features.Products.GetById;
 using ProductService.Application.Features.Products.List;
+using ProductService.Application.Features.Products.Update;
 using ProductService.WebApi.Common;
+using ErrorOr;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,7 +16,7 @@ namespace ProductService.WebApi.Controllers.Products;
 [ApiController]
 [Authorize]
 [Route("products")]
-public sealed class ProductController(IProductUseCases useCases, ISender sender) : ControllerBase
+public sealed class ProductController(ISender sender) : ControllerBase
 {
     [HttpGet(Name = "ListProducts")]
     public async Task<ActionResult<PagedResult<ProductDto>>> List([FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken)
@@ -59,29 +62,27 @@ public sealed class ProductController(IProductUseCases useCases, ISender sender)
     [HttpPut("{id:guid}", Name = "UpdateProduct")]
     public async Task<ActionResult<ProductDto>> Update(Guid id, [FromBody] UpdateProductRequest request, CancellationToken cancellationToken)
     {
-        var updated = await useCases.UpdateAsync(id, request, cancellationToken);
-        return updated.Status switch
+        var updated = await sender.Send(new UpdateProductCommand
         {
-            MutationResultStatus.NotFound => NotFound(),
-            MutationResultStatus.Conflict => Conflict(),
-            MutationResultStatus.InvalidToken => BadRequest(new { error = "Invalid concurrency token." }),
-            MutationResultStatus.ValidationFailed => BadRequest(ValidationProblemMapper.ToProblem(updated.Validation!)),
-            MutationResultStatus.Updated => Ok(updated.Value),
-            _ => throw new InvalidOperationException($"Unexpected update result {updated.Status}.")
-        };
+            Id = id,
+            IsActive = request.IsActive,
+            Name = request.Name,
+            Price = request.Price,
+            ConcurrencyToken = request.ConcurrencyToken,
+        }, cancellationToken);
+        return updated.IsError
+            ? ErrorOrProblemMapper.ToActionResult<ProductDto>(this, updated.Errors)
+            : Ok(updated.Value);
     }
 
     [HttpDelete("{id:guid}", Name = "DeleteProduct")]
     public async Task<IActionResult> Delete(Guid id, [FromQuery] string? concurrencyToken, CancellationToken cancellationToken)
     {
-        var deleted = await useCases.DeleteAsync(id, concurrencyToken ?? string.Empty, cancellationToken);
-        return deleted.Status switch
+        var deleted = await sender.Send(new DeleteProductCommand(id, concurrencyToken ?? string.Empty), cancellationToken);
+        if (deleted.IsError)
         {
-            MutationResultStatus.NotFound => NotFound(),
-            MutationResultStatus.Conflict => Conflict(),
-            MutationResultStatus.InvalidToken => BadRequest(new { error = "Invalid concurrency token." }),
-            MutationResultStatus.Deleted => NoContent(),
-            _ => throw new InvalidOperationException($"Unexpected delete result {deleted.Status}.")
-        };
+            return ErrorOrProblemMapper.ToActionResult<Deleted>(this, deleted.Errors).Result!;
+        }
+        return NoContent();
     }
 }

@@ -87,9 +87,6 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		if err := g.appendRendered(&files, join("src", service.Name, service.WebApiProject.Directory, service.WebApiProject.FileName), "webapi-project.tmpl", service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("src", service.Name, service.WebApiProject.Directory, "Common", "ValidationProblemMapper.cs"), "webapi-validation-problem-mapper.tmpl", service); err != nil {
-			return nil, err
-		}
 		if err := g.appendRendered(&files, join("src", service.Name, service.WebApiProject.Directory, "Common", "ErrorOrProblemMapper.cs"), "webapi-error-mapper.tmpl", service); err != nil {
 			return nil, err
 		}
@@ -162,11 +159,9 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 				{join("src", service.Name, service.DomainProject.Directory, "Features", entity.FeatureName, entity.Name+".cs"), "entity.tmpl"},
 				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, entity.Name+"Contracts.cs"), "dto.tmpl"},
 				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "I"+entity.Name+"Repository.cs"), "repository-port.tmpl"},
-				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "I"+entity.Name+"UseCases.cs"), "service-interface.tmpl"},
-				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, entity.Name+"UseCases.cs"), "application-service.tmpl"},
 				{join("src", service.Name, service.InfrastructureProject.Directory, "Persistence", "Features", entity.FeatureName, entity.Name+"Repository.cs"), "repository-implementation.tmpl"},
 				{join("src", service.Name, service.WebApiProject.Directory, "Controllers", entity.FeatureName, entity.Name+"Controller.cs"), "controller.tmpl"},
-				{join("tests", service.Name, service.ApplicationTestsProject.Directory, "Features", entity.FeatureName, entity.Name+"UseCasesTests.cs"), "application-tests.tmpl"},
+				{join("tests", service.Name, service.ApplicationTestsProject.Directory, "Features", entity.FeatureName, entity.Name+"ApplicationTests.cs"), "application-tests.tmpl"},
 				{join("tests", service.Name, service.WebApiTestsProject.Directory, "Features", entity.FeatureName, entity.Name+"ControllerTests.cs"), "webapi-tests.tmpl"},
 				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "List", "List"+entity.Name+"Query.cs"), "list-query.tmpl"},
 				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "List", "List"+entity.Name+"QueryHandler.cs"), "list-query-handler.tmpl"},
@@ -176,6 +171,12 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "Create", "Create"+entity.Name+"Command.cs"), "create-command.tmpl"},
 				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "Create", "Create"+entity.Name+"CommandHandler.cs"), "create-command-handler.tmpl"},
 				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "Create", "Create"+entity.Name+"CommandValidator.cs"), "create-command-validator.tmpl"},
+				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "Update", "Update"+entity.Name+"Command.cs"), "update-command.tmpl"},
+				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "Update", "Update"+entity.Name+"CommandHandler.cs"), "update-command-handler.tmpl"},
+				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "Update", "Update"+entity.Name+"CommandValidator.cs"), "update-command-validator.tmpl"},
+				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "Delete", "Delete"+entity.Name+"Command.cs"), "delete-command.tmpl"},
+				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "Delete", "Delete"+entity.Name+"CommandHandler.cs"), "delete-command-handler.tmpl"},
+				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "Delete", "Delete"+entity.Name+"CommandValidator.cs"), "delete-command-validator.tmpl"},
 			}
 			for _, file := range entityFiles {
 				if err := g.appendRendered(&files, file.path, file.template, data); err != nil {

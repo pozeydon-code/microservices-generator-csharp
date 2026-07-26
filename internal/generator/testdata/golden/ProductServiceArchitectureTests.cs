@@ -9,7 +9,7 @@ public sealed class ProductServiceArchitectureTests
     public void RuntimeAssemblyReferencesFollowCleanArchitectureBoundaries()
     {
         var domain = typeof(ProductService.Domain.Features.Products.Product).Assembly;
-        var application = typeof(ProductService.Application.Features.Products.IProductUseCases).Assembly;
+        var application = typeof(ProductService.Application.Features.Products.Create.CreateProductCommand).Assembly;
         var webApi = typeof(ProductService.WebApi.Controllers.Products.ProductController).Assembly;
         var infrastructure = typeof(ProductService.Infrastructure.DependencyInjection).Assembly;
         var webApiCompositionRoot = typeof(Program).Assembly;
@@ -19,6 +19,20 @@ public sealed class ProductServiceArchitectureTests
         AssertReferencesOnly(infrastructure, [application.GetName().Name!, domain.GetName().Name!]);
         AssertReferencesOnly(webApi, [application.GetName().Name!, infrastructure.GetName().Name!]);
         AssertReferencesOnly(webApiCompositionRoot, [application.GetName().Name!, infrastructure.GetName().Name!]);
+    }
+
+    [Fact]
+    public void FeaturesUseMediatRAndDoNotExposeLegacyApplicationServices()
+    {
+        var root = FindSolutionRoot();
+        AssertSourceContains(root, "src/ProductService/ProductService.Application/Features/Products", [
+            "CreateProductCommand : IRequest<ErrorOr<ProductDto>>",
+            "ListProductQuery(int? Page, int? PageSize) : IRequest<ErrorOr<PagedResult<ProductDto>>>",
+            "GetProductByIdQuery(Guid Id) : IRequest<ErrorOr<ProductDto>>",
+            "UpdateProductCommand : IRequest<ErrorOr<ProductDto>>",
+            "DeleteProductCommand(Guid Id, string ConcurrencyToken) : IRequest<ErrorOr<Deleted>>"
+        ]);
+        AssertSourceDoesNotContain(root, "src/ProductService/ProductService.Application/Features/Products", ["IProductUseCases", "ProductUseCases"]);
     }
 
     [Fact]
@@ -75,6 +89,17 @@ public sealed class ProductServiceArchitectureTests
         foreach (var forbiddenText in forbidden)
         {
             Assert.DoesNotContain(forbiddenText, content, StringComparison.Ordinal);
+        }
+    }
+
+    private static void AssertSourceContains(string root, string relativeDirectory, IReadOnlyCollection<string> expected)
+    {
+        var source = Directory.EnumerateFiles(Path.Combine(root, relativeDirectory), "*.cs", SearchOption.AllDirectories)
+            .Select(File.ReadAllText);
+        var content = string.Join('\n', source);
+        foreach (var expectedText in expected)
+        {
+            Assert.Contains(expectedText, content, StringComparison.Ordinal);
         }
     }
 

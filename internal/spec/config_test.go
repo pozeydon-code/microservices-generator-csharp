@@ -233,7 +233,7 @@ func TestConfigValidateRejectsFieldNameEqualToEntityName(t *testing.T) {
 }
 
 func TestConfigValidateRejectsFieldNamesThatCollideWithGeneratedTypes(t *testing.T) {
-	tests := []string{"Product", "ProductDto", "CreateProductRequest", "UpdateProductRequest", "IProductRepository", "IProductUseCases", "ProductUseCases", "ProductRepository", "ProductEndpoints"}
+	tests := []string{"Product", "ProductDto", "CreateProductRequest", "UpdateProductRequest", "IProductRepository", "ProductRepository", "CreateProductCommand", "CreateProductCommandValidator", "UpdateProductCommand", "UpdateProductCommandValidator", "DeleteProductCommand", "DeleteProductCommandValidator", "ListProductQuery", "ListProductQueryValidator", "GetProductByIdQuery", "ProductController"}
 	for _, fieldName := range tests {
 		t.Run(fieldName, func(t *testing.T) {
 			cfg := validConfig()

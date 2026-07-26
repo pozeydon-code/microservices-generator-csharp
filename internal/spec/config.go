@@ -295,15 +295,27 @@ func isSupportedSolutionFormat(value string) bool {
 
 func generatedTypeNamesFor(entityName string) map[string]struct{} {
 	return map[string]struct{}{
-		entityName:                        {},
-		entityName + "Dto":                {},
-		"Create" + entityName + "Request": {},
-		"Update" + entityName + "Request": {},
-		"I" + entityName + "Repository":   {},
-		"I" + entityName + "UseCases":     {},
-		entityName + "UseCases":           {},
-		entityName + "Repository":         {},
-		entityName + "Endpoints":          {},
+		entityName:                                 {},
+		entityName + "Dto":                         {},
+		"Create" + entityName + "Request":          {},
+		"Update" + entityName + "Request":          {},
+		"I" + entityName + "Repository":            {},
+		entityName + "Repository":                  {},
+		"Create" + entityName + "Command":          {},
+		"Create" + entityName + "CommandValidator": {},
+		"Create" + entityName + "CommandHandler":   {},
+		"Update" + entityName + "Command":          {},
+		"Update" + entityName + "CommandValidator": {},
+		"Update" + entityName + "CommandHandler":   {},
+		"Delete" + entityName + "Command":          {},
+		"Delete" + entityName + "CommandValidator": {},
+		"Delete" + entityName + "CommandHandler":   {},
+		"List" + entityName + "Query":              {},
+		"List" + entityName + "QueryValidator":     {},
+		"List" + entityName + "QueryHandler":       {},
+		"Get" + entityName + "ByIdQuery":           {},
+		"Get" + entityName + "ByIdQueryHandler":    {},
+		entityName + "Controller":                  {},
 	}
 }
 
