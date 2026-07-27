@@ -10,9 +10,9 @@ namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Lis
 
 public sealed class List{{ .Entity.Name }}QueryHandler(I{{ .Entity.Name }}Repository repository) : IRequestHandler<List{{ .Entity.Name }}Query, ErrorOr<PagedResult<{{ .Entity.Name }}Dto>>>
 {
-    public async Task<ErrorOr<PagedResult<{{ .Entity.Name }}Dto>>> Handle(List{{ .Entity.Name }}Query query, CancellationToken cancellationToken)
+    public async Task<ErrorOr<PagedResult<{{ .Entity.Name }}Dto>>> Handle(List{{ .Entity.Name }}Query request, CancellationToken cancellationToken)
     {
-        var normalized = PaginationPolicy.Normalize(query.Page, query.PageSize);
+        var normalized = PaginationPolicy.Normalize(request.Page, request.PageSize);
         var result = await repository.ListAsync(normalized.Offset, normalized.PageSize, cancellationToken);
         return new PagedResult<{{ .Entity.Name }}Dto>(result.Items.Select(ToDto).ToList(), normalized.Page, normalized.PageSize, result.TotalCount);
     }

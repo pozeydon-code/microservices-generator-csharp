@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pozeydon-code/generator-microservices-go/internal/spec"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/spec"
 )
 
 func TestGeneratedWebApiTestsDoNotContainUnusedJsonPropertyFields(t *testing.T) {
@@ -261,7 +261,7 @@ func TestGenerateCreateCQRSSliceUsesApplicationPipelineAndWebApiMapping(t *testi
 	assertContains(t, command, "IRequest<ErrorOr<ProductDto>>")
 	assertNotContains(t, command, "ConcurrencyToken")
 	assertContains(t, handler, "IProductRepository repository")
-	assertContains(t, handler, "ProductName.Create(command.Name, \"name\")")
+	assertContains(t, handler, "ProductName.Create(request.Name, \"name\")")
 	assertContains(t, handler, "repository.AddAsync(entity, cancellationToken)")
 	assertNotContains(t, handler, "Microsoft.EntityFrameworkCore")
 	assertContains(t, validator, "AbstractValidator<CreateProductCommand>")
@@ -302,7 +302,7 @@ func TestGenerateReadCQRSSliceUsesQueriesAndPreservesLegacyPaginationContract(t 
 	program := string(generatedContent(t, files, "src/ProductService/ProductService.WebApi/Program.cs"))
 
 	assertContains(t, listQuery, "IRequest<ErrorOr<PagedResult<ProductDto>>>")
-	assertContains(t, listHandler, "PaginationPolicy.Normalize(query.Page, query.PageSize)")
+	assertContains(t, listHandler, "PaginationPolicy.Normalize(request.Page, request.PageSize)")
 	assertContains(t, listHandler, "repository.ListAsync(normalized.Offset, normalized.PageSize, cancellationToken)")
 	assertContains(t, listValidator, "ErrorCode = \"Pagination.Page\"")
 	assertContains(t, getQuery, "IRequest<ErrorOr<ProductDto>>")
@@ -310,7 +310,7 @@ func TestGenerateReadCQRSSliceUsesQueriesAndPreservesLegacyPaginationContract(t 
 	assertContains(t, getHandler, "snapshot.ConcurrencyToken")
 	assertContains(t, updateCommand, "IRequest<ErrorOr<ProductDto>>")
 	assertContains(t, updateCommand, "ConcurrencyToken")
-	assertContains(t, updateHandler, "repository.UpdateAsync(snapshot.Entity, command.ConcurrencyToken")
+	assertContains(t, updateHandler, "repository.UpdateAsync(snapshot.Entity, request.ConcurrencyToken")
 	assertContains(t, updateValidator, "ConcurrencyToken.Required")
 	assertContains(t, deleteCommand, "IRequest<ErrorOr<Deleted>>")
 	assertContains(t, deleteHandler, "Result.Deleted")

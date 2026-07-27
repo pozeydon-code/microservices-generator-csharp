@@ -90,7 +90,7 @@ func TestParseReleaseAcceptsGoReleaserArchiveNames(t *testing.T) {
 		if artifact.Name != expected.name {
 			t.Errorf("artifact %s = %q, want %q", expected.id, artifact.Name, expected.name)
 		}
-		wantURL := "https://github.com/pozeydon-code/generator-microservices-go/releases/download/v1.2.3/" + expected.name
+		wantURL := "https://github.com/pozeydon-code/microservices-generator-csharp/releases/download/v1.2.3/" + expected.name
 		if artifact.URL != wantURL {
 			t.Errorf("artifact %s URL = %q, want %q", expected.id, artifact.URL, wantURL)
 		}

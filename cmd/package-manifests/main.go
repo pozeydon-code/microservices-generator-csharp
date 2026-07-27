@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/pozeydon-code/generator-microservices-go/internal/packaging"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/packaging"
 )
 
 func main() {

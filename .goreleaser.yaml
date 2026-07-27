@@ -20,9 +20,9 @@ builds:
     ldflags:
       - >-
         -s -w
-        -X github.com/pozeydon-code/generator-microservices-go/internal/version.Version={{ .Version }}
-        -X github.com/pozeydon-code/generator-microservices-go/internal/version.Commit={{ .Commit }}
-        -X github.com/pozeydon-code/generator-microservices-go/internal/version.Date={{ .CommitDate }}
+        -X github.com/pozeydon-code/microservices-generator-csharp/internal/version.Version={{ .Version }}
+        -X github.com/pozeydon-code/microservices-generator-csharp/internal/version.Commit={{ .Commit }}
+        -X github.com/pozeydon-code/microservices-generator-csharp/internal/version.Date={{ .CommitDate }}
 
 archives:
   - id: default
@@ -39,18 +39,18 @@ archives:
       group: root
       owner: root
       mode: 0755
-      mtime: "{{ .CommitTimestamp }}"
+      mtime: "{{ .CommitDate }}"
     files:
       - src: LICENSE
         dst: LICENSE
         info:
           mode: 0644
-          mtime: "{{ .CommitTimestamp }}"
+          mtime: "{{ .CommitDate }}"
       - src: README.md
         dst: README.md
         info:
           mode: 0644
-          mtime: "{{ .CommitTimestamp }}"
+          mtime: "{{ .CommitDate }}"
 
 checksum:
   name_template: checksums.txt

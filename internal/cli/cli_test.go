@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pozeydon-code/generator-microservices-go/internal/application"
-	"github.com/pozeydon-code/generator-microservices-go/internal/tui"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/application"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/tui"
 )
 
 func TestRunGenerateSucceeds(t *testing.T) {

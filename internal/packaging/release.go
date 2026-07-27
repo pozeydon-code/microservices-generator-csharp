@@ -12,7 +12,7 @@ import (
 	"text/template"
 )
 
-const Repository = "pozeydon-code/generator-microservices-go"
+const Repository = "pozeydon-code/microservices-generator-csharp"
 
 var (
 	releaseTagPattern = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)

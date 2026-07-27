@@ -9,7 +9,7 @@ import (
 	"sort"
 	"text/template"
 
-	"github.com/pozeydon-code/generator-microservices-go/internal/spec"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/spec"
 )
 
 //go:embed templates/*/*.tmpl

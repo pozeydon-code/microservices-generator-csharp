@@ -1,4 +1,4 @@
-module github.com/pozeydon-code/generator-microservices-go
+module github.com/pozeydon-code/microservices-generator-csharp
 
 go 1.22
 

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pozeydon-code/generator-microservices-go/internal/spec"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/spec"
 )
 
 func TestLoadJSONRejectsStrictJSONProblems(t *testing.T) {

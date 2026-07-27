@@ -7,19 +7,19 @@ namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Del
 
 public sealed class Delete{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Repository repository) : IRequestHandler<Delete{{ .Entity.Name }}Command, ErrorOr<Deleted>>
 {
-    public async Task<ErrorOr<Deleted>> Handle(Delete{{ .Entity.Name }}Command command, CancellationToken cancellationToken)
+    public async Task<ErrorOr<Deleted>> Handle(Delete{{ .Entity.Name }}Command request, CancellationToken cancellationToken)
     {
-        var snapshot = await repository.GetByIdAsync(command.Id, cancellationToken);
+        var snapshot = await repository.GetByIdAsync(request.Id, cancellationToken);
         if (snapshot is null)
         {
             return Error.NotFound(code: "{{ .Entity.Name }}.NotFound", description: "{{ .Entity.Name }} was not found.");
         }
-        if (string.IsNullOrWhiteSpace(command.ConcurrencyToken))
+        if (string.IsNullOrWhiteSpace(request.ConcurrencyToken))
         {
             return Error.Validation(code: "ConcurrencyToken.Required", description: "Concurrency token is required.", metadata: new Dictionary<string, object> { ["field"] = "concurrencyToken" });
         }
 
-        var status = await repository.DeleteAsync(snapshot.Entity, command.ConcurrencyToken, cancellationToken);
+        var status = await repository.DeleteAsync(snapshot.Entity, request.ConcurrencyToken, cancellationToken);
         if (status == SaveResultStatus.Conflict)
         {
             return Error.Conflict(code: "{{ .Entity.Name }}.ConcurrencyConflict", description: "{{ .Entity.Name }} was changed by another request.");

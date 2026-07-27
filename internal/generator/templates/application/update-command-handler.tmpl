@@ -9,10 +9,10 @@ namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Upd
 
 public sealed class Update{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Repository repository) : IRequestHandler<Update{{ .Entity.Name }}Command, ErrorOr<{{ .Entity.Name }}Dto>>
 {
-    public async Task<ErrorOr<{{ .Entity.Name }}Dto>> Handle(Update{{ .Entity.Name }}Command command, CancellationToken cancellationToken)
+    public async Task<ErrorOr<{{ .Entity.Name }}Dto>> Handle(Update{{ .Entity.Name }}Command request, CancellationToken cancellationToken)
     {
         List<Error> errors = [];
-{{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        var {{ .CamelName }}Result = {{ .DomainType }}.Create(command.{{ .Name }}, "{{ .CamelName }}");
+{{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        var {{ .CamelName }}Result = {{ .DomainType }}.Create(request.{{ .Name }}, "{{ .CamelName }}");
         errors.AddRange({{ .CamelName }}Result.Errors.Select(error => Error.Validation(
             code: error.Code,
             description: error.Message,
@@ -21,7 +21,7 @@ public sealed class Update{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Re
         {
             return errors;
         }
-        if (string.IsNullOrWhiteSpace(command.ConcurrencyToken))
+        if (string.IsNullOrWhiteSpace(request.ConcurrencyToken))
         {
             return Error.Validation(
                 code: "ConcurrencyToken.Required",
@@ -29,17 +29,17 @@ public sealed class Update{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Re
                 metadata: new Dictionary<string, object> { ["field"] = "concurrencyToken" });
         }
 
-        var snapshot = await repository.GetByIdAsync(command.Id, cancellationToken);
+        var snapshot = await repository.GetByIdAsync(request.Id, cancellationToken);
         if (snapshot is null)
         {
             return Error.NotFound(code: "{{ .Entity.Name }}.NotFound", description: "{{ .Entity.Name }} was not found.");
         }
         snapshot.Entity.Update(new {{ .Entity.Name }}State
         {
-{{ range .Entity.NonIDFields }}            {{ .Name }} = {{ if .IsValueObject }}{{ .CamelName }}Result.Value!{{ else }}command.{{ .Name }}{{ end }},
+{{ range .Entity.NonIDFields }}            {{ .Name }} = {{ if .IsValueObject }}{{ .CamelName }}Result.Value!{{ else }}request.{{ .Name }}{{ end }},
 {{ end }}        });
 
-        var status = await repository.UpdateAsync(snapshot.Entity, command.ConcurrencyToken, cancellationToken);
+        var status = await repository.UpdateAsync(snapshot.Entity, request.ConcurrencyToken, cancellationToken);
         if (status == SaveResultStatus.Conflict)
         {
             return Error.Conflict(code: "{{ .Entity.Name }}.ConcurrencyConflict", description: "{{ .Entity.Name }} was changed by another request.");
@@ -49,7 +49,7 @@ public sealed class Update{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Re
             return Error.Validation(code: "ConcurrencyToken.Invalid", description: "Invalid concurrency token.", metadata: new Dictionary<string, object> { ["field"] = "concurrencyToken" });
         }
 
-        var updated = await repository.GetByIdAsync(command.Id, cancellationToken);
+        var updated = await repository.GetByIdAsync(request.Id, cancellationToken);
         return ToDto(updated ?? snapshot);
     }
 

@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pozeydon-code/generator-microservices-go/internal/generator"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/generator"
 )
 
 const (
@@ -428,7 +428,11 @@ func processExists(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	err := syscall.Kill(pid, 0)
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = process.Signal(syscall.Signal(0))
 	return err == nil || errors.Is(err, syscall.EPERM)
 }
 

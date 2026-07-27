@@ -9,10 +9,10 @@ namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Cre
 
 public sealed class Create{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Repository repository) : IRequestHandler<Create{{ .Entity.Name }}Command, ErrorOr<{{ .Entity.Name }}Dto>>
 {
-    public async Task<ErrorOr<{{ .Entity.Name }}Dto>> Handle(Create{{ .Entity.Name }}Command command, CancellationToken cancellationToken)
+    public async Task<ErrorOr<{{ .Entity.Name }}Dto>> Handle(Create{{ .Entity.Name }}Command request, CancellationToken cancellationToken)
     {
         List<Error> errors = [];
-{{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        var {{ .CamelName }}Result = {{ .DomainType }}.Create(command.{{ .Name }}, "{{ .CamelName }}");
+{{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        var {{ .CamelName }}Result = {{ .DomainType }}.Create(request.{{ .Name }}, "{{ .CamelName }}");
         errors.AddRange({{ .CamelName }}Result.Errors.Select(error => Error.Validation(
             code: error.Code,
             description: error.Message,
@@ -24,7 +24,7 @@ public sealed class Create{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Re
 
         var entity = {{ .Entity.Name }}.Create(new {{ .Entity.Name }}State
         {
-{{ range .Entity.NonIDFields }}            {{ .Name }} = {{ if .IsValueObject }}{{ .CamelName }}Result.Value!{{ else }}command.{{ .Name }}{{ end }},
+{{ range .Entity.NonIDFields }}            {{ .Name }} = {{ if .IsValueObject }}{{ .CamelName }}Result.Value!{{ else }}request.{{ .Name }}{{ end }},
 {{ end }}        });
         var snapshot = await repository.AddAsync(entity, cancellationToken);
         return ToDto(snapshot);

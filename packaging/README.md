@@ -14,7 +14,7 @@ metadata:
 release_tag=v1.2.3
 mkdir -p /tmp/microgen-release
 gh release download "$release_tag" \
-  --repo pozeydon-code/generator-microservices-go \
+  --repo pozeydon-code/microservices-generator-csharp \
   --pattern checksums.txt \
   --dir /tmp/microgen-release
 go run ./cmd/package-manifests \

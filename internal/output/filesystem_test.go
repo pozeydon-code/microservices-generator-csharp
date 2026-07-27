@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pozeydon-code/generator-microservices-go/internal/generator"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/generator"
 )
 
 func TestPlanOutputPlansNewDirectoryCreationWithoutWriting(t *testing.T) {

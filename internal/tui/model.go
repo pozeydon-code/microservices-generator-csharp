@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/pozeydon-code/generator-microservices-go/internal/application"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/application"
 )
 
 const (

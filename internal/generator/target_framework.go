@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pozeydon-code/generator-microservices-go/internal/spec"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/spec"
 )
 
 type dependencyPolicy struct {

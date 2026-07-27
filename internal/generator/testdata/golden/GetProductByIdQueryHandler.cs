@@ -8,9 +8,9 @@ namespace ProductService.Application.Features.Products.GetById;
 
 public sealed class GetProductByIdQueryHandler(IProductRepository repository) : IRequestHandler<GetProductByIdQuery, ErrorOr<ProductDto>>
 {
-    public async Task<ErrorOr<ProductDto>> Handle(GetProductByIdQuery query, CancellationToken cancellationToken)
+    public async Task<ErrorOr<ProductDto>> Handle(GetProductByIdQuery request, CancellationToken cancellationToken)
     {
-        var snapshot = await repository.GetByIdAsync(query.Id, cancellationToken);
+        var snapshot = await repository.GetByIdAsync(request.Id, cancellationToken);
         return snapshot is null
             ? Error.NotFound(code: "Product.NotFound", description: "Product was not found.")
             : ToDto(snapshot);

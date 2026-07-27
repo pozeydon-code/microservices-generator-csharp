@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pozeydon-code/generator-microservices-go/internal/generator"
-	"github.com/pozeydon-code/generator-microservices-go/internal/spec"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/generator"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/spec"
 )
 
 const MaxConfigBytes int64 = 1 << 20

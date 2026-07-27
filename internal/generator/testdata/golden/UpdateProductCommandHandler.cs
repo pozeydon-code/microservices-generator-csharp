@@ -9,15 +9,15 @@ namespace ProductService.Application.Features.Products.Update;
 
 public sealed class UpdateProductCommandHandler(IProductRepository repository) : IRequestHandler<UpdateProductCommand, ErrorOr<ProductDto>>
 {
-    public async Task<ErrorOr<ProductDto>> Handle(UpdateProductCommand command, CancellationToken cancellationToken)
+    public async Task<ErrorOr<ProductDto>> Handle(UpdateProductCommand request, CancellationToken cancellationToken)
     {
         List<Error> errors = [];
-        var nameResult = ProductName.Create(command.Name, "name");
+        var nameResult = ProductName.Create(request.Name, "name");
         errors.AddRange(nameResult.Errors.Select(error => Error.Validation(
             code: error.Code,
             description: error.Message,
             metadata: new Dictionary<string, object> { ["field"] = error.Field ?? "name" })));
-        var priceResult = ProductPrice.Create(command.Price, "price");
+        var priceResult = ProductPrice.Create(request.Price, "price");
         errors.AddRange(priceResult.Errors.Select(error => Error.Validation(
             code: error.Code,
             description: error.Message,
@@ -26,7 +26,7 @@ public sealed class UpdateProductCommandHandler(IProductRepository repository) :
         {
             return errors;
         }
-        if (string.IsNullOrWhiteSpace(command.ConcurrencyToken))
+        if (string.IsNullOrWhiteSpace(request.ConcurrencyToken))
         {
             return Error.Validation(
                 code: "ConcurrencyToken.Required",
@@ -34,19 +34,19 @@ public sealed class UpdateProductCommandHandler(IProductRepository repository) :
                 metadata: new Dictionary<string, object> { ["field"] = "concurrencyToken" });
         }
 
-        var snapshot = await repository.GetByIdAsync(command.Id, cancellationToken);
+        var snapshot = await repository.GetByIdAsync(request.Id, cancellationToken);
         if (snapshot is null)
         {
             return Error.NotFound(code: "Product.NotFound", description: "Product was not found.");
         }
         snapshot.Entity.Update(new ProductState
         {
-            IsActive = command.IsActive,
+            IsActive = request.IsActive,
             Name = nameResult.Value!,
             Price = priceResult.Value!,
         });
 
-        var status = await repository.UpdateAsync(snapshot.Entity, command.ConcurrencyToken, cancellationToken);
+        var status = await repository.UpdateAsync(snapshot.Entity, request.ConcurrencyToken, cancellationToken);
         if (status == SaveResultStatus.Conflict)
         {
             return Error.Conflict(code: "Product.ConcurrencyConflict", description: "Product was changed by another request.");
@@ -56,7 +56,7 @@ public sealed class UpdateProductCommandHandler(IProductRepository repository) :
             return Error.Validation(code: "ConcurrencyToken.Invalid", description: "Invalid concurrency token.", metadata: new Dictionary<string, object> { ["field"] = "concurrencyToken" });
         }
 
-        var updated = await repository.GetByIdAsync(command.Id, cancellationToken);
+        var updated = await repository.GetByIdAsync(request.Id, cancellationToken);
         return ToDto(updated ?? snapshot);
     }
 

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/pozeydon-code/generator-microservices-go/internal/application"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/application"
 )
 
 var ansiRegexp = regexp.MustCompile(`\x1b\[[0-9;]*m`)

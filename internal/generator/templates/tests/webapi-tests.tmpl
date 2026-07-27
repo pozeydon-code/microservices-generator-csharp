@@ -55,7 +55,7 @@ public sealed class {{ .Entity.Name }}EndpointsTests
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateAuthenticatedClient();
-        var request = new Create{{ .Entity.Name }}Request { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .SampleValue }}, {{ end }} };
+        var request = new Create{{ .Entity.Name }}Request { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .SampleValue }}, {{ end }}};
 
         var response = await client.PostAsJsonAsync("/{{ .Entity.Route }}", request);
 
@@ -72,8 +72,8 @@ public sealed class {{ .Entity.Name }}EndpointsTests
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateAuthenticatedClient();
-        var createResponse = await client.PostAsJsonAsync("/{{ .Entity.Route }}", new Create{{ .Entity.Name }}Request { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ if .IsValueObject }}{{ .InvalidValue }}{{ else }}{{ .SampleValue }}{{ end }}, {{ end }} });
-        var updateResponse = await client.PutAsJsonAsync("/{{ .Entity.Route }}/11111111-1111-1111-1111-111111111111", new Update{{ .Entity.Name }}Request { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ if .IsValueObject }}{{ .InvalidValue }}{{ else }}{{ .SampleValue }}{{ end }}, {{ end }} ConcurrencyToken = ValidToken });
+        var createResponse = await client.PostAsJsonAsync("/{{ .Entity.Route }}", new Create{{ .Entity.Name }}Request { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ if .IsValueObject }}{{ .InvalidValue }}{{ else }}{{ .SampleValue }}{{ end }}, {{ end }}});
+        var updateResponse = await client.PutAsJsonAsync("/{{ .Entity.Route }}/11111111-1111-1111-1111-111111111111", new Update{{ .Entity.Name }}Request { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ if .IsValueObject }}{{ .InvalidValue }}{{ else }}{{ .SampleValue }}{{ end }}, {{ end }}ConcurrencyToken = ValidToken });
 
         await AssertValidationProblem(createResponse, ExpectedValidationErrorKeys);
         await AssertValidationProblem(updateResponse, ExpectedValidationErrorKeys);
@@ -84,7 +84,7 @@ public sealed class {{ .Entity.Name }}EndpointsTests
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateAuthenticatedClient();
-        var request = new Update{{ .Entity.Name }}Request { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }} ConcurrencyToken = ValidToken };
+        var request = new Update{{ .Entity.Name }}Request { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }}ConcurrencyToken = ValidToken };
 
         var response = await client.PutAsJsonAsync("/{{ .Entity.Route }}/11111111-1111-1111-1111-111111111111", request);
 
@@ -105,7 +105,7 @@ public sealed class {{ .Entity.Name }}EndpointsTests
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateAuthenticatedClient();
-        var response = await client.PutAsJsonAsync("/{{ .Entity.Route }}/11111111-1111-1111-1111-111111111111", new Update{{ .Entity.Name }}Request { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }} ConcurrencyToken = token });
+        var response = await client.PutAsJsonAsync("/{{ .Entity.Route }}/11111111-1111-1111-1111-111111111111", new Update{{ .Entity.Name }}Request { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }}ConcurrencyToken = token });
 
         Assert.Equal(expectedStatus, response.StatusCode);
         if (token == "unknown-token")

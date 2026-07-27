@@ -10,9 +10,9 @@ namespace ProductService.Application.Features.Products.List;
 
 public sealed class ListProductQueryHandler(IProductRepository repository) : IRequestHandler<ListProductQuery, ErrorOr<PagedResult<ProductDto>>>
 {
-    public async Task<ErrorOr<PagedResult<ProductDto>>> Handle(ListProductQuery query, CancellationToken cancellationToken)
+    public async Task<ErrorOr<PagedResult<ProductDto>>> Handle(ListProductQuery request, CancellationToken cancellationToken)
     {
-        var normalized = PaginationPolicy.Normalize(query.Page, query.PageSize);
+        var normalized = PaginationPolicy.Normalize(request.Page, request.PageSize);
         var result = await repository.ListAsync(normalized.Offset, normalized.PageSize, cancellationToken);
         return new PagedResult<ProductDto>(result.Items.Select(ToDto).ToList(), normalized.Page, normalized.PageSize, result.TotalCount);
     }

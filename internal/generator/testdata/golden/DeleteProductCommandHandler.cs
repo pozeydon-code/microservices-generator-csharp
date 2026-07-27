@@ -7,19 +7,19 @@ namespace ProductService.Application.Features.Products.Delete;
 
 public sealed class DeleteProductCommandHandler(IProductRepository repository) : IRequestHandler<DeleteProductCommand, ErrorOr<Deleted>>
 {
-    public async Task<ErrorOr<Deleted>> Handle(DeleteProductCommand command, CancellationToken cancellationToken)
+    public async Task<ErrorOr<Deleted>> Handle(DeleteProductCommand request, CancellationToken cancellationToken)
     {
-        var snapshot = await repository.GetByIdAsync(command.Id, cancellationToken);
+        var snapshot = await repository.GetByIdAsync(request.Id, cancellationToken);
         if (snapshot is null)
         {
             return Error.NotFound(code: "Product.NotFound", description: "Product was not found.");
         }
-        if (string.IsNullOrWhiteSpace(command.ConcurrencyToken))
+        if (string.IsNullOrWhiteSpace(request.ConcurrencyToken))
         {
             return Error.Validation(code: "ConcurrencyToken.Required", description: "Concurrency token is required.", metadata: new Dictionary<string, object> { ["field"] = "concurrencyToken" });
         }
 
-        var status = await repository.DeleteAsync(snapshot.Entity, command.ConcurrencyToken, cancellationToken);
+        var status = await repository.DeleteAsync(snapshot.Entity, request.ConcurrencyToken, cancellationToken);
         if (status == SaveResultStatus.Conflict)
         {
             return Error.Conflict(code: "Product.ConcurrencyConflict", description: "Product was changed by another request.");

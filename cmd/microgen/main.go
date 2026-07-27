@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/pozeydon-code/generator-microservices-go/internal/cli"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/cli"
 )
 
 func main() {
