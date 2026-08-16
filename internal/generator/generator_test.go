@@ -35,6 +35,32 @@ func TestGeneratedWebApiTestsDoNotContainUnusedJsonPropertyFields(t *testing.T) 
 	assertNotContains(t, content, "AllowedValidationProblemProperties")
 }
 
+func TestGeneratedReadmeUsesReviewedSqlMigrationRunbook(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	files, err := gen.Generate(testConfig())
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	content := string(generatedContent(t, files, "README.md"))
+	assertContains(t, content, "dotnet ef migrations script --idempotent")
+	assertContains(t, content, "# Review ./artifacts/ProductService-migration.sql before continuing.")
+	assertContains(t, content, "BACKUP DATABASE [$TARGET_DATABASE]")
+	assertContains(t, content, `sqlcmd -S "$TARGET_SERVER" -d "$TARGET_DATABASE" -b -i ./artifacts/ProductService-migration.sql`)
+	assertNotContains(t, content, "dotnet ef database update")
+
+	reviewIndex := strings.Index(content, "# Review ./artifacts/ProductService-migration.sql before continuing.")
+	backupIndex := strings.Index(content, "BACKUP DATABASE [$TARGET_DATABASE]")
+	applyIndex := strings.Index(content, `sqlcmd -S "$TARGET_SERVER" -d "$TARGET_DATABASE" -b -i ./artifacts/ProductService-migration.sql`)
+	if reviewIndex == -1 || backupIndex == -1 || applyIndex == -1 || !(reviewIndex < backupIndex && backupIndex < applyIndex) {
+		t.Fatalf("expected README migration runbook to review SQL, back up, then apply reviewed SQL")
+	}
+}
+
 func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 	gen, err := New()
 	if err != nil {
@@ -100,6 +126,7 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 		{path: "src/ProductService/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs", goldenName: "ProductConfiguration.cs"},
 		{path: "src/ProductService/ProductService.Infrastructure/Persistence/Features/Products/ProductRepository.cs", goldenName: "ProductRepository.cs"},
 		{path: "src/ProductService/ProductService.Infrastructure/Persistence/ProductServiceDbContext.cs", goldenName: "ProductServiceDbContext.cs"},
+		{path: "src/ProductService/ProductService.Infrastructure/Persistence/ProductServiceDbContextFactory.cs", goldenName: "ProductServiceDbContextFactory.cs"},
 		{path: "src/ProductService/ProductService.Infrastructure/Persistence/UnitOfWork.cs", goldenName: "Infrastructure.UnitOfWork.cs"},
 		{path: "src/ProductService/ProductService.Infrastructure/Persistence/ValueObjectPreflight.sql", goldenName: "ValueObjectPreflight.sql"},
 		{path: "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj", goldenName: "ProductService.Infrastructure.csproj"},
@@ -196,6 +223,7 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs"], "IEntityTypeConfiguration<Product>")
 	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs"], "HasConversion(value => value.Value, value => ProductService.Domain.ValueObjects.ProductName.Rehydrate(value))")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.EntityFrameworkCore.SqlServer\" Version=\"8.0.28")
+	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.EntityFrameworkCore.Tools\" Version=\"8.0.28")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.AspNetCore.Mvc.Testing\" Version=\"8.0.28")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.Data.SqlClient\" Version=\"6.1.1")
 	assertContains(t, contentByPath["Directory.Packages.props"], "System.Security.Cryptography.Xml\" Version=\"8.0.4")
@@ -204,6 +232,11 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	assertContains(t, contentByPath["Directory.Packages.props"], "Pinned for NuGet audit safety when EF/Core build transitives request vulnerable XML versions.")
 	assertContains(t, contentByPath["Directory.Packages.props"], "CentralPackageTransitivePinningEnabled>true")
 	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj"], "Microsoft.EntityFrameworkCore.SqlServer")
+	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj"], "Microsoft.EntityFrameworkCore.Tools")
+	dbContextFactory := contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/ProductServiceDbContextFactory.cs"]
+	assertContains(t, dbContextFactory, "IDesignTimeDbContextFactory<ProductServiceDbContext>")
+	assertContains(t, dbContextFactory, "Environment.GetEnvironmentVariable(\"ConnectionStrings__DefaultConnection\")")
+	assertContains(t, dbContextFactory, "UseSqlServer(")
 	webAPIProject := contentByPath["src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj"]
 	assertContains(t, webAPIProject, "ProductService.Infrastructure.csproj")
 	assertContains(t, webAPIProject, "ProductService.Application.csproj")
@@ -378,6 +411,7 @@ func TestGenerateDirectoryPackagesPropsUsesDependencyPolicy(t *testing.T) {
 			assertContains(t, packages, `Microsoft.AspNetCore.Authentication.JwtBearer" Version="`+tt.aspNetCore+`"`)
 			assertContains(t, packages, `Microsoft.AspNetCore.Mvc.Testing" Version="`+tt.aspNetCoreTest+`"`)
 			assertContains(t, packages, `Microsoft.EntityFrameworkCore.Design" Version="`+tt.entityFramework+`"`)
+			assertContains(t, packages, `Microsoft.EntityFrameworkCore.Tools" Version="`+tt.entityFramework+`"`)
 			assertContains(t, packages, `Microsoft.EntityFrameworkCore.SqlServer" Version="`+tt.entityFramework+`"`)
 			assertContains(t, packages, `Microsoft.Data.SqlClient" Version="`+tt.sqlClient+`"`)
 			assertContains(t, packages, `System.Security.Cryptography.Xml" Version="`+tt.cryptographyXML+`"`)
@@ -444,6 +478,7 @@ func TestScaffoldPlanUsesTargetFrameworkAndCentralPackagePolicy(t *testing.T) {
 
 			packages := scaffoldPackageText(view.ScaffoldPlan)
 			assertContains(t, packages, "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj -> Microsoft.EntityFrameworkCore.Design")
+			assertContains(t, packages, "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj -> Microsoft.EntityFrameworkCore.Tools")
 			assertContains(t, packages, "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj -> Microsoft.EntityFrameworkCore.SqlServer")
 			assertContains(t, packages, "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj -> Microsoft.Data.SqlClient")
 			assertContains(t, packages, "src/ProductService/ProductService.Application/ProductService.Application.csproj -> MediatR")

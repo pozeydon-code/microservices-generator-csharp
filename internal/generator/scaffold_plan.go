@@ -77,6 +77,7 @@ func buildScaffoldPlan(solution SolutionTemplateData) ScaffoldPlan {
 			packageEntry(service.WebApiProject, "OpenTelemetry.Instrumentation.AspNetCore"),
 			packageEntry(service.WebApiProject, "OpenTelemetry.Instrumentation.Http"),
 			packageEntry(service.InfrastructureProject, "Microsoft.EntityFrameworkCore.Design"),
+			packageEntry(service.InfrastructureProject, "Microsoft.EntityFrameworkCore.Tools"),
 			packageEntry(service.InfrastructureProject, "Microsoft.EntityFrameworkCore.SqlServer"),
 			packageEntry(service.InfrastructureProject, "Microsoft.Data.SqlClient"),
 			packageEntry(service.WebApiTestsProject, "Microsoft.AspNetCore.Mvc.Testing"),

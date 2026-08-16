@@ -41,7 +41,7 @@ public sealed class ProductServiceArchitectureTests
         var root = FindSolutionRoot();
         AssertProject(root, "src/ProductService/ProductService.Domain/ProductService.Domain.csproj", [], [], []);
         AssertProject(root, "src/ProductService/ProductService.Application/ProductService.Application.csproj", ["..\\ProductService.Domain\\ProductService.Domain.csproj"], ["ErrorOr", "FluentValidation", "MediatR"], []);
-        AssertProject(root, "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj", ["..\\ProductService.Application\\ProductService.Application.csproj", "..\\ProductService.Domain\\ProductService.Domain.csproj"], ["Microsoft.Data.SqlClient", "Microsoft.EntityFrameworkCore.Design", "Microsoft.EntityFrameworkCore.SqlServer"], []);
+        AssertProject(root, "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj", ["..\\ProductService.Application\\ProductService.Application.csproj", "..\\ProductService.Domain\\ProductService.Domain.csproj"], ["Microsoft.Data.SqlClient", "Microsoft.EntityFrameworkCore.Design", "Microsoft.EntityFrameworkCore.SqlServer", "Microsoft.EntityFrameworkCore.Tools"], []);
         AssertProject(root, "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj", ["..\\ProductService.Application\\ProductService.Application.csproj", "..\\ProductService.Infrastructure\\ProductService.Infrastructure.csproj"], ["ErrorOr", "FluentValidation.DependencyInjectionExtensions", "MediatR", "Microsoft.AspNetCore.Authentication.JwtBearer", "OpenTelemetry.Exporter.OpenTelemetryProtocol", "OpenTelemetry.Extensions.Hosting", "OpenTelemetry.Instrumentation.AspNetCore", "OpenTelemetry.Instrumentation.Http"], []);
     }
 

@@ -42,6 +42,7 @@ var targetSpecificPackageNames = []string{
 	"Microsoft.AspNetCore.Authentication.JwtBearer",
 	"Microsoft.AspNetCore.Mvc.Testing",
 	"Microsoft.EntityFrameworkCore.Design",
+	"Microsoft.EntityFrameworkCore.Tools",
 	"Microsoft.EntityFrameworkCore.SqlServer",
 	"Microsoft.Data.SqlClient",
 	"System.Security.Cryptography.Xml",
@@ -175,6 +176,7 @@ func validateDependencyPolicy(policy dependencyPolicy, commonPackages map[string
 	aspNetCoreVersion := policy.Packages["Microsoft.AspNetCore.Authentication.JwtBearer"]
 	aspNetCoreTestingVersion := policy.Packages["Microsoft.AspNetCore.Mvc.Testing"]
 	entityFrameworkVersion := policy.Packages["Microsoft.EntityFrameworkCore.Design"]
+	entityFrameworkToolsVersion := policy.Packages["Microsoft.EntityFrameworkCore.Tools"]
 	entityFrameworkSQLVersion := policy.Packages["Microsoft.EntityFrameworkCore.SqlServer"]
 	for _, pkg := range []struct {
 		name    string
@@ -183,6 +185,7 @@ func validateDependencyPolicy(policy dependencyPolicy, commonPackages map[string
 		{name: "Microsoft.AspNetCore.Authentication.JwtBearer", version: aspNetCoreVersion},
 		{name: "Microsoft.AspNetCore.Mvc.Testing", version: aspNetCoreTestingVersion},
 		{name: "Microsoft.EntityFrameworkCore.Design", version: entityFrameworkVersion},
+		{name: "Microsoft.EntityFrameworkCore.Tools", version: entityFrameworkToolsVersion},
 		{name: "Microsoft.EntityFrameworkCore.SqlServer", version: entityFrameworkSQLVersion},
 	} {
 		major, ok := packageVersionMajor(pkg.version)
@@ -193,8 +196,8 @@ func validateDependencyPolicy(policy dependencyPolicy, commonPackages map[string
 	if aspNetCoreVersion != aspNetCoreTestingVersion {
 		return fmt.Errorf("ASP.NET Core package versions must align: %q != %q", aspNetCoreVersion, aspNetCoreTestingVersion)
 	}
-	if entityFrameworkVersion != aspNetCoreVersion || entityFrameworkSQLVersion != aspNetCoreVersion {
-		return fmt.Errorf("Entity Framework Core and ASP.NET Core package versions must align: %q, %q, %q", entityFrameworkVersion, entityFrameworkSQLVersion, aspNetCoreVersion)
+	if entityFrameworkVersion != aspNetCoreVersion || entityFrameworkToolsVersion != aspNetCoreVersion || entityFrameworkSQLVersion != aspNetCoreVersion {
+		return fmt.Errorf("Entity Framework Core and ASP.NET Core package versions must align: %q, %q, %q, %q", entityFrameworkVersion, entityFrameworkToolsVersion, entityFrameworkSQLVersion, aspNetCoreVersion)
 	}
 	return nil
 }

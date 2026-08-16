@@ -8,6 +8,7 @@
     "Microsoft.AspNetCore.Authentication.JwtBearer",
     "Microsoft.AspNetCore.Mvc.Testing",
     "Microsoft.EntityFrameworkCore.Design",
+    "Microsoft.EntityFrameworkCore.Tools",
     "Microsoft.EntityFrameworkCore.SqlServer",
     "Microsoft.Data.SqlClient",
     "Microsoft.NET.Test.Sdk",
@@ -42,6 +43,7 @@
         "Microsoft.AspNetCore.Authentication.JwtBearer": "8.0.28",
         "Microsoft.AspNetCore.Mvc.Testing": "8.0.28",
         "Microsoft.EntityFrameworkCore.Design": "8.0.28",
+        "Microsoft.EntityFrameworkCore.Tools": "8.0.28",
         "Microsoft.EntityFrameworkCore.SqlServer": "8.0.28",
         "Microsoft.Data.SqlClient": "6.1.1",
         "System.Security.Cryptography.Xml": "8.0.4"
@@ -54,6 +56,7 @@
         "Microsoft.AspNetCore.Authentication.JwtBearer": "9.0.7",
         "Microsoft.AspNetCore.Mvc.Testing": "9.0.7",
         "Microsoft.EntityFrameworkCore.Design": "9.0.7",
+        "Microsoft.EntityFrameworkCore.Tools": "9.0.7",
         "Microsoft.EntityFrameworkCore.SqlServer": "9.0.7",
         "Microsoft.Data.SqlClient": "6.1.1",
         "System.Security.Cryptography.Xml": "9.0.18"
@@ -66,6 +69,7 @@
         "Microsoft.AspNetCore.Authentication.JwtBearer": "10.0.0",
         "Microsoft.AspNetCore.Mvc.Testing": "10.0.0",
         "Microsoft.EntityFrameworkCore.Design": "10.0.0",
+        "Microsoft.EntityFrameworkCore.Tools": "10.0.0",
         "Microsoft.EntityFrameworkCore.SqlServer": "10.0.0",
         "Microsoft.Data.SqlClient": "6.1.1",
         "System.Security.Cryptography.Xml": "10.0.10"

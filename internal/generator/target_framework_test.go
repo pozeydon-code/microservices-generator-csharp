@@ -24,8 +24,8 @@ func TestDependencyPolicyManifestLoads(t *testing.T) {
 	if len(commonPackages) != 12 {
 		t.Fatalf("expected twelve common package pins, got %d", len(commonPackages))
 	}
-	if len(packageOrder) != 18 {
-		t.Fatalf("expected eighteen package names in manifest order, got %d", len(packageOrder))
+	if len(packageOrder) != 19 {
+		t.Fatalf("expected nineteen package names in manifest order, got %d", len(packageOrder))
 	}
 }
 
@@ -85,6 +85,7 @@ func TestLoadDependencyPoliciesRejectsInvalidManifests(t *testing.T) {
 			"Microsoft.AspNetCore.Authentication.JwtBearer": "8.0.28",
 			"Microsoft.AspNetCore.Mvc.Testing":              "8.0.28",
 			"Microsoft.EntityFrameworkCore.Design":          "8.0.28",
+			"Microsoft.EntityFrameworkCore.Tools":           "8.0.28",
 			"Microsoft.EntityFrameworkCore.SqlServer":       "8.0.28",
 			"Microsoft.Data.SqlClient":                      "6.1.1",
 			"System.Security.Cryptography.Xml":              "8.0.4",
@@ -135,6 +136,7 @@ func TestLoadDependencyPoliciesRejectsInvalidCommonPackages(t *testing.T) {
 			"Microsoft.AspNetCore.Authentication.JwtBearer": "8.0.28",
 			"Microsoft.AspNetCore.Mvc.Testing":              "8.0.28",
 			"Microsoft.EntityFrameworkCore.Design":          "8.0.28",
+			"Microsoft.EntityFrameworkCore.Tools":           "8.0.28",
 			"Microsoft.EntityFrameworkCore.SqlServer":       "8.0.28",
 			"Microsoft.Data.SqlClient":                      "6.1.1",
 			"System.Security.Cryptography.Xml":              "8.0.4",
@@ -265,6 +267,7 @@ func TestDependencyPolicyForTargetFramework(t *testing.T) {
 					"Microsoft.AspNetCore.Authentication.JwtBearer": tt.aspNetCore,
 					"Microsoft.AspNetCore.Mvc.Testing":              tt.aspNetCoreTest,
 					"Microsoft.EntityFrameworkCore.Design":          tt.entityFramework,
+					"Microsoft.EntityFrameworkCore.Tools":           tt.entityFramework,
 					"Microsoft.EntityFrameworkCore.SqlServer":       tt.entityFramework,
 					"Microsoft.Data.SqlClient":                      tt.sqlClient,
 					"System.Security.Cryptography.Xml":              tt.cryptographyXML,

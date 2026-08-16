@@ -159,6 +159,9 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		if err := g.appendRendered(&files, join("src", service.Name, service.InfrastructureProject.Directory, "Persistence", service.Name+"DbContext.cs"), templatePath(infrastructureTemplateDir, "dbcontext.tmpl"), service); err != nil {
 			return nil, err
 		}
+		if err := g.appendRendered(&files, join("src", service.Name, service.InfrastructureProject.Directory, "Persistence", service.Name+"DbContextFactory.cs"), templatePath(infrastructureTemplateDir, "design-time-dbcontext-factory.tmpl"), service); err != nil {
+			return nil, err
+		}
 		if err := g.appendRendered(&files, join("src", service.Name, service.InfrastructureProject.Directory, "Persistence", "ValueObjectPreflight.sql"), templatePath(infrastructureTemplateDir, "value-object-preflight-sql.tmpl"), service); err != nil {
 			return nil, err
 		}

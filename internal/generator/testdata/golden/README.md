@@ -108,6 +108,7 @@ Versionless package plan:
 | `src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj` | `OpenTelemetry.Instrumentation.AspNetCore` |
 | `src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj` | `OpenTelemetry.Instrumentation.Http` |
 | `src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj` | `Microsoft.EntityFrameworkCore.Design` |
+| `src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj` | `Microsoft.EntityFrameworkCore.Tools` |
 | `src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj` | `Microsoft.EntityFrameworkCore.SqlServer` |
 | `src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj` | `Microsoft.Data.SqlClient` |
 | `tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj` | `Microsoft.AspNetCore.Mvc.Testing` |
@@ -151,7 +152,7 @@ MICROGEN_TEST_SQLSERVER='Server=localhost,1433;User Id=sa;Password=<password>;En
 
 ## Manual migrations
 
-Create and apply EF migrations manually after review, backup, staging validation, and deployment approval. The generator never runs migrations or opens a database connection.
+Create and apply EF migrations manually after review, backup, staging validation, and deployment approval. The generator prepares EF Core design-time tooling and a DbContext factory, but it never generates migration files, runs migrations, or opens a database connection.
 
 Run the same sequence for each generated service:
 
@@ -159,24 +160,27 @@ Run the same sequence for each generated service:
 
 1. Build and test the generated solution.
 2. Resolve and confirm one explicit target server/database from runtime configuration.
-3. Create or update the reviewed migration source.
-4. Generate an idempotent SQL artifact and review it before deployment.
-5. Validate against staging before production.
-6. Back up the target database and verify the backup.
-7. Apply the reviewed SQL artifact in the approved deployment window.
-8. Smoke test the API and readiness endpoint after the application version is deployed.
-9. If readiness or reconstitution logs identify bad persisted values, repair data only with a reviewed SQL script against the confirmed target database, re-run readiness, and preserve the repair script with the deployment artifact.
+3. Create or update the reviewed migration source with the Infrastructure project as both the migrations project and design-time startup project.
+4. Generate an idempotent SQL artifact.
+5. Review the generated SQL artifact before deployment.
+6. Validate the reviewed SQL artifact against staging before production.
+7. Back up the target database and verify the restore path.
+8. Apply the reviewed SQL artifact with `sqlcmd` or your approved deployment tool in the approved deployment window.
+9. Smoke test the API and readiness endpoint after the application version is deployed.
+10. If readiness or reconstitution logs identify bad persisted values, repair data only with a reviewed SQL script against the confirmed target database, re-run readiness, and preserve the repair script with the deployment artifact.
 
 ```bash
 mkdir -p ./artifacts
+dotnet build ./CommercePlatform.sln --nologo -warnaserror
 dotnet test ./CommercePlatform.sln --nologo -warnaserror --logger "trx;LogFileName=ProductService-tests.trx"
 TARGET_DATABASE='<confirmed-database-name>'
 TARGET_SERVER='<confirmed-server-name-or-host,port>'
 test -n "$TARGET_DATABASE"
 test -n "$TARGET_SERVER"
-dotnet ef migrations add InitialCreate --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.WebApi
-dotnet ef migrations script --idempotent --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.WebApi --output ./artifacts/ProductService-migration.sql
+dotnet ef migrations add InitialCreate --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Infrastructure --output-dir Persistence/Migrations
+dotnet ef migrations script --idempotent --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Infrastructure --output ./artifacts/ProductService-migration.sql
 # Review ./artifacts/ProductService-migration.sql before continuing.
+# Validate the reviewed script in staging before continuing.
 sqlcmd -S "$TARGET_SERVER" -d master -Q "IF DB_ID('$TARGET_DATABASE') IS NULL THROW 50000, 'Target database not found.', 1; SELECT @@SERVERNAME AS server_name, DB_NAME(DB_ID('$TARGET_DATABASE')) AS database_name"
 sqlcmd -S "$TARGET_SERVER" -d master -Q "BACKUP DATABASE [$TARGET_DATABASE] TO DISK = N'/var/opt/mssql/backups/$TARGET_DATABASE-predeploy.bak' WITH COPY_ONLY, CHECKSUM"
 sqlcmd -S "$TARGET_SERVER" -d master -Q "RESTORE VERIFYONLY FROM DISK = N'/var/opt/mssql/backups/$TARGET_DATABASE-predeploy.bak' WITH CHECKSUM"
@@ -191,8 +195,8 @@ Rollback limitations: database rollback is not automatically reversible after sc
 Fix-forward flow:
 
 ```bash
-dotnet ef migrations add FixForwardDescription --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.WebApi
-dotnet ef migrations script --idempotent --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.WebApi --output ./artifacts/ProductService-fix-forward.sql
+dotnet ef migrations add FixForwardDescription --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Infrastructure --output-dir Persistence/Migrations
+dotnet ef migrations script --idempotent --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Infrastructure --output ./artifacts/ProductService-fix-forward.sql
 # Review and validate ./artifacts/ProductService-fix-forward.sql in staging.
 sqlcmd -S "$TARGET_SERVER" -d "$TARGET_DATABASE" -b -i ./artifacts/ProductService-fix-forward.sql
 ```
