@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using ProductService.Domain.Entities;
-using ProductService.Domain.ValueObjects;
 
 
 namespace ProductService.Infrastructure.Persistence;
@@ -11,20 +10,6 @@ public sealed class ProductServiceDbContext(DbContextOptions<ProductServiceDbCon
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Product>(entity =>
-        {
-            entity.HasKey(item => item.Id);
-            entity.Property<byte[]>("RowVersion").IsRowVersion();
-            entity.Property(item => item.IsActive).IsRequired();
-
-            entity.Property(item => item.Name)
-                .HasConversion(value => value.Value, value => ProductName.Rehydrate(value))
-                .HasMaxLength(100)
-                .IsRequired();
-            entity.Property(item => item.Price)
-                .HasConversion(value => value.Value, value => ProductPrice.Rehydrate(value))
-                .IsRequired();
-
-        });
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(ProductServiceDbContext).Assembly);
     }
 }

@@ -97,6 +97,7 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 		{path: "src/ProductService/ProductService.Domain/ValueObjects/ProductName.cs", goldenName: "ProductName.cs"},
 		{path: "src/ProductService/ProductService.Domain/ValueObjects/ProductPrice.cs", goldenName: "ProductPrice.cs"},
 		{path: "src/ProductService/ProductService.Infrastructure/DependencyInjection.cs", goldenName: "Infrastructure.DependencyInjection.cs"},
+		{path: "src/ProductService/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs", goldenName: "ProductConfiguration.cs"},
 		{path: "src/ProductService/ProductService.Infrastructure/Persistence/Features/Products/ProductRepository.cs", goldenName: "ProductRepository.cs"},
 		{path: "src/ProductService/ProductService.Infrastructure/Persistence/ProductServiceDbContext.cs", goldenName: "ProductServiceDbContext.cs"},
 		{path: "src/ProductService/ProductService.Infrastructure/Persistence/UnitOfWork.cs", goldenName: "Infrastructure.UnitOfWork.cs"},
@@ -190,7 +191,10 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	assertContains(t, contentByPath["src/ProductService/ProductService.Domain/ValueObjects/ProductName.cs"], "DomainResult<ProductName>")
 	assertContains(t, contentByPath["src/ProductService/ProductService.Application/Common/UnitOfWork.cs"], "Task<int> SaveChangesAsync(CancellationToken cancellationToken)")
 	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/UnitOfWork.cs"], "catch (DbUpdateConcurrencyException)")
-	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/ProductServiceDbContext.cs"], "HasConversion(value => value.Value, value => ProductName.Rehydrate(value))")
+	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/ProductServiceDbContext.cs"], "ApplyConfigurationsFromAssembly(typeof(ProductServiceDbContext).Assembly)")
+	assertNotContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/ProductServiceDbContext.cs"], "modelBuilder.Entity<Product>")
+	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs"], "IEntityTypeConfiguration<Product>")
+	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs"], "HasConversion(value => value.Value, value => ProductService.Domain.ValueObjects.ProductName.Rehydrate(value))")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.EntityFrameworkCore.SqlServer\" Version=\"8.0.28")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.AspNetCore.Mvc.Testing\" Version=\"8.0.28")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.Data.SqlClient\" Version=\"6.1.1")
@@ -809,6 +813,41 @@ func TestGenerateUsesParameterizedRepositoryDiagnostics(t *testing.T) {
 	assertContains(t, repository, "SqlQueryRaw<Guid>(sql, id.Value)")
 	assertNotContains(t, repository, "$\"SELECT")
 	assertNotContains(t, repository, "'{id.Value}'")
+}
+
+func TestGenerateEntityConfigurationQualifiesValueObjectRehydrateWhenNamesCollide(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := spec.Config{
+		Solution: spec.Solution{Name: "OrderPlatform", Description: "Configuration name collision regression."},
+		Services: []spec.Service{{
+			Name: "OrderService",
+			ValueObjects: []spec.ValueObject{{
+				Name:        "OrderConfiguration",
+				Type:        "string",
+				Validations: spec.ValidationRules{Required: boolPtr(true), ValidExample: stringPtr("Standard"), InvalidExample: stringPtr("")},
+			}},
+			Entities: []spec.Entity{{
+				Name: "Order",
+				Fields: []spec.Field{
+					{Name: "Id", Type: "Guid"},
+					{Name: "Configuration", Type: "OrderConfiguration"},
+				},
+			}},
+		}},
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate collision config: %v", err)
+	}
+	configuration := string(generatedContent(t, files, "src/OrderService/OrderService.Infrastructure/Persistence/Configurations/OrderConfiguration.cs"))
+
+	assertContains(t, configuration, "public sealed class OrderConfiguration : IEntityTypeConfiguration<Order>")
+	assertContains(t, configuration, "value => OrderService.Domain.ValueObjects.OrderConfiguration.Rehydrate(value)")
+	assertNotContains(t, configuration, "value => OrderConfiguration.Rehydrate(value)")
 }
 
 func TestDoubleInvalidWitnessesUseAdjacentRepresentableValuesAndOmitExtrema(t *testing.T) {

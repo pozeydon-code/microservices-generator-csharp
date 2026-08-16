@@ -1049,8 +1049,8 @@ func TestDefaultServicePlanGenerationUsesRealPortsWithoutWriting(t *testing.T) {
 	if plan.OutputDir != outputDir {
 		t.Fatalf("expected output dir %q, got %q", outputDir, plan.OutputDir)
 	}
-	if plan.FileCount != 58 || len(plan.Files) != 58 {
-		t.Fatalf("expected 58 planned files, got count=%d len=%d", plan.FileCount, len(plan.Files))
+	if plan.FileCount != 59 || len(plan.Files) != 59 {
+		t.Fatalf("expected 59 planned files, got count=%d len=%d", plan.FileCount, len(plan.Files))
 	}
 	if plan.Files[0].Path != "CommercePlatform.sln" {
 		t.Fatalf("expected first deterministic planned path, got %q", plan.Files[0].Path)

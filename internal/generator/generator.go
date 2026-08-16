@@ -178,6 +178,7 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 				{join("src", service.Name, service.DomainProject.Directory, "Entities", entity.Name+".cs"), templatePath(domainTemplateDir, "entity.tmpl")},
 				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, entity.Name+"Contracts.cs"), templatePath(applicationTemplateDir, "dto.tmpl")},
 				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "I"+entity.Name+"Repository.cs"), templatePath(applicationTemplateDir, "repository-port.tmpl")},
+				{join("src", service.Name, service.InfrastructureProject.Directory, "Persistence", "Configurations", entity.Name+"Configuration.cs"), templatePath(infrastructureTemplateDir, "entity-configuration.tmpl")},
 				{join("src", service.Name, service.InfrastructureProject.Directory, "Persistence", "Features", entity.FeatureName, entity.Name+"Repository.cs"), templatePath(infrastructureTemplateDir, "repository-implementation.tmpl")},
 				{join("src", service.Name, service.WebApiProject.Directory, "Controllers", entity.FeatureName, entity.Name+"Controller.cs"), templatePath(webAPITemplateDir, "controller.tmpl")},
 				{join("tests", service.Name, service.ApplicationTestsProject.Directory, "Features", entity.FeatureName, entity.Name+"ApplicationTests.cs"), templatePath(testsTemplateDir, "application-tests.tmpl")},

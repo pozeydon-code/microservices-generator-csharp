@@ -1,0 +1,23 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using {{ .Service.Name }}.Domain.Entities;
+{{ if .Service.HasValueObjects }}using {{ .Service.Name }}.Domain.ValueObjects;
+{{ end }}
+
+namespace {{ .Service.Name }}.Infrastructure.Persistence.Configurations;
+
+public sealed class {{ .Entity.Name }}Configuration : IEntityTypeConfiguration<{{ .Entity.Name }}>
+{
+    public void Configure(EntityTypeBuilder<{{ .Entity.Name }}> builder)
+    {
+        builder.HasKey(item => item.Id);
+        builder.Property<byte[]>("RowVersion").IsRowVersion();
+{{ range .Entity.NonIDFields }}{{ if not .IsValueObject }}        builder.Property(item => item.{{ .Name }}).IsRequired();
+{{ end }}{{ end }}
+{{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        builder.Property(item => item.{{ .Name }})
+            .HasConversion(value => value.Value, value => {{ $.Service.Name }}.Domain.ValueObjects.{{ .DomainType }}.Rehydrate(value)){{ if .ColumnMaxLength }}
+            .HasMaxLength({{ .ColumnMaxLength }}){{ end }}
+            .IsRequired();
+{{ end }}{{ end }}
+    }
+}
