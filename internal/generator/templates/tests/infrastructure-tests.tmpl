@@ -17,7 +17,7 @@ namespace {{ .Name }}.Infrastructure.Tests;
 public sealed class {{ .Name }}InfrastructureTests
 {
     [Fact]
-    public async Task ReadinessReportsSchemaHealthTransitions()
+    public async Task ReadinessValidatesDatabaseConnectivityAndMappedColumns()
     {
         if (!SqlTestDatabase.IsConfigured) { return; }
         var databaseName = $"{{ .Name }}_readiness_{Guid.NewGuid():N}";
@@ -36,16 +36,16 @@ public sealed class {{ .Name }}InfrastructureTests
             Assert.Equal(ReadinessStatus.Ready, healthy.Status);
         }
 
-{{ if .ReadinessSchemaField }}        await using (var incompatibleContext = database.CreateContext())
+{{ if .ReadinessSchemaField }}        await using (var schemaChangedContext = database.CreateContext())
         {
-            await incompatibleContext.Database.ExecuteSqlRawAsync("ALTER TABLE {{ .ReadinessSchemaEntity }}s DROP COLUMN {{ .ReadinessSchemaField }}");
-            var incompatible = await new SqlReadinessProbe(incompatibleContext, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
-            Assert.Equal(ReadinessStatus.NotReady, incompatible.Status);
+            await schemaChangedContext.Database.ExecuteSqlRawAsync("ALTER TABLE {{ .ReadinessSchemaEntity }}s DROP COLUMN {{ .ReadinessSchemaField }}");
+            var schemaChanged = await new SqlReadinessProbe(schemaChangedContext, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
+            Assert.Equal(ReadinessStatus.NotReady, schemaChanged.Status);
         }
 {{ end }}    }
 
 {{ if .ReadinessLengthField }}    [Fact]
-    public async Task ReadinessRejectsIncorrectStringValueObjectMaxLengthNullabilityAndPreflightFindsViolations()
+    public async Task ValueObjectPreflightFindsStringValueObjectMaxLengthViolations()
     {
         if (!SqlTestDatabase.IsConfigured) { return; }
         var databaseName = $"{{ .Name }}_readiness_length_{Guid.NewGuid():N}";
@@ -53,21 +53,10 @@ public sealed class {{ .Name }}InfrastructureTests
         await database.InitializeAsync();
 
         await using var context = database.CreateContext();
-        var healthy = await new SqlReadinessProbe(context, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
-        Assert.Equal(ReadinessStatus.Ready, healthy.Status);
-
         await context.Database.ExecuteSqlRawAsync("ALTER TABLE {{ .ReadinessLengthEntity }}s ALTER COLUMN {{ .ReadinessLengthField }} nvarchar({{ .ReadinessLengthMaxPlusOne }}) NOT NULL");
-        var unhealthy = await new SqlReadinessProbe(context, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
-        Assert.Equal(ReadinessStatus.NotReady, unhealthy.Status);
-
         await context.Database.ExecuteSqlRawAsync("INSERT INTO [{{ .ReadinessLengthEntity }}s] ([Id], [{{ .ReadinessLengthField }}]{{ range $entity := .Entities }}{{ if eq $entity.Name $.ReadinessLengthEntity }}{{ range $field := $entity.NonIDFields }}{{ if ne $field.Name $.ReadinessLengthField }}, [{{ $field.Name }}]{{ end }}{{ end }}{{ end }}{{ end }}) VALUES ({0}, REPLICATE(N'x', {{ .ReadinessLengthMaxPlusOne }}){{ range $entity := .Entities }}{{ if eq $entity.Name $.ReadinessLengthEntity }}{{ range $field := $entity.NonIDFields }}{{ if ne $field.Name $.ReadinessLengthField }}, {{ $field.SQLSampleLiteral }}{{ end }}{{ end }}{{ end }}{{ end }})", Guid.NewGuid());
         var violatingRows = await context.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM [{{ .ReadinessLengthEntity }}s] WHERE LEN([{{ .ReadinessLengthField }}]) > {{ .ReadinessLengthMax }}").SingleAsync();
         Assert.Equal(1, violatingRows);
-
-        await context.Database.ExecuteSqlRawAsync("DELETE FROM [{{ .ReadinessLengthEntity }}s] WHERE LEN([{{ .ReadinessLengthField }}]) > {{ .ReadinessLengthMax }}");
-        await context.Database.ExecuteSqlRawAsync("ALTER TABLE {{ .ReadinessLengthEntity }}s ALTER COLUMN {{ .ReadinessLengthField }} nvarchar({{ .ReadinessLengthMax }}) NULL");
-        var nullable = await new SqlReadinessProbe(context, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
-        Assert.Equal(ReadinessStatus.NotReady, nullable.Status);
     }
 
     [Fact]

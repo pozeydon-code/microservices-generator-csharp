@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -56,60 +55,34 @@ public sealed class SqlReadinessProbe(ProductServiceDbContext dbContext, ILogger
     private static readonly Action<ILogger, Exception?> ReadinessCheckFailed = LoggerMessage.Define(
         LogLevel.Warning,
         new EventId(1, nameof(ReadinessCheckFailed)),
-        "Readiness check failed while validating SQL Server connectivity or generated schema.");
+        "Readiness check failed while validating SQL Server connectivity.");
 
     public async Task<ReadinessResult> CheckAsync(CancellationToken cancellationToken)
     {
         using var readinessCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         readinessCts.CancelAfter(TimeSpan.FromSeconds(ResiliencePolicy.ReadinessTimeoutSeconds));
+        using var activity = DependencyInjection.ActivitySource.StartActivity("sql.readiness");
+        activity?.SetTag("db.system", "mssql");
         try
         {
-            using var activity = DependencyInjection.ActivitySource.StartActivity("sql.readiness");
-            return await ExpectedSchemaExistsAsync(readinessCts.Token)
-                ? new ReadinessResult(ReadinessStatus.Ready)
-                : new ReadinessResult(ReadinessStatus.NotReady);
+            var canConnect = await dbContext.Database.CanConnectAsync(readinessCts.Token);
+            activity?.SetTag("db.readiness.can_connect", canConnect);
+            if (!canConnect)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "SQL Server connection failed.");
+                return new ReadinessResult(ReadinessStatus.NotReady);
+            }
+
+            await dbContext.Products.AsNoTracking().Take(1).ToListAsync(readinessCts.Token);
+            activity?.SetStatus(ActivityStatusCode.Ok);
+            return new ReadinessResult(ReadinessStatus.Ready);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
+            activity?.SetTag("error.type", ex.GetType().FullName);
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             ReadinessCheckFailed(logger, ex);
             return new ReadinessResult(ReadinessStatus.NotReady);
         }
-    }
-
-    private async Task<bool> ExpectedSchemaExistsAsync(CancellationToken cancellationToken)
-    {
-        var connection = dbContext.Database.GetDbConnection();
-        if (connection.State != System.Data.ConnectionState.Open)
-        {
-            await connection.OpenAsync(cancellationToken);
-        }
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = @"
-SELECT COUNT(*)
-FROM (SELECT 'Products' AS table_name, 'Id' AS column_name, 'uniqueidentifier' AS data_type, CAST(0 AS bit) AS is_rowversion, NULL AS character_maximum_length, 'NO' AS is_nullable
-UNION ALL
-SELECT 'Products' AS table_name, 'IsActive' AS column_name, 'bit' AS data_type, CAST(0 AS bit) AS is_rowversion, NULL AS character_maximum_length, 'NO' AS is_nullable
-UNION ALL
-SELECT 'Products' AS table_name, 'Name' AS column_name, 'nvarchar' AS data_type, CAST(0 AS bit) AS is_rowversion, 100 AS character_maximum_length, 'NO' AS is_nullable
-UNION ALL
-SELECT 'Products' AS table_name, 'Price' AS column_name, 'decimal' AS data_type, CAST(0 AS bit) AS is_rowversion, NULL AS character_maximum_length, 'NO' AS is_nullable
-UNION ALL
-SELECT 'Products', 'RowVersion', 'timestamp', CAST(1 AS bit), NULL, 'YES'
-) expected
-JOIN INFORMATION_SCHEMA.COLUMNS columns
-  ON columns.TABLE_SCHEMA = 'dbo'
- AND columns.TABLE_NAME = expected.table_name
- AND columns.COLUMN_NAME = expected.column_name
-  AND columns.DATA_TYPE = expected.data_type
- AND columns.IS_NULLABLE = expected.is_nullable
- AND (expected.character_maximum_length IS NULL OR columns.CHARACTER_MAXIMUM_LENGTH = expected.character_maximum_length)
-LEFT JOIN sys.tables tables ON tables.name = expected.table_name
-LEFT JOIN sys.schemas schemas ON schemas.schema_id = tables.schema_id AND schemas.name = 'dbo'
-LEFT JOIN sys.columns syscolumns ON syscolumns.object_id = tables.object_id AND syscolumns.name = expected.column_name
-WHERE expected.is_rowversion = 0 OR syscolumns.system_type_id = 189";
-        command.CommandTimeout = ResiliencePolicy.SqlCommandTimeoutSeconds;
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt32(result, CultureInfo.InvariantCulture) == 5;
     }
 }

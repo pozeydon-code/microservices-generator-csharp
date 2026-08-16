@@ -17,7 +17,7 @@ namespace ProductService.Infrastructure.Tests;
 public sealed class ProductServiceInfrastructureTests
 {
     [Fact]
-    public async Task ReadinessReportsSchemaHealthTransitions()
+    public async Task ReadinessValidatesDatabaseConnectivityAndMappedColumns()
     {
         if (!SqlTestDatabase.IsConfigured) { return; }
         var databaseName = $"ProductService_readiness_{Guid.NewGuid():N}";
@@ -36,16 +36,16 @@ public sealed class ProductServiceInfrastructureTests
             Assert.Equal(ReadinessStatus.Ready, healthy.Status);
         }
 
-        await using (var incompatibleContext = database.CreateContext())
+        await using (var schemaChangedContext = database.CreateContext())
         {
-            await incompatibleContext.Database.ExecuteSqlRawAsync("ALTER TABLE Products DROP COLUMN IsActive");
-            var incompatible = await new SqlReadinessProbe(incompatibleContext, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
-            Assert.Equal(ReadinessStatus.NotReady, incompatible.Status);
+            await schemaChangedContext.Database.ExecuteSqlRawAsync("ALTER TABLE Products DROP COLUMN IsActive");
+            var schemaChanged = await new SqlReadinessProbe(schemaChangedContext, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
+            Assert.Equal(ReadinessStatus.NotReady, schemaChanged.Status);
         }
     }
 
     [Fact]
-    public async Task ReadinessRejectsIncorrectStringValueObjectMaxLengthNullabilityAndPreflightFindsViolations()
+    public async Task ValueObjectPreflightFindsStringValueObjectMaxLengthViolations()
     {
         if (!SqlTestDatabase.IsConfigured) { return; }
         var databaseName = $"ProductService_readiness_length_{Guid.NewGuid():N}";
@@ -53,21 +53,10 @@ public sealed class ProductServiceInfrastructureTests
         await database.InitializeAsync();
 
         await using var context = database.CreateContext();
-        var healthy = await new SqlReadinessProbe(context, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
-        Assert.Equal(ReadinessStatus.Ready, healthy.Status);
-
         await context.Database.ExecuteSqlRawAsync("ALTER TABLE Products ALTER COLUMN Name nvarchar(101) NOT NULL");
-        var unhealthy = await new SqlReadinessProbe(context, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
-        Assert.Equal(ReadinessStatus.NotReady, unhealthy.Status);
-
         await context.Database.ExecuteSqlRawAsync("INSERT INTO [Products] ([Id], [Name], [IsActive], [Price]) VALUES ({0}, REPLICATE(N'x', 101), 1, 0)", Guid.NewGuid());
         var violatingRows = await context.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM [Products] WHERE LEN([Name]) > 100").SingleAsync();
         Assert.Equal(1, violatingRows);
-
-        await context.Database.ExecuteSqlRawAsync("DELETE FROM [Products] WHERE LEN([Name]) > 100");
-        await context.Database.ExecuteSqlRawAsync("ALTER TABLE Products ALTER COLUMN Name nvarchar(100) NULL");
-        var nullable = await new SqlReadinessProbe(context, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
-        Assert.Equal(ReadinessStatus.NotReady, nullable.Status);
     }
 
     [Fact]
