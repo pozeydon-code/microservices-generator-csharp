@@ -1,13 +1,13 @@
 using ErrorOr;
 using MediatR;
 using ProductService.Application.Common;
-using ProductService.Domain.Features.Products;
-using ProductService.Domain.Common.ValueObjects;
+using ProductService.Domain.Entities;
+using ProductService.Domain.ValueObjects;
 
 
 namespace ProductService.Application.Features.Products.Update;
 
-public sealed class UpdateProductCommandHandler(IProductRepository repository) : IRequestHandler<UpdateProductCommand, ErrorOr<ProductDto>>
+public sealed class UpdateProductCommandHandler(IProductRepository repository, IUnitOfWork unitOfWork) : IRequestHandler<UpdateProductCommand, ErrorOr<ProductDto>>
 {
     public async Task<ErrorOr<ProductDto>> Handle(UpdateProductCommand request, CancellationToken cancellationToken)
     {
@@ -54,6 +54,15 @@ public sealed class UpdateProductCommandHandler(IProductRepository repository) :
         if (status == SaveResultStatus.InvalidToken)
         {
             return Error.Validation(code: "ConcurrencyToken.Invalid", description: "Invalid concurrency token.", metadata: new Dictionary<string, object> { ["field"] = "concurrencyToken" });
+        }
+
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            return Error.Conflict(code: "Product.ConcurrencyConflict", description: "Product was changed by another request.");
         }
 
         var updated = await repository.GetByIdAsync(request.Id, cancellationToken);

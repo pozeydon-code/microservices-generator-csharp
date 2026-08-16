@@ -2,8 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using {{ .Service.Name }}.Application.Common;
 using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
-using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
-using {{ .Service.Name }}.Domain.Common;
+using {{ .Service.Name }}.Domain.Entities;
+using {{ .Service.Name }}.Domain.Primitives;
 using {{ .Service.Name }}.Infrastructure.Persistence;
 
 namespace {{ .Service.Name }}.Infrastructure.Persistence.Features.{{ .Entity.FeatureName }};
@@ -50,54 +50,36 @@ public sealed class {{ .Entity.Name }}Repository({{ .Service.Name }}DbContext db
         }
     }
 
-    public async Task<EntitySnapshot<{{ .Entity.Name }}>> AddAsync({{ .Entity.Name }} entity, CancellationToken cancellationToken)
+    public async Task AddAsync({{ .Entity.Name }} entity, CancellationToken cancellationToken)
     {
         using var activity = {{ .Service.Name }}.Infrastructure.DependencyInjection.ActivitySource.StartActivity("{{ .Entity.Name }}.add");
         await dbContext.{{ .Entity.Name }}s.AddAsync(entity, cancellationToken);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return ToSnapshot(entity);
     }
 
-    public async Task<SaveResultStatus> UpdateAsync({{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
+    public Task<SaveResultStatus> UpdateAsync({{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
     {
         using var activity = {{ .Service.Name }}.Infrastructure.DependencyInjection.ActivitySource.StartActivity("{{ .Entity.Name }}.update");
-        try
+        _ = cancellationToken;
+        if (!TryDecodeToken(concurrencyToken, out var rowVersion))
         {
-            if (!TryDecodeToken(concurrencyToken, out var rowVersion))
-            {
-                return SaveResultStatus.InvalidToken;
-            }
-            dbContext.{{ .Entity.Name }}s.Update(entity);
-            dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return SaveResultStatus.Saved;
+            return Task.FromResult(SaveResultStatus.InvalidToken);
         }
-        catch (DbUpdateConcurrencyException)
-        {
-            activity?.AddEvent(new("sql.concurrency_conflict"));
-            return SaveResultStatus.Conflict;
-        }
+        dbContext.{{ .Entity.Name }}s.Update(entity);
+        dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
+        return Task.FromResult(SaveResultStatus.Saved);
     }
 
-    public async Task<SaveResultStatus> DeleteAsync({{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
+    public Task<SaveResultStatus> DeleteAsync({{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
     {
         using var activity = {{ .Service.Name }}.Infrastructure.DependencyInjection.ActivitySource.StartActivity("{{ .Entity.Name }}.delete");
-        try
+        _ = cancellationToken;
+        if (!TryDecodeToken(concurrencyToken, out var rowVersion))
         {
-            if (!TryDecodeToken(concurrencyToken, out var rowVersion))
-            {
-                return SaveResultStatus.InvalidToken;
-            }
-            dbContext.{{ .Entity.Name }}s.Remove(entity);
-            dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return SaveResultStatus.Saved;
+            return Task.FromResult(SaveResultStatus.InvalidToken);
         }
-        catch (DbUpdateConcurrencyException)
-        {
-            activity?.AddEvent(new("sql.concurrency_conflict"));
-            return SaveResultStatus.Conflict;
-        }
+        dbContext.{{ .Entity.Name }}s.Remove(entity);
+        dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
+        return Task.FromResult(SaveResultStatus.Saved);
     }
 
     private EntitySnapshot<{{ .Entity.Name }}> ToSnapshot({{ .Entity.Name }} entity) =>

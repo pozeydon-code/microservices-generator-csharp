@@ -1,13 +1,13 @@
 using ErrorOr;
 using MediatR;
 using {{ .Service.Name }}.Application.Common;
-using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
-{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Common.ValueObjects;
+using {{ .Service.Name }}.Domain.Entities;
+{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.ValueObjects;
 {{ end }}
 
 namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Create;
 
-public sealed class Create{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Repository repository) : IRequestHandler<Create{{ .Entity.Name }}Command, ErrorOr<{{ .Entity.Name }}Dto>>
+public sealed class Create{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Repository repository, IUnitOfWork unitOfWork) : IRequestHandler<Create{{ .Entity.Name }}Command, ErrorOr<{{ .Entity.Name }}Dto>>
 {
     public async Task<ErrorOr<{{ .Entity.Name }}Dto>> Handle(Create{{ .Entity.Name }}Command request, CancellationToken cancellationToken)
     {
@@ -26,8 +26,18 @@ public sealed class Create{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Re
         {
 {{ range .Entity.NonIDFields }}            {{ .Name }} = {{ if .IsValueObject }}{{ .CamelName }}Result.Value!{{ else }}request.{{ .Name }}{{ end }},
 {{ end }}        });
-        var snapshot = await repository.AddAsync(entity, cancellationToken);
-        return ToDto(snapshot);
+        await repository.AddAsync(entity, cancellationToken);
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            return Error.Conflict(code: "{{ .Entity.Name }}.ConcurrencyConflict", description: "{{ .Entity.Name }} was changed by another request.");
+        }
+
+        var created = await repository.GetByIdAsync(entity.Id, cancellationToken);
+        return ToDto(created ?? new EntitySnapshot<{{ .Entity.Name }}>(entity, string.Empty));
     }
 
     private static {{ .Entity.Name }}Dto ToDto(EntitySnapshot<{{ .Entity.Name }}> snapshot) => new(

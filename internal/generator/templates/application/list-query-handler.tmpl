@@ -2,8 +2,8 @@ using ErrorOr;
 using MediatR;
 using {{ .Service.Name }}.Application.Common;
 using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
-using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
-{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Common.ValueObjects;
+using {{ .Service.Name }}.Domain.Entities;
+{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.ValueObjects;
 {{ end }}
 
 namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.List;

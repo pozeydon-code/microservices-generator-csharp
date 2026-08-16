@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
-using ProductService.Domain.Features.Products;
-using ProductService.Domain.Common.ValueObjects;
+using ProductService.Domain.Entities;
+using ProductService.Domain.ValueObjects;
 
 
 namespace ProductService.Infrastructure.Persistence;

@@ -88,10 +88,13 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		if err := g.appendRendered(&files, join("src", service.Name, service.ApplicationProject.Directory, "Common", "ValidationBehavior.cs"), templatePath(applicationTemplateDir, "validation-behavior.tmpl"), service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("src", service.Name, service.DomainProject.Directory, "Shared", "DomainResult.cs"), templatePath(domainTemplateDir, "domain-result.tmpl"), service); err != nil {
+		if err := g.appendRendered(&files, join("src", service.Name, service.ApplicationProject.Directory, "Common", "UnitOfWork.cs"), templatePath(applicationTemplateDir, "application-unit-of-work.tmpl"), service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("src", service.Name, service.DomainProject.Directory, "Shared", "DomainReconstitutionException.cs"), templatePath(domainTemplateDir, "domain-reconstitution-exception.tmpl"), service); err != nil {
+		if err := g.appendRendered(&files, join("src", service.Name, service.DomainProject.Directory, "Primitives", "DomainResult.cs"), templatePath(domainTemplateDir, "domain-result.tmpl"), service); err != nil {
+			return nil, err
+		}
+		if err := g.appendRendered(&files, join("src", service.Name, service.DomainProject.Directory, "Primitives", "DomainReconstitutionException.cs"), templatePath(domainTemplateDir, "domain-reconstitution-exception.tmpl"), service); err != nil {
 			return nil, err
 		}
 		if err := g.appendRendered(&files, join("src", service.Name, service.InfrastructureProject.Directory, service.InfrastructureProject.FileName), templatePath(infrastructureTemplateDir, "infrastructure-project.tmpl"), service); err != nil {
@@ -128,7 +131,7 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 			return nil, err
 		}
 		for _, valueObject := range service.ValueObjects {
-			if err := g.appendRendered(&files, join("src", service.Name, service.DomainProject.Directory, "Shared", "ValueObjects", valueObject.Name+".cs"), templatePath(domainTemplateDir, "value-object.tmpl"), ValueObjectTemplateData{Service: service, ValueObject: valueObject}); err != nil {
+			if err := g.appendRendered(&files, join("src", service.Name, service.DomainProject.Directory, "ValueObjects", valueObject.Name+".cs"), templatePath(domainTemplateDir, "value-object.tmpl"), ValueObjectTemplateData{Service: service, ValueObject: valueObject}); err != nil {
 				return nil, err
 			}
 		}
@@ -150,6 +153,9 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		if err := g.appendRendered(&files, join("src", service.Name, service.InfrastructureProject.Directory, "DependencyInjection.cs"), templatePath(infrastructureTemplateDir, "infrastructure-di.tmpl"), service); err != nil {
 			return nil, err
 		}
+		if err := g.appendRendered(&files, join("src", service.Name, service.InfrastructureProject.Directory, "Persistence", "UnitOfWork.cs"), templatePath(infrastructureTemplateDir, "infrastructure-unit-of-work.tmpl"), service); err != nil {
+			return nil, err
+		}
 		if err := g.appendRendered(&files, join("src", service.Name, service.InfrastructureProject.Directory, "Persistence", service.Name+"DbContext.cs"), templatePath(infrastructureTemplateDir, "dbcontext.tmpl"), service); err != nil {
 			return nil, err
 		}
@@ -169,7 +175,7 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		for _, entity := range service.Entities {
 			data := EntityTemplateData{Service: service, Entity: entity}
 			entityFiles := []struct{ path, template string }{
-				{join("src", service.Name, service.DomainProject.Directory, "Features", entity.FeatureName, entity.Name+".cs"), templatePath(domainTemplateDir, "entity.tmpl")},
+				{join("src", service.Name, service.DomainProject.Directory, "Entities", entity.Name+".cs"), templatePath(domainTemplateDir, "entity.tmpl")},
 				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, entity.Name+"Contracts.cs"), templatePath(applicationTemplateDir, "dto.tmpl")},
 				{join("src", service.Name, service.ApplicationProject.Directory, "Features", entity.FeatureName, "I"+entity.Name+"Repository.cs"), templatePath(applicationTemplateDir, "repository-port.tmpl")},
 				{join("src", service.Name, service.InfrastructureProject.Directory, "Persistence", "Features", entity.FeatureName, entity.Name+"Repository.cs"), templatePath(infrastructureTemplateDir, "repository-implementation.tmpl")},

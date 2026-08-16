@@ -2,8 +2,8 @@ using ErrorOr;
 using MediatR;
 using ProductService.Application.Common;
 using ProductService.Application.Features.Products;
-using ProductService.Domain.Features.Products;
-using ProductService.Domain.Common.ValueObjects;
+using ProductService.Domain.Entities;
+using ProductService.Domain.ValueObjects;
 
 
 namespace ProductService.Application.Features.Products.List;

@@ -8,7 +8,7 @@ public sealed class {{ .Name }}ArchitectureTests
     [Fact]
     public void RuntimeAssemblyReferencesFollowCleanArchitectureBoundaries()
     {
-        var domain = typeof({{ .Name }}.Domain.Features.{{ (index .Entities 0).FeatureName }}.{{ (index .Entities 0).Name }}).Assembly;
+        var domain = typeof({{ .Name }}.Domain.Entities.{{ (index .Entities 0).Name }}).Assembly;
         var application = typeof({{ .Name }}.Application.Features.{{ (index .Entities 0).FeatureName }}.Create.Create{{ (index .Entities 0).Name }}Command).Assembly;
         var webApi = typeof({{ .Name }}.WebApi.Controllers.{{ (index .Entities 0).FeatureName }}.{{ (index .Entities 0).Name }}Controller).Assembly;
         var infrastructure = typeof({{ .Name }}.Infrastructure.DependencyInjection).Assembly;

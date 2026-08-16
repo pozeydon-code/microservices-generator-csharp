@@ -5,9 +5,9 @@ using ProductService.Application.Features.Products.Delete;
 using ProductService.Application.Features.Products.GetById;
 using ProductService.Application.Features.Products.List;
 using ProductService.Application.Features.Products.Update;
-using ProductService.Domain.Features.Products;
-using DomainProduct = ProductService.Domain.Features.Products.Product;
-using ProductService.Domain.Common.ValueObjects;
+using ProductService.Domain.Entities;
+using DomainProduct = ProductService.Domain.Entities.Product;
+using ProductService.Domain.ValueObjects;
 
 using ErrorOr;
 using Xunit;
@@ -20,7 +20,8 @@ public sealed class ProductApplicationTests
     public async Task CreateCommandHandlerPersistsEntityAndMapsSnapshot()
     {
         var repository = new FakeProductRepository();
-        var handler = new CreateProductCommandHandler(repository);
+        var unitOfWork = new FakeUnitOfWork(repository);
+        var handler = new CreateProductCommandHandler(repository, unitOfWork);
 
         var result = await handler.Handle(new CreateProductCommand
         {
@@ -31,6 +32,7 @@ public sealed class ProductApplicationTests
 
         Assert.False(result.IsError);
         Assert.Equal(1, repository.AddCalls);
+        Assert.Equal(1, unitOfWork.SaveCalls);
         var created = result.Value;
         Assert.NotEqual(Guid.Empty, created.Id);
         Assert.True(created.IsActive);
@@ -97,7 +99,8 @@ public sealed class ProductApplicationTests
         var repository = new FakeProductRepository();
         var entity = DomainProduct.Create(new ProductState { IsActive = true, Name = ProductName.Create("Product Prime").Value!, Price = ProductPrice.Create(0m).Value!,  });
         repository.Items.Add(entity);
-        var handler = new UpdateProductCommandHandler(repository);
+        var unitOfWork = new FakeUnitOfWork(repository);
+        var handler = new UpdateProductCommandHandler(repository, unitOfWork);
 
         var result = await handler.Handle(new UpdateProductCommand
         {
@@ -109,6 +112,7 @@ public sealed class ProductApplicationTests
         }, CancellationToken.None);
 
         Assert.False(result.IsError);
+        Assert.Equal(1, unitOfWork.SaveCalls);
         Assert.Equal(entity.Id, result.Value.Id);
         Assert.True(EqualityComparer<bool>.Default.Equals(false, result.Value.IsActive));
         Assert.True(EqualityComparer<string>.Default.Equals("Product Prime2", result.Value.Name));
@@ -122,10 +126,12 @@ public sealed class ProductApplicationTests
         var repository = new FakeProductRepository();
         var entity = DomainProduct.Create(new ProductState { IsActive = true, Name = ProductName.Create("Product Prime").Value!, Price = ProductPrice.Create(0m).Value!,  });
         repository.Items.Add(entity);
-        var handler = new UpdateProductCommandHandler(repository);
+        var unitOfWork = new FakeUnitOfWork(repository);
+        var handler = new UpdateProductCommandHandler(repository, unitOfWork);
 
         var missing = await handler.Handle(new UpdateProductCommand { Id = Guid.NewGuid(), IsActive = true, Name = "Product Prime", Price = 0m,  ConcurrencyToken = "token-v1" }, CancellationToken.None);
-        var conflict = await handler.Handle(new UpdateProductCommand { Id = entity.Id, IsActive = false, Name = "Product Prime2", Price = 999999.99m,  ConcurrencyToken = "stale-token" }, CancellationToken.None);
+        unitOfWork.ConflictOnNextSave = true;
+        var conflict = await handler.Handle(new UpdateProductCommand { Id = entity.Id, IsActive = false, Name = "Product Prime2", Price = 999999.99m,  ConcurrencyToken = "token-v1" }, CancellationToken.None);
         var invalid = await handler.Handle(new UpdateProductCommand { Id = entity.Id, IsActive = false, Name = "Product Prime2", Price = 999999.99m,  ConcurrencyToken = "unknown-token" }, CancellationToken.None);
 
         Assert.Equal(ErrorType.NotFound, missing.FirstError.Type);
@@ -148,11 +154,13 @@ public sealed class ProductApplicationTests
         var repository = new FakeProductRepository();
         var entity = DomainProduct.Create(new ProductState { IsActive = true, Name = ProductName.Create("Product Prime").Value!, Price = ProductPrice.Create(0m).Value!,  });
         repository.Items.Add(entity);
-        var handler = new DeleteProductCommandHandler(repository);
+        var unitOfWork = new FakeUnitOfWork(repository);
+        var handler = new DeleteProductCommandHandler(repository, unitOfWork);
 
         var missing = await handler.Handle(new DeleteProductCommand(Guid.NewGuid(), "token-v1"), CancellationToken.None);
         var missingMalformed = await handler.Handle(new DeleteProductCommand(Guid.NewGuid(), "unknown-token"), CancellationToken.None);
-        var conflict = await handler.Handle(new DeleteProductCommand(entity.Id, "stale-token"), CancellationToken.None);
+        unitOfWork.ConflictOnNextSave = true;
+        var conflict = await handler.Handle(new DeleteProductCommand(entity.Id, "token-v1"), CancellationToken.None);
         var invalid = await handler.Handle(new DeleteProductCommand(entity.Id, "unknown-token"), CancellationToken.None);
         var deleted = await handler.Handle(new DeleteProductCommand(entity.Id, "token-v1"), CancellationToken.None);
 
@@ -187,6 +195,8 @@ public sealed class ProductApplicationTests
         public List<DomainProduct> Items { get; } = [];
         public int AddCalls { get; private set; }
         private string CurrentToken { get; set; } = "token-v1";
+        private bool PendingTokenUpdate { get; set; }
+        private DomainProduct? PendingDelete { get; set; }
 
         public Task<(IReadOnlyList<EntitySnapshot<DomainProduct>> Items, int TotalCount)> ListAsync(int skip, int take, CancellationToken cancellationToken) =>
             Task.FromResult(((IReadOnlyList<EntitySnapshot<DomainProduct>>)Items.Skip(skip).Take(take).Select(ToSnapshot).ToList(), Items.Count));
@@ -194,29 +204,60 @@ public sealed class ProductApplicationTests
         public Task<EntitySnapshot<DomainProduct>?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(Items.SingleOrDefault(item => item.Id == id) is { } entity ? ToSnapshot(entity) : null);
 
-        public Task<EntitySnapshot<DomainProduct>> AddAsync(DomainProduct entity, CancellationToken cancellationToken)
+        public Task AddAsync(DomainProduct entity, CancellationToken cancellationToken)
         {
             AddCalls++;
             Items.Add(entity);
-            return Task.FromResult(ToSnapshot(entity));
+            return Task.CompletedTask;
         }
 
         public Task<SaveResultStatus> UpdateAsync(DomainProduct entity, string concurrencyToken, CancellationToken cancellationToken)
         {
-            if (concurrencyToken == "stale-token") return Task.FromResult(SaveResultStatus.Conflict);
             if (concurrencyToken != CurrentToken) return Task.FromResult(SaveResultStatus.InvalidToken);
-            CurrentToken = "token-v2";
+            PendingTokenUpdate = true;
             return Task.FromResult(SaveResultStatus.Saved);
         }
 
         public Task<SaveResultStatus> DeleteAsync(DomainProduct entity, string concurrencyToken, CancellationToken cancellationToken)
         {
-            if (concurrencyToken == "stale-token") return Task.FromResult(SaveResultStatus.Conflict);
             if (concurrencyToken != CurrentToken) return Task.FromResult(SaveResultStatus.InvalidToken);
-            Items.Remove(entity);
+            PendingDelete = entity;
             return Task.FromResult(SaveResultStatus.Saved);
         }
 
+        public void Commit()
+        {
+            if (PendingDelete is not null)
+            {
+                Items.Remove(PendingDelete);
+                PendingDelete = null;
+            }
+            if (PendingTokenUpdate)
+            {
+                CurrentToken = "token-v2";
+                PendingTokenUpdate = false;
+            }
+        }
+
         private EntitySnapshot<DomainProduct> ToSnapshot(DomainProduct entity) => new(entity, CurrentToken);
+    }
+
+    private sealed class FakeUnitOfWork(FakeProductRepository repository) : IUnitOfWork
+    {
+        public int SaveCalls { get; private set; }
+        public bool ConflictOnNextSave { get; set; }
+
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
+        {
+            SaveCalls++;
+            if (ConflictOnNextSave)
+            {
+                ConflictOnNextSave = false;
+                throw new ConcurrencyConflictException();
+            }
+
+            repository.Commit();
+            return Task.FromResult(1);
+        }
     }
 }

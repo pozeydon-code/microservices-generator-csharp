@@ -71,6 +71,7 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 		{path: "src/ProductService/ProductService.Application/Common/PaginationPolicy.cs", goldenName: "PaginationPolicy.cs"},
 		{path: "src/ProductService/ProductService.Application/Common/Readiness.cs", goldenName: "Readiness.cs"},
 		{path: "src/ProductService/ProductService.Application/Common/Results.cs", goldenName: "Results.cs"},
+		{path: "src/ProductService/ProductService.Application/Common/UnitOfWork.cs", goldenName: "UnitOfWork.cs"},
 		{path: "src/ProductService/ProductService.Application/Common/ValidationBehavior.cs", goldenName: "ValidationBehavior.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/Create/CreateProductCommand.cs", goldenName: "CreateProductCommand.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/Create/CreateProductCommandHandler.cs", goldenName: "CreateProductCommandHandler.cs"},
@@ -89,15 +90,16 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 		{path: "src/ProductService/ProductService.Application/Features/Products/Update/UpdateProductCommandHandler.cs", goldenName: "UpdateProductCommandHandler.cs"},
 		{path: "src/ProductService/ProductService.Application/Features/Products/Update/UpdateProductCommandValidator.cs", goldenName: "UpdateProductCommandValidator.cs"},
 		{path: "src/ProductService/ProductService.Application/ProductService.Application.csproj", goldenName: "ProductService.Application.csproj"},
-		{path: "src/ProductService/ProductService.Domain/Features/Products/Product.cs", goldenName: "Product.cs"},
+		{path: "src/ProductService/ProductService.Domain/Entities/Product.cs", goldenName: "Product.cs"},
+		{path: "src/ProductService/ProductService.Domain/Primitives/DomainReconstitutionException.cs", goldenName: "DomainReconstitutionException.cs"},
+		{path: "src/ProductService/ProductService.Domain/Primitives/DomainResult.cs", goldenName: "DomainResult.cs"},
 		{path: "src/ProductService/ProductService.Domain/ProductService.Domain.csproj", goldenName: "ProductService.Domain.csproj"},
-		{path: "src/ProductService/ProductService.Domain/Shared/DomainReconstitutionException.cs", goldenName: "DomainReconstitutionException.cs"},
-		{path: "src/ProductService/ProductService.Domain/Shared/DomainResult.cs", goldenName: "DomainResult.cs"},
-		{path: "src/ProductService/ProductService.Domain/Shared/ValueObjects/ProductName.cs", goldenName: "ProductName.cs"},
-		{path: "src/ProductService/ProductService.Domain/Shared/ValueObjects/ProductPrice.cs", goldenName: "ProductPrice.cs"},
+		{path: "src/ProductService/ProductService.Domain/ValueObjects/ProductName.cs", goldenName: "ProductName.cs"},
+		{path: "src/ProductService/ProductService.Domain/ValueObjects/ProductPrice.cs", goldenName: "ProductPrice.cs"},
 		{path: "src/ProductService/ProductService.Infrastructure/DependencyInjection.cs", goldenName: "Infrastructure.DependencyInjection.cs"},
 		{path: "src/ProductService/ProductService.Infrastructure/Persistence/Features/Products/ProductRepository.cs", goldenName: "ProductRepository.cs"},
 		{path: "src/ProductService/ProductService.Infrastructure/Persistence/ProductServiceDbContext.cs", goldenName: "ProductServiceDbContext.cs"},
+		{path: "src/ProductService/ProductService.Infrastructure/Persistence/UnitOfWork.cs", goldenName: "Infrastructure.UnitOfWork.cs"},
 		{path: "src/ProductService/ProductService.Infrastructure/Persistence/ValueObjectPreflight.sql", goldenName: "ValueObjectPreflight.sql"},
 		{path: "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj", goldenName: "ProductService.Infrastructure.csproj"},
 		{path: "src/ProductService/ProductService.WebApi/Common/ErrorOrProblemMapper.cs", goldenName: "ErrorOrProblemMapper.cs"},
@@ -185,7 +187,9 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	assertNotContains(t, contentByPath["src/ProductService/ProductService.Application/ProductService.Application.csproj"], "ProductService.Infrastructure")
 	assertNotContains(t, contentByPath["src/ProductService/ProductService.Application/ProductService.Application.csproj"], "ProductService.WebApi")
 	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj"], "ProductService.Application.csproj")
-	assertContains(t, contentByPath["src/ProductService/ProductService.Domain/Shared/ValueObjects/ProductName.cs"], "DomainResult<ProductName>")
+	assertContains(t, contentByPath["src/ProductService/ProductService.Domain/ValueObjects/ProductName.cs"], "DomainResult<ProductName>")
+	assertContains(t, contentByPath["src/ProductService/ProductService.Application/Common/UnitOfWork.cs"], "Task<int> SaveChangesAsync(CancellationToken cancellationToken)")
+	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/UnitOfWork.cs"], "catch (DbUpdateConcurrencyException)")
 	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/ProductServiceDbContext.cs"], "HasConversion(value => value.Value, value => ProductName.Rehydrate(value))")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.EntityFrameworkCore.SqlServer\" Version=\"8.0.28")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.AspNetCore.Mvc.Testing\" Version=\"8.0.28")
@@ -208,6 +212,7 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	infraDI := contentByPath["src/ProductService/ProductService.Infrastructure/DependencyInjection.cs"]
 	readme := contentByPath["README.md"]
 	assertContains(t, infraDI, "IReadinessProbe")
+	assertContains(t, infraDI, "IUnitOfWork, UnitOfWork")
 	assertContains(t, infraDI, "public const int SqlConnectionTimeoutSeconds = 2")
 	assertContains(t, infraDI, "public const int SqlCommandTimeoutSeconds = 2")
 	assertContains(t, infraDI, "public const int SqlRetryCount = 1")
@@ -260,9 +265,10 @@ func TestGenerateCreateCQRSSliceUsesApplicationPipelineAndWebApiMapping(t *testi
 
 	assertContains(t, command, "IRequest<ErrorOr<ProductDto>>")
 	assertNotContains(t, command, "ConcurrencyToken")
-	assertContains(t, handler, "IProductRepository repository")
+	assertContains(t, handler, "IProductRepository repository, IUnitOfWork unitOfWork")
 	assertContains(t, handler, "ProductName.Create(request.Name, \"name\")")
 	assertContains(t, handler, "repository.AddAsync(entity, cancellationToken)")
+	assertContains(t, handler, "unitOfWork.SaveChangesAsync(cancellationToken)")
 	assertNotContains(t, handler, "Microsoft.EntityFrameworkCore")
 	assertContains(t, validator, "AbstractValidator<CreateProductCommand>")
 	assertContains(t, validator, "ProductPrice.Create(value, \"price\")")
@@ -311,6 +317,7 @@ func TestGenerateReadCQRSSliceUsesQueriesAndPreservesLegacyPaginationContract(t 
 	assertContains(t, updateCommand, "IRequest<ErrorOr<ProductDto>>")
 	assertContains(t, updateCommand, "ConcurrencyToken")
 	assertContains(t, updateHandler, "repository.UpdateAsync(snapshot.Entity, request.ConcurrencyToken")
+	assertContains(t, updateHandler, "unitOfWork.SaveChangesAsync(cancellationToken)")
 	assertContains(t, updateValidator, "ConcurrencyToken.Required")
 	assertContains(t, deleteCommand, "IRequest<ErrorOr<Deleted>>")
 	assertContains(t, deleteHandler, "Result.Deleted")
@@ -717,7 +724,7 @@ func TestGenerateRecordEntityTestsUseDomainAliases(t *testing.T) {
 			infrastructureTests := string(generatedContent(t, files, "tests/RecordService/RecordService.Infrastructure.Tests/RecordServiceInfrastructureTests.cs"))
 
 			for _, content := range []string{applicationTests, infrastructureTests} {
-				assertContains(t, content, "using DomainRecord = RecordService.Domain.Features.Records.Record;")
+				assertContains(t, content, "using DomainRecord = RecordService.Domain.Entities.Record;")
 			}
 			for _, expected := range []string{
 				"DomainRecord.Create(new RecordState",

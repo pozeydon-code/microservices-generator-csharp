@@ -8,7 +8,7 @@ public sealed class ProductServiceArchitectureTests
     [Fact]
     public void RuntimeAssemblyReferencesFollowCleanArchitectureBoundaries()
     {
-        var domain = typeof(ProductService.Domain.Features.Products.Product).Assembly;
+        var domain = typeof(ProductService.Domain.Entities.Product).Assembly;
         var application = typeof(ProductService.Application.Features.Products.Create.CreateProductCommand).Assembly;
         var webApi = typeof(ProductService.WebApi.Controllers.Products.ProductController).Assembly;
         var infrastructure = typeof(ProductService.Infrastructure.DependencyInjection).Assembly;

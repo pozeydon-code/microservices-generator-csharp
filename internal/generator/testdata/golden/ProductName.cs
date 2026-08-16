@@ -1,8 +1,8 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-using ProductService.Domain.Common;
+using ProductService.Domain.Primitives;
 
-namespace ProductService.Domain.Common.ValueObjects;
+namespace ProductService.Domain.ValueObjects;
 
 public sealed class ProductName : IEquatable<ProductName>
 {

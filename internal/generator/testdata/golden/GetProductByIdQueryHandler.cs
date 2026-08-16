@@ -2,7 +2,7 @@ using ErrorOr;
 using MediatR;
 using ProductService.Application.Common;
 using ProductService.Application.Features.Products;
-using ProductService.Domain.Features.Products;
+using ProductService.Domain.Entities;
 
 namespace ProductService.Application.Features.Products.GetById;
 

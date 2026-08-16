@@ -4,10 +4,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 using ProductService.Infrastructure;
 using ProductService.Application.Common;
 using ProductService.Application.Features.Products;
-using ProductService.Domain.Features.Products;
+using ProductService.Domain.Entities;
 using ProductService.Infrastructure.Persistence.Features.Products;
-using DomainProduct = ProductService.Domain.Features.Products.Product;
-using ProductService.Domain.Common.ValueObjects;
+using DomainProduct = ProductService.Domain.Entities.Product;
+using ProductService.Domain.ValueObjects;
 
 using ProductService.Infrastructure.Persistence;
 using Xunit;
@@ -115,7 +115,12 @@ public sealed class ProductServiceInfrastructureTests
 
         await using var createContext = database.CreateContext();
         var repository = new ProductRepository(createContext, NullLogger<ProductRepository>.Instance);
-        var created = await repository.AddAsync(DomainProduct.Create(new ProductState { IsActive = true, Name = ProductName.Create("Product Prime").Value!, Price = ProductPrice.Create(0m).Value!,  }), CancellationToken.None);
+        var unitOfWork = new UnitOfWork(createContext);
+        var entity = DomainProduct.Create(new ProductState { IsActive = true, Name = ProductName.Create("Product Prime").Value!, Price = ProductPrice.Create(0m).Value!,  });
+        await repository.AddAsync(entity, CancellationToken.None);
+        await unitOfWork.SaveChangesAsync(CancellationToken.None);
+        var created = await repository.GetByIdAsync(entity.Id, CancellationToken.None);
+        Assert.NotNull(created);
         Assert.False(string.IsNullOrWhiteSpace(created.ConcurrencyToken));
         Assert.True(EqualityComparer<bool>.Default.Equals(true, created.Entity.IsActive));
         Assert.True(EqualityComparer<string>.Default.Equals("Product Prime", created.Entity.Name.Value));
@@ -123,6 +128,7 @@ public sealed class ProductServiceInfrastructureTests
 
         await using var reloadContext = database.CreateContext();
         var reloadRepository = new ProductRepository(reloadContext, NullLogger<ProductRepository>.Instance);
+        var reloadUnitOfWork = new UnitOfWork(reloadContext);
         var reloaded = await reloadRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None);
         Assert.NotNull(reloaded);
         Assert.True(EqualityComparer<bool>.Default.Equals(true, reloaded.Entity.IsActive));
@@ -133,6 +139,7 @@ public sealed class ProductServiceInfrastructureTests
 
         reloaded.Entity.Update(new ProductState { IsActive = false, Name = ProductName.Create("Product Prime2").Value!, Price = ProductPrice.Create(999999.99m).Value!,  });
         Assert.Equal(SaveResultStatus.Saved, await reloadRepository.UpdateAsync(reloaded.Entity, reloaded.ConcurrencyToken, CancellationToken.None));
+        await reloadUnitOfWork.SaveChangesAsync(CancellationToken.None);
         var updated = await reloadRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None);
         Assert.NotNull(updated);
         Assert.NotEqual(reloaded.ConcurrencyToken, updated.ConcurrencyToken);
@@ -141,22 +148,27 @@ public sealed class ProductServiceInfrastructureTests
         Assert.True(EqualityComparer<decimal>.Default.Equals(999999.99m, updated.Entity.Price.Value));
 
         updated.Entity.Update(new ProductState { IsActive = true, Name = ProductName.Create("Product Prime").Value!, Price = ProductPrice.Create(0m).Value!,  });
-        Assert.Equal(SaveResultStatus.Conflict, await reloadRepository.UpdateAsync(updated.Entity, reloaded.ConcurrencyToken, CancellationToken.None));
+        Assert.Equal(SaveResultStatus.Saved, await reloadRepository.UpdateAsync(updated.Entity, reloaded.ConcurrencyToken, CancellationToken.None));
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(() => reloadUnitOfWork.SaveChangesAsync(CancellationToken.None));
         Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, "not-base64", CancellationToken.None));
         Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String([]), CancellationToken.None));
         Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String([1]), CancellationToken.None));
         Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String(new byte[7]), CancellationToken.None));
-        Assert.Equal(SaveResultStatus.Conflict, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String(new byte[8]), CancellationToken.None));
+        Assert.Equal(SaveResultStatus.Saved, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String(new byte[8]), CancellationToken.None));
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(() => reloadUnitOfWork.SaveChangesAsync(CancellationToken.None));
         Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String(new byte[9]), CancellationToken.None));
 
-        Assert.Equal(SaveResultStatus.Conflict, await reloadRepository.DeleteAsync(updated.Entity, reloaded.ConcurrencyToken, CancellationToken.None));
+        Assert.Equal(SaveResultStatus.Saved, await reloadRepository.DeleteAsync(updated.Entity, reloaded.ConcurrencyToken, CancellationToken.None));
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(() => reloadUnitOfWork.SaveChangesAsync(CancellationToken.None));
         Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, "not-base64", CancellationToken.None));
         Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String([]), CancellationToken.None));
         Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String([1]), CancellationToken.None));
         Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String(new byte[7]), CancellationToken.None));
-        Assert.Equal(SaveResultStatus.Conflict, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String(new byte[8]), CancellationToken.None));
+        Assert.Equal(SaveResultStatus.Saved, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String(new byte[8]), CancellationToken.None));
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(() => reloadUnitOfWork.SaveChangesAsync(CancellationToken.None));
         Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String(new byte[9]), CancellationToken.None));
         Assert.Equal(SaveResultStatus.Saved, await reloadRepository.DeleteAsync(updated.Entity, updated.ConcurrencyToken, CancellationToken.None));
+        await reloadUnitOfWork.SaveChangesAsync(CancellationToken.None);
         Assert.Null(await reloadRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None));
     }
 
@@ -170,12 +182,19 @@ public sealed class ProductServiceInfrastructureTests
 
         await using var seedContext = database.CreateContext();
         var seedRepository = new ProductRepository(seedContext, NullLogger<ProductRepository>.Instance);
-        var created = await seedRepository.AddAsync(DomainProduct.Create(new ProductState { IsActive = true, Name = ProductName.Create("Product Prime").Value!, Price = ProductPrice.Create(0m).Value!,  }), CancellationToken.None);
+        var seedUnitOfWork = new UnitOfWork(seedContext);
+        var seed = DomainProduct.Create(new ProductState { IsActive = true, Name = ProductName.Create("Product Prime").Value!, Price = ProductPrice.Create(0m).Value!,  });
+        await seedRepository.AddAsync(seed, CancellationToken.None);
+        await seedUnitOfWork.SaveChangesAsync(CancellationToken.None);
+        var created = await seedRepository.GetByIdAsync(seed.Id, CancellationToken.None);
+        Assert.NotNull(created);
 
         await using var firstContext = database.CreateContext();
         await using var secondContext = database.CreateContext();
         var firstRepository = new ProductRepository(firstContext, NullLogger<ProductRepository>.Instance);
         var secondRepository = new ProductRepository(secondContext, NullLogger<ProductRepository>.Instance);
+        var firstUnitOfWork = new UnitOfWork(firstContext);
+        var secondUnitOfWork = new UnitOfWork(secondContext);
         var first = await firstRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None);
         var second = await secondRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None);
         Assert.NotNull(first);
@@ -183,8 +202,10 @@ public sealed class ProductServiceInfrastructureTests
 
         second.Entity.Update(new ProductState { IsActive = false, Name = ProductName.Create("Product Prime2").Value!, Price = ProductPrice.Create(999999.99m).Value!,  });
         Assert.Equal(SaveResultStatus.Saved, await secondRepository.UpdateAsync(second.Entity, second.ConcurrencyToken, CancellationToken.None));
+        await secondUnitOfWork.SaveChangesAsync(CancellationToken.None);
         first.Entity.Update(new ProductState { IsActive = true, Name = ProductName.Create("Product Prime").Value!, Price = ProductPrice.Create(0m).Value!,  });
-        Assert.Equal(SaveResultStatus.Conflict, await firstRepository.UpdateAsync(first.Entity, first.ConcurrencyToken, CancellationToken.None));
+        Assert.Equal(SaveResultStatus.Saved, await firstRepository.UpdateAsync(first.Entity, first.ConcurrencyToken, CancellationToken.None));
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(() => firstUnitOfWork.SaveChangesAsync(CancellationToken.None));
     }
 
     [Fact]
@@ -206,7 +227,7 @@ public sealed class ProductServiceInfrastructureTests
         await using var reloadContext = database.CreateContext();
         var logger = new CaptureLogger<ProductRepository>();
         var repository = new ProductRepository(reloadContext, logger);
-        var exception = await Assert.ThrowsAsync<ProductService.Domain.Common.DomainReconstitutionException>(() => repository.GetByIdAsync(id, CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<ProductService.Domain.Primitives.DomainReconstitutionException>(() => repository.GetByIdAsync(id, CancellationToken.None));
         Assert.Equal("ProductName", exception.ValueObjectType);
         Assert.Contains("ProductName.Required", exception.InvariantCodes);
         Assert.Contains("Product", logger.LastMessage);
@@ -233,7 +254,7 @@ public sealed class ProductServiceInfrastructureTests
         await using var reloadContext = database.CreateContext();
         var logger = new CaptureLogger<ProductRepository>();
         var repository = new ProductRepository(reloadContext, logger);
-        var exception = await Assert.ThrowsAsync<ProductService.Domain.Common.DomainReconstitutionException>(() => repository.GetByIdAsync(id, CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<ProductService.Domain.Primitives.DomainReconstitutionException>(() => repository.GetByIdAsync(id, CancellationToken.None));
         Assert.Equal("ProductPrice", exception.ValueObjectType);
         Assert.Contains("ProductPrice.Minimum", exception.InvariantCodes);
         Assert.Contains("Product", logger.LastMessage);

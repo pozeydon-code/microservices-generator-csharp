@@ -2,8 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ProductService.Application.Common;
 using ProductService.Application.Features.Products;
-using ProductService.Domain.Features.Products;
-using ProductService.Domain.Common;
+using ProductService.Domain.Entities;
+using ProductService.Domain.Primitives;
 using ProductService.Infrastructure.Persistence;
 
 namespace ProductService.Infrastructure.Persistence.Features.Products;
@@ -50,54 +50,36 @@ public sealed class ProductRepository(ProductServiceDbContext dbContext, ILogger
         }
     }
 
-    public async Task<EntitySnapshot<Product>> AddAsync(Product entity, CancellationToken cancellationToken)
+    public async Task AddAsync(Product entity, CancellationToken cancellationToken)
     {
         using var activity = ProductService.Infrastructure.DependencyInjection.ActivitySource.StartActivity("Product.add");
         await dbContext.Products.AddAsync(entity, cancellationToken);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return ToSnapshot(entity);
     }
 
-    public async Task<SaveResultStatus> UpdateAsync(Product entity, string concurrencyToken, CancellationToken cancellationToken)
+    public Task<SaveResultStatus> UpdateAsync(Product entity, string concurrencyToken, CancellationToken cancellationToken)
     {
         using var activity = ProductService.Infrastructure.DependencyInjection.ActivitySource.StartActivity("Product.update");
-        try
+        _ = cancellationToken;
+        if (!TryDecodeToken(concurrencyToken, out var rowVersion))
         {
-            if (!TryDecodeToken(concurrencyToken, out var rowVersion))
-            {
-                return SaveResultStatus.InvalidToken;
-            }
-            dbContext.Products.Update(entity);
-            dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return SaveResultStatus.Saved;
+            return Task.FromResult(SaveResultStatus.InvalidToken);
         }
-        catch (DbUpdateConcurrencyException)
-        {
-            activity?.AddEvent(new("sql.concurrency_conflict"));
-            return SaveResultStatus.Conflict;
-        }
+        dbContext.Products.Update(entity);
+        dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
+        return Task.FromResult(SaveResultStatus.Saved);
     }
 
-    public async Task<SaveResultStatus> DeleteAsync(Product entity, string concurrencyToken, CancellationToken cancellationToken)
+    public Task<SaveResultStatus> DeleteAsync(Product entity, string concurrencyToken, CancellationToken cancellationToken)
     {
         using var activity = ProductService.Infrastructure.DependencyInjection.ActivitySource.StartActivity("Product.delete");
-        try
+        _ = cancellationToken;
+        if (!TryDecodeToken(concurrencyToken, out var rowVersion))
         {
-            if (!TryDecodeToken(concurrencyToken, out var rowVersion))
-            {
-                return SaveResultStatus.InvalidToken;
-            }
-            dbContext.Products.Remove(entity);
-            dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return SaveResultStatus.Saved;
+            return Task.FromResult(SaveResultStatus.InvalidToken);
         }
-        catch (DbUpdateConcurrencyException)
-        {
-            activity?.AddEvent(new("sql.concurrency_conflict"));
-            return SaveResultStatus.Conflict;
-        }
+        dbContext.Products.Remove(entity);
+        dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
+        return Task.FromResult(SaveResultStatus.Saved);
     }
 
     private EntitySnapshot<Product> ToSnapshot(Product entity) =>

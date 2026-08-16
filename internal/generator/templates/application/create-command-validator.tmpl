@@ -1,6 +1,6 @@
 using FluentValidation;
 using FluentValidation.Results;
-{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Common.ValueObjects;
+{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.ValueObjects;
 {{ end }}
 
 namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Create;

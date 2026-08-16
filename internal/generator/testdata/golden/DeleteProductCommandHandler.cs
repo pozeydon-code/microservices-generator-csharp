@@ -1,11 +1,11 @@
 using ErrorOr;
 using MediatR;
 using ProductService.Application.Common;
-using ProductService.Domain.Features.Products;
+using ProductService.Domain.Entities;
 
 namespace ProductService.Application.Features.Products.Delete;
 
-public sealed class DeleteProductCommandHandler(IProductRepository repository) : IRequestHandler<DeleteProductCommand, ErrorOr<Deleted>>
+public sealed class DeleteProductCommandHandler(IProductRepository repository, IUnitOfWork unitOfWork) : IRequestHandler<DeleteProductCommand, ErrorOr<Deleted>>
 {
     public async Task<ErrorOr<Deleted>> Handle(DeleteProductCommand request, CancellationToken cancellationToken)
     {
@@ -27,6 +27,15 @@ public sealed class DeleteProductCommandHandler(IProductRepository repository) :
         if (status == SaveResultStatus.InvalidToken)
         {
             return Error.Validation(code: "ConcurrencyToken.Invalid", description: "Invalid concurrency token.", metadata: new Dictionary<string, object> { ["field"] = "concurrencyToken" });
+        }
+
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            return Error.Conflict(code: "Product.ConcurrencyConflict", description: "Product was changed by another request.");
         }
 
         return Result.Deleted;

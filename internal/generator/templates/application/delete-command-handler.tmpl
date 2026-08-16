@@ -1,11 +1,11 @@
 using ErrorOr;
 using MediatR;
 using {{ .Service.Name }}.Application.Common;
-using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
+using {{ .Service.Name }}.Domain.Entities;
 
 namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Delete;
 
-public sealed class Delete{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Repository repository) : IRequestHandler<Delete{{ .Entity.Name }}Command, ErrorOr<Deleted>>
+public sealed class Delete{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Repository repository, IUnitOfWork unitOfWork) : IRequestHandler<Delete{{ .Entity.Name }}Command, ErrorOr<Deleted>>
 {
     public async Task<ErrorOr<Deleted>> Handle(Delete{{ .Entity.Name }}Command request, CancellationToken cancellationToken)
     {
@@ -27,6 +27,15 @@ public sealed class Delete{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Re
         if (status == SaveResultStatus.InvalidToken)
         {
             return Error.Validation(code: "ConcurrencyToken.Invalid", description: "Invalid concurrency token.", metadata: new Dictionary<string, object> { ["field"] = "concurrencyToken" });
+        }
+
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            return Error.Conflict(code: "{{ .Entity.Name }}.ConcurrencyConflict", description: "{{ .Entity.Name }} was changed by another request.");
         }
 
         return Result.Deleted;

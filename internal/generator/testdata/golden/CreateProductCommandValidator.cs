@@ -1,6 +1,6 @@
 using FluentValidation;
 using FluentValidation.Results;
-using ProductService.Domain.Common.ValueObjects;
+using ProductService.Domain.ValueObjects;
 
 
 namespace ProductService.Application.Features.Products.Create;

@@ -1,13 +1,13 @@
 using ErrorOr;
 using MediatR;
 using ProductService.Application.Common;
-using ProductService.Domain.Features.Products;
-using ProductService.Domain.Common.ValueObjects;
+using ProductService.Domain.Entities;
+using ProductService.Domain.ValueObjects;
 
 
 namespace ProductService.Application.Features.Products.Create;
 
-public sealed class CreateProductCommandHandler(IProductRepository repository) : IRequestHandler<CreateProductCommand, ErrorOr<ProductDto>>
+public sealed class CreateProductCommandHandler(IProductRepository repository, IUnitOfWork unitOfWork) : IRequestHandler<CreateProductCommand, ErrorOr<ProductDto>>
 {
     public async Task<ErrorOr<ProductDto>> Handle(CreateProductCommand request, CancellationToken cancellationToken)
     {
@@ -33,8 +33,18 @@ public sealed class CreateProductCommandHandler(IProductRepository repository) :
             Name = nameResult.Value!,
             Price = priceResult.Value!,
         });
-        var snapshot = await repository.AddAsync(entity, cancellationToken);
-        return ToDto(snapshot);
+        await repository.AddAsync(entity, cancellationToken);
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            return Error.Conflict(code: "Product.ConcurrencyConflict", description: "Product was changed by another request.");
+        }
+
+        var created = await repository.GetByIdAsync(entity.Id, cancellationToken);
+        return ToDto(created ?? new EntitySnapshot<Product>(entity, string.Empty));
     }
 
     private static ProductDto ToDto(EntitySnapshot<Product> snapshot) => new(

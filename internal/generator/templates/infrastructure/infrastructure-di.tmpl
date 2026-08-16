@@ -36,7 +36,8 @@ public static class DependencyInjection
             connectionBuilder.ConnectionString,
             sql => sql.EnableRetryOnFailure(maxRetryCount: ResiliencePolicy.SqlRetryCount, maxRetryDelay: ResiliencePolicy.SqlRetryDelay, errorNumbersToAdd: null).CommandTimeout(ResiliencePolicy.SqlCommandTimeoutSeconds)));
 {{ range .Entities }}        services.AddScoped<I{{ .Name }}Repository, {{ .Name }}Repository>();
-{{ end }}        services.AddScoped<IReadinessProbe, SqlReadinessProbe>();
+{{ end }}        services.AddScoped<IUnitOfWork, UnitOfWork>();
+        services.AddScoped<IReadinessProbe, SqlReadinessProbe>();
         return services;
     }
 }

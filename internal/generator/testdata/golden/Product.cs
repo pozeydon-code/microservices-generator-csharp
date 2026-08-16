@@ -1,6 +1,6 @@
-namespace ProductService.Domain.Features.Products;
+namespace ProductService.Domain.Entities;
 
-using ProductService.Domain.Common.ValueObjects;
+using ProductService.Domain.ValueObjects;
 
 
 public sealed class ProductState

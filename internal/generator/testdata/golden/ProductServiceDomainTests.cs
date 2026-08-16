@@ -1,5 +1,5 @@
-using ProductService.Domain.Common;
-using ProductService.Domain.Common.ValueObjects;
+using ProductService.Domain.Primitives;
+using ProductService.Domain.ValueObjects;
 
 using Xunit;
 

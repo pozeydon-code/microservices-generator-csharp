@@ -5,9 +5,9 @@ using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Delete;
 using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.GetById;
 using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.List;
 using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Update;
-using {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }};
-using Domain{{ .Entity.Name }} = {{ .Service.Name }}.Domain.Features.{{ .Entity.FeatureName }}.{{ .Entity.Name }};
-{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.Common.ValueObjects;
+using {{ .Service.Name }}.Domain.Entities;
+using Domain{{ .Entity.Name }} = {{ .Service.Name }}.Domain.Entities.{{ .Entity.Name }};
+{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.ValueObjects;
 {{ end }}
 using ErrorOr;
 using Xunit;
@@ -20,7 +20,8 @@ public sealed class {{ .Entity.Name }}ApplicationTests
     public async Task CreateCommandHandlerPersistsEntityAndMapsSnapshot()
     {
         var repository = new Fake{{ .Entity.Name }}Repository();
-        var handler = new Create{{ .Entity.Name }}CommandHandler(repository);
+        var unitOfWork = new FakeUnitOfWork(repository);
+        var handler = new Create{{ .Entity.Name }}CommandHandler(repository, unitOfWork);
 
         var result = await handler.Handle(new Create{{ .Entity.Name }}Command
         {
@@ -29,6 +30,7 @@ public sealed class {{ .Entity.Name }}ApplicationTests
 
         Assert.False(result.IsError);
         Assert.Equal(1, repository.AddCalls);
+        Assert.Equal(1, unitOfWork.SaveCalls);
         var created = result.Value;
         Assert.NotEqual(Guid.Empty, created.Id);
 {{ range .Entity.NonIDFields }}        {{ .Assertion }}
@@ -83,7 +85,8 @@ public sealed class {{ .Entity.Name }}ApplicationTests
         var repository = new Fake{{ .Entity.Name }}Repository();
         var entity = Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
         repository.Items.Add(entity);
-        var handler = new Update{{ .Entity.Name }}CommandHandler(repository);
+        var unitOfWork = new FakeUnitOfWork(repository);
+        var handler = new Update{{ .Entity.Name }}CommandHandler(repository, unitOfWork);
 
         var result = await handler.Handle(new Update{{ .Entity.Name }}Command
         {
@@ -93,6 +96,7 @@ public sealed class {{ .Entity.Name }}ApplicationTests
         }, CancellationToken.None);
 
         Assert.False(result.IsError);
+        Assert.Equal(1, unitOfWork.SaveCalls);
         Assert.Equal(entity.Id, result.Value.Id);
 {{ range .Entity.NonIDFields }}        Assert.True(EqualityComparer<{{ .ContractType }}>.Default.Equals({{ .UpdatedValue }}, result.Value.{{ .Name }}));
 {{ end }}        Assert.Equal("token-v2", result.Value.ConcurrencyToken);
@@ -104,10 +108,12 @@ public sealed class {{ .Entity.Name }}ApplicationTests
         var repository = new Fake{{ .Entity.Name }}Repository();
         var entity = Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
         repository.Items.Add(entity);
-        var handler = new Update{{ .Entity.Name }}CommandHandler(repository);
+        var unitOfWork = new FakeUnitOfWork(repository);
+        var handler = new Update{{ .Entity.Name }}CommandHandler(repository, unitOfWork);
 
         var missing = await handler.Handle(new Update{{ .Entity.Name }}Command { Id = Guid.NewGuid(), {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .SampleValue }}, {{ end }} ConcurrencyToken = "token-v1" }, CancellationToken.None);
-        var conflict = await handler.Handle(new Update{{ .Entity.Name }}Command { Id = entity.Id, {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }} ConcurrencyToken = "stale-token" }, CancellationToken.None);
+        unitOfWork.ConflictOnNextSave = true;
+        var conflict = await handler.Handle(new Update{{ .Entity.Name }}Command { Id = entity.Id, {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }} ConcurrencyToken = "token-v1" }, CancellationToken.None);
         var invalid = await handler.Handle(new Update{{ .Entity.Name }}Command { Id = entity.Id, {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }} ConcurrencyToken = "unknown-token" }, CancellationToken.None);
 
         Assert.Equal(ErrorType.NotFound, missing.FirstError.Type);
@@ -130,11 +136,13 @@ public sealed class {{ .Entity.Name }}ApplicationTests
         var repository = new Fake{{ .Entity.Name }}Repository();
         var entity = Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
         repository.Items.Add(entity);
-        var handler = new Delete{{ .Entity.Name }}CommandHandler(repository);
+        var unitOfWork = new FakeUnitOfWork(repository);
+        var handler = new Delete{{ .Entity.Name }}CommandHandler(repository, unitOfWork);
 
         var missing = await handler.Handle(new Delete{{ .Entity.Name }}Command(Guid.NewGuid(), "token-v1"), CancellationToken.None);
         var missingMalformed = await handler.Handle(new Delete{{ .Entity.Name }}Command(Guid.NewGuid(), "unknown-token"), CancellationToken.None);
-        var conflict = await handler.Handle(new Delete{{ .Entity.Name }}Command(entity.Id, "stale-token"), CancellationToken.None);
+        unitOfWork.ConflictOnNextSave = true;
+        var conflict = await handler.Handle(new Delete{{ .Entity.Name }}Command(entity.Id, "token-v1"), CancellationToken.None);
         var invalid = await handler.Handle(new Delete{{ .Entity.Name }}Command(entity.Id, "unknown-token"), CancellationToken.None);
         var deleted = await handler.Handle(new Delete{{ .Entity.Name }}Command(entity.Id, "token-v1"), CancellationToken.None);
 
@@ -169,6 +177,8 @@ public sealed class {{ .Entity.Name }}ApplicationTests
         public List<Domain{{ .Entity.Name }}> Items { get; } = [];
         public int AddCalls { get; private set; }
         private string CurrentToken { get; set; } = "token-v1";
+        private bool PendingTokenUpdate { get; set; }
+        private Domain{{ .Entity.Name }}? PendingDelete { get; set; }
 
         public Task<(IReadOnlyList<EntitySnapshot<Domain{{ .Entity.Name }}>> Items, int TotalCount)> ListAsync(int skip, int take, CancellationToken cancellationToken) =>
             Task.FromResult(((IReadOnlyList<EntitySnapshot<Domain{{ .Entity.Name }}>>)Items.Skip(skip).Take(take).Select(ToSnapshot).ToList(), Items.Count));
@@ -176,29 +186,60 @@ public sealed class {{ .Entity.Name }}ApplicationTests
         public Task<EntitySnapshot<Domain{{ .Entity.Name }}>?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(Items.SingleOrDefault(item => item.Id == id) is { } entity ? ToSnapshot(entity) : null);
 
-        public Task<EntitySnapshot<Domain{{ .Entity.Name }}>> AddAsync(Domain{{ .Entity.Name }} entity, CancellationToken cancellationToken)
+        public Task AddAsync(Domain{{ .Entity.Name }} entity, CancellationToken cancellationToken)
         {
             AddCalls++;
             Items.Add(entity);
-            return Task.FromResult(ToSnapshot(entity));
+            return Task.CompletedTask;
         }
 
         public Task<SaveResultStatus> UpdateAsync(Domain{{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
         {
-            if (concurrencyToken == "stale-token") return Task.FromResult(SaveResultStatus.Conflict);
             if (concurrencyToken != CurrentToken) return Task.FromResult(SaveResultStatus.InvalidToken);
-            CurrentToken = "token-v2";
+            PendingTokenUpdate = true;
             return Task.FromResult(SaveResultStatus.Saved);
         }
 
         public Task<SaveResultStatus> DeleteAsync(Domain{{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
         {
-            if (concurrencyToken == "stale-token") return Task.FromResult(SaveResultStatus.Conflict);
             if (concurrencyToken != CurrentToken) return Task.FromResult(SaveResultStatus.InvalidToken);
-            Items.Remove(entity);
+            PendingDelete = entity;
             return Task.FromResult(SaveResultStatus.Saved);
         }
 
+        public void Commit()
+        {
+            if (PendingDelete is not null)
+            {
+                Items.Remove(PendingDelete);
+                PendingDelete = null;
+            }
+            if (PendingTokenUpdate)
+            {
+                CurrentToken = "token-v2";
+                PendingTokenUpdate = false;
+            }
+        }
+
         private EntitySnapshot<Domain{{ .Entity.Name }}> ToSnapshot(Domain{{ .Entity.Name }} entity) => new(entity, CurrentToken);
+    }
+
+    private sealed class FakeUnitOfWork(Fake{{ .Entity.Name }}Repository repository) : IUnitOfWork
+    {
+        public int SaveCalls { get; private set; }
+        public bool ConflictOnNextSave { get; set; }
+
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
+        {
+            SaveCalls++;
+            if (ConflictOnNextSave)
+            {
+                ConflictOnNextSave = false;
+                throw new ConcurrencyConflictException();
+            }
+
+            repository.Commit();
+            return Task.FromResult(1);
+        }
     }
 }

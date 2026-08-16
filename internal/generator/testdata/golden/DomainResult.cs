@@ -1,4 +1,4 @@
-namespace ProductService.Domain.Common;
+namespace ProductService.Domain.Primitives;
 
 public sealed record DomainError(string Code, string Message, string? Field = null);
 

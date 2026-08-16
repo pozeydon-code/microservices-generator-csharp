@@ -1,4 +1,4 @@
-namespace {{ .Name }}.Domain.Common;
+namespace {{ .Name }}.Domain.Primitives;
 
 public sealed class DomainReconstitutionException(string valueObjectType, IReadOnlyList<string> invariantCodes)
     : InvalidOperationException($"Persisted {valueObjectType} value is invalid.")
