@@ -5,18 +5,18 @@ using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Commands.Update;
 using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Dtos;
 using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Queries.GetById;
 using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Queries.List;
-using {{ .Service.Name }}.WebApi.Common;
 using ErrorOr;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using {{ .Service.Name }}.WebApi.Controllers;
 
 namespace {{ .Service.Name }}.WebApi.Controllers.{{ .Entity.FeatureName }};
 
 [ApiController]
 [Authorize]
 [Route("{{ .Entity.Route }}")]
-public sealed class {{ .Entity.Name }}Controller(ISender sender) : ControllerBase
+public sealed class {{ .Entity.Name }}Controller(ISender sender) : ApiController
 {
     [HttpGet(Name = "List{{ .Entity.PluralName }}")]
     public async Task<ActionResult<PagedResult<{{ .Entity.Name }}Dto>>> List([FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken)
@@ -25,7 +25,7 @@ public sealed class {{ .Entity.Name }}Controller(ISender sender) : ControllerBas
         {
             var result = await sender.Send(new List{{ .Entity.Name }}Query(page, pageSize), cancellationToken);
             return result.IsError
-                ? ErrorOrProblemMapper.ToActionResult<PagedResult<{{ .Entity.Name }}Dto>>(this, result.Errors)
+                ? Problem(result.Errors)
                 : Ok(result.Value);
         }
         catch (ArgumentOutOfRangeException ex)
@@ -39,7 +39,7 @@ public sealed class {{ .Entity.Name }}Controller(ISender sender) : ControllerBas
     {
         var result = await sender.Send(new Get{{ .Entity.Name }}ByIdQuery(id), cancellationToken);
         return result.IsError
-            ? ErrorOrProblemMapper.ToActionResult<{{ .Entity.Name }}Dto>(this, result.Errors)
+            ? Problem(result.Errors)
             : Ok(result.Value);
     }
 
@@ -52,7 +52,7 @@ public sealed class {{ .Entity.Name }}Controller(ISender sender) : ControllerBas
 {{ end }}        }, cancellationToken);
         if (created.IsError)
         {
-            return ErrorOrProblemMapper.ToActionResult<{{ .Entity.Name }}Dto>(this, created.Errors);
+            return Problem(created.Errors);
         }
         return CreatedAtRoute("Get{{ .Entity.Name }}ById", new { id = created.Value.Id }, created.Value);
     }
@@ -67,7 +67,7 @@ public sealed class {{ .Entity.Name }}Controller(ISender sender) : ControllerBas
 {{ end }}            ConcurrencyToken = request.ConcurrencyToken,
         }, cancellationToken);
         return updated.IsError
-            ? ErrorOrProblemMapper.ToActionResult<{{ .Entity.Name }}Dto>(this, updated.Errors)
+            ? Problem(updated.Errors)
             : Ok(updated.Value);
     }
 
@@ -77,7 +77,7 @@ public sealed class {{ .Entity.Name }}Controller(ISender sender) : ControllerBas
         var deleted = await sender.Send(new Delete{{ .Entity.Name }}Command(id, concurrencyToken ?? string.Empty), cancellationToken);
         if (deleted.IsError)
         {
-            return ErrorOrProblemMapper.ToActionResult<Deleted>(this, deleted.Errors).Result!;
+            return Problem(deleted.Errors);
         }
         return NoContent();
     }

@@ -21,11 +21,11 @@ func TestDependencyPolicyManifestLoads(t *testing.T) {
 			t.Fatalf("manifest is missing targetMajor %d", targetMajor)
 		}
 	}
-	if len(commonPackages) != 12 {
-		t.Fatalf("expected twelve common package pins, got %d", len(commonPackages))
+	if len(commonPackages) != 14 {
+		t.Fatalf("expected fourteen common package pins, got %d", len(commonPackages))
 	}
-	if len(packageOrder) != 19 {
-		t.Fatalf("expected nineteen package names in manifest order, got %d", len(packageOrder))
+	if len(packageOrder) != 22 {
+		t.Fatalf("expected twenty-two package names in manifest order, got %d", len(packageOrder))
 	}
 }
 
@@ -83,6 +83,7 @@ func TestLoadDependencyPoliciesRejectsInvalidManifests(t *testing.T) {
 		Verified:    true,
 		Packages: map[string]string{
 			"Microsoft.AspNetCore.Authentication.JwtBearer": "8.0.28",
+			"Microsoft.AspNetCore.OpenApi":                  "8.0.28",
 			"Microsoft.AspNetCore.Mvc.Testing":              "8.0.28",
 			"Microsoft.EntityFrameworkCore.Design":          "8.0.28",
 			"Microsoft.EntityFrameworkCore.Tools":           "8.0.28",
@@ -134,6 +135,7 @@ func TestLoadDependencyPoliciesRejectsInvalidCommonPackages(t *testing.T) {
 		Verified:    true,
 		Packages: map[string]string{
 			"Microsoft.AspNetCore.Authentication.JwtBearer": "8.0.28",
+			"Microsoft.AspNetCore.OpenApi":                  "8.0.28",
 			"Microsoft.AspNetCore.Mvc.Testing":              "8.0.28",
 			"Microsoft.EntityFrameworkCore.Design":          "8.0.28",
 			"Microsoft.EntityFrameworkCore.Tools":           "8.0.28",
@@ -200,48 +202,52 @@ func cloneDependencyPolicy(policy dependencyPolicy) dependencyPolicy {
 
 func TestDependencyPolicyForTargetFramework(t *testing.T) {
 	tests := []struct {
-		name            string
-		target          string
-		wantOK          bool
-		targetMajor     int
-		aspNetCore      string
-		aspNetCoreTest  string
-		entityFramework string
-		sqlClient       string
-		cryptographyXML string
+		name              string
+		target            string
+		wantOK            bool
+		targetMajor       int
+		aspNetCore        string
+		aspNetCoreOpenAPI string
+		aspNetCoreTest    string
+		entityFramework   string
+		sqlClient         string
+		cryptographyXML   string
 	}{
 		{
-			name:            "net8",
-			target:          "net8.0",
-			wantOK:          true,
-			targetMajor:     8,
-			aspNetCore:      "8.0.28",
-			aspNetCoreTest:  "8.0.28",
-			entityFramework: "8.0.28",
-			sqlClient:       "6.1.1",
-			cryptographyXML: "8.0.4",
+			name:              "net8",
+			target:            "net8.0",
+			wantOK:            true,
+			targetMajor:       8,
+			aspNetCore:        "8.0.28",
+			aspNetCoreOpenAPI: "8.0.28",
+			aspNetCoreTest:    "8.0.28",
+			entityFramework:   "8.0.28",
+			sqlClient:         "6.1.1",
+			cryptographyXML:   "8.0.4",
 		},
 		{
-			name:            "net9",
-			target:          "net9.0",
-			wantOK:          true,
-			targetMajor:     9,
-			aspNetCore:      "9.0.7",
-			aspNetCoreTest:  "9.0.7",
-			entityFramework: "9.0.7",
-			sqlClient:       "6.1.1",
-			cryptographyXML: "9.0.18",
+			name:              "net9",
+			target:            "net9.0",
+			wantOK:            true,
+			targetMajor:       9,
+			aspNetCore:        "9.0.7",
+			aspNetCoreOpenAPI: "9.0.7",
+			aspNetCoreTest:    "9.0.7",
+			entityFramework:   "9.0.7",
+			sqlClient:         "6.1.1",
+			cryptographyXML:   "9.0.18",
 		},
 		{
-			name:            "net10",
-			target:          "net10.0",
-			wantOK:          true,
-			targetMajor:     10,
-			aspNetCore:      "10.0.0",
-			aspNetCoreTest:  "10.0.0",
-			entityFramework: "10.0.0",
-			sqlClient:       "6.1.1",
-			cryptographyXML: "10.0.10",
+			name:              "net10",
+			target:            "net10.0",
+			wantOK:            true,
+			targetMajor:       10,
+			aspNetCore:        "10.0.0",
+			aspNetCoreOpenAPI: "10.0.0",
+			aspNetCoreTest:    "10.0.0",
+			entityFramework:   "10.0.0",
+			sqlClient:         "6.1.1",
+			cryptographyXML:   "10.0.10",
 		},
 		{name: "net11", target: "net11.0"},
 		{name: "unknown major", target: "net99.0"},
@@ -265,6 +271,7 @@ func TestDependencyPolicyForTargetFramework(t *testing.T) {
 				Verified:    true,
 				Packages: map[string]string{
 					"Microsoft.AspNetCore.Authentication.JwtBearer": tt.aspNetCore,
+					"Microsoft.AspNetCore.OpenApi":                  tt.aspNetCoreOpenAPI,
 					"Microsoft.AspNetCore.Mvc.Testing":              tt.aspNetCoreTest,
 					"Microsoft.EntityFrameworkCore.Design":          tt.entityFramework,
 					"Microsoft.EntityFrameworkCore.Tools":           tt.entityFramework,

@@ -1,0 +1,17 @@
+using {{ .Name }}.WebApi.Common.Errors;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
+
+namespace {{ .Name }}.WebApi;
+
+public static class DependencyInjection
+{
+    public static IServiceCollection AddPresentation(this IServiceCollection services)
+    {
+        services.AddControllers();
+        services.AddProblemDetails();
+{{ if .SupportsOpenApiEndpoints }}        services.AddOpenApi();
+{{ end }}        services.AddSingleton<ProblemDetailsFactory, ApiProblemDetailsFactory>();
+
+        return services;
+    }
+}

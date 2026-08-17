@@ -40,6 +40,7 @@ const dependencyPolicyManifestPath = "internal/generator/policy/dependency-polic
 
 var targetSpecificPackageNames = []string{
 	"Microsoft.AspNetCore.Authentication.JwtBearer",
+	"Microsoft.AspNetCore.OpenApi",
 	"Microsoft.AspNetCore.Mvc.Testing",
 	"Microsoft.EntityFrameworkCore.Design",
 	"Microsoft.EntityFrameworkCore.Tools",
@@ -174,6 +175,7 @@ func validateDependencyPolicy(policy dependencyPolicy, commonPackages map[string
 		}
 	}
 	aspNetCoreVersion := policy.Packages["Microsoft.AspNetCore.Authentication.JwtBearer"]
+	aspNetCoreOpenAPIVersion := policy.Packages["Microsoft.AspNetCore.OpenApi"]
 	aspNetCoreTestingVersion := policy.Packages["Microsoft.AspNetCore.Mvc.Testing"]
 	entityFrameworkVersion := policy.Packages["Microsoft.EntityFrameworkCore.Design"]
 	entityFrameworkToolsVersion := policy.Packages["Microsoft.EntityFrameworkCore.Tools"]
@@ -183,6 +185,7 @@ func validateDependencyPolicy(policy dependencyPolicy, commonPackages map[string
 		version string
 	}{
 		{name: "Microsoft.AspNetCore.Authentication.JwtBearer", version: aspNetCoreVersion},
+		{name: "Microsoft.AspNetCore.OpenApi", version: aspNetCoreOpenAPIVersion},
 		{name: "Microsoft.AspNetCore.Mvc.Testing", version: aspNetCoreTestingVersion},
 		{name: "Microsoft.EntityFrameworkCore.Design", version: entityFrameworkVersion},
 		{name: "Microsoft.EntityFrameworkCore.Tools", version: entityFrameworkToolsVersion},
@@ -193,8 +196,8 @@ func validateDependencyPolicy(policy dependencyPolicy, commonPackages map[string
 			return fmt.Errorf("packages[%q] major %d does not match targetMajor %d", pkg.name, major, policy.TargetMajor)
 		}
 	}
-	if aspNetCoreVersion != aspNetCoreTestingVersion {
-		return fmt.Errorf("ASP.NET Core package versions must align: %q != %q", aspNetCoreVersion, aspNetCoreTestingVersion)
+	if aspNetCoreVersion != aspNetCoreOpenAPIVersion || aspNetCoreVersion != aspNetCoreTestingVersion {
+		return fmt.Errorf("ASP.NET Core package versions must align: %q, %q, %q", aspNetCoreVersion, aspNetCoreOpenAPIVersion, aspNetCoreTestingVersion)
 	}
 	if entityFrameworkVersion != aspNetCoreVersion || entityFrameworkToolsVersion != aspNetCoreVersion || entityFrameworkSQLVersion != aspNetCoreVersion {
 		return fmt.Errorf("Entity Framework Core and ASP.NET Core package versions must align: %q, %q, %q, %q", entityFrameworkVersion, entityFrameworkToolsVersion, entityFrameworkSQLVersion, aspNetCoreVersion)
@@ -248,6 +251,9 @@ func dependencyPackageVersions(policy dependencyPolicy) []PackageVersion {
 		if packageName == "System.Security.Cryptography.Xml" {
 			comment = "<!-- Pinned for NuGet audit safety when EF/Core build transitives request vulnerable XML versions. -->"
 		}
+		if packageName == "Microsoft.OpenApi" {
+			comment = "<!-- Pinned for NuGet audit safety when OpenAPI generators request vulnerable transitives. -->"
+		}
 		packages = append(packages, PackageVersion{Name: packageName, Version: dependencyPackageVersion(policy, packageName), Comment: comment})
 	}
 	return packages
@@ -256,6 +262,11 @@ func dependencyPackageVersions(policy dependencyPolicy) []PackageVersion {
 func IsPolicyBackedTargetFramework(targetFramework string) bool {
 	_, ok := dependencyPolicyForTargetFramework(targetFramework)
 	return ok
+}
+
+func supportsOpenApiEndpoints(targetFramework string) bool {
+	major, ok := spec.TargetFrameworkMajor(targetFramework)
+	return ok && major >= 9
 }
 
 func SupportedTargetFrameworks() []string {

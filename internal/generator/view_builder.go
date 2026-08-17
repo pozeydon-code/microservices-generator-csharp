@@ -25,6 +25,7 @@ type SolutionTemplateData struct {
 	EntityFrameworkCoreVersion string
 	SqlClientVersion           string
 	CryptographyXmlVersion     string
+	SupportsOpenApiEndpoints   bool
 	ScaffoldPlan               ScaffoldPlan
 	Services                   []ServiceView
 	Projects                   []ProjectView
@@ -61,6 +62,7 @@ type ServiceView struct {
 	ReadinessLengthRequired    bool
 	ReadinessSchemaEntity      string
 	ReadinessSchemaField       string
+	SupportsOpenApiEndpoints   bool
 }
 
 type ProjectView struct {
@@ -153,6 +155,7 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 	if !ok {
 		return SolutionTemplateData{}, ValidateTargetFrameworkPolicy(targetFramework)
 	}
+	supportsOpenApiEndpoints := supportsOpenApiEndpoints(targetFramework)
 	view := SolutionTemplateData{
 		Solution:                   cfg.Solution,
 		TargetFramework:            targetFramework,
@@ -167,14 +170,16 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 		EntityFrameworkCoreVersion: dependencyPackageVersion(dependencyPolicy, "Microsoft.EntityFrameworkCore.Design"),
 		SqlClientVersion:           dependencyPackageVersion(dependencyPolicy, "Microsoft.Data.SqlClient"),
 		CryptographyXmlVersion:     dependencyPackageVersion(dependencyPolicy, "System.Security.Cryptography.Xml"),
+		SupportsOpenApiEndpoints:   supportsOpenApiEndpoints,
 		Services:                   make([]ServiceView, 0, len(services)),
 	}
 	for _, service := range services {
 		serviceView := ServiceView{
-			Name:                    service.Name,
-			MediatRVersion:          dependencyPackageVersion(dependencyPolicy, "MediatR"),
-			FluentValidationVersion: dependencyPackageVersion(dependencyPolicy, "FluentValidation"),
-			ErrorOrVersion:          dependencyPackageVersion(dependencyPolicy, "ErrorOr"),
+			Name:                     service.Name,
+			MediatRVersion:           dependencyPackageVersion(dependencyPolicy, "MediatR"),
+			FluentValidationVersion:  dependencyPackageVersion(dependencyPolicy, "FluentValidation"),
+			ErrorOrVersion:           dependencyPackageVersion(dependencyPolicy, "ErrorOr"),
+			SupportsOpenApiEndpoints: supportsOpenApiEndpoints,
 		}
 		serviceView.DomainProject = projectView(service.Name, service.Name+".Domain")
 		serviceView.ApplicationProject = projectView(service.Name, service.Name+".Application")

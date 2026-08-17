@@ -5,11 +5,15 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+{{ if .SupportsOpenApiEndpoints }}    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+{{ end }}
     <PackageReference Include="ErrorOr" />
     <PackageReference Include="MediatR" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+{{ if .SupportsOpenApiEndpoints }}    <PackageReference Include="Scalar.AspNetCore" />
+{{ end }}
   </ItemGroup>
 </Project>

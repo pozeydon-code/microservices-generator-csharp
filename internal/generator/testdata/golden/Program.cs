@@ -1,5 +1,6 @@
 using ProductService.Application;
 using ProductService.Infrastructure;
+using ProductService.WebApi;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.IdentityModel.Tokens;
@@ -7,14 +8,15 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
+
 var builder = WebApplication.CreateBuilder(args);
 var resilience = ResilienceOptions.From(builder.Configuration);
 var telemetry = TelemetryOptions.From(builder.Configuration);
 
 builder.Logging.AddConsole();
-builder.Services.AddProblemDetails();
-builder.Services.AddControllers();
-builder.Services.AddApplication();
+builder.Services.AddPresentation()
+    .AddApplication()
+    .AddInfrastructure(builder.Configuration);
 builder.Services.AddHttpClient();
 builder.Services.AddRequestTimeouts(options => options.DefaultPolicy = new RequestTimeoutPolicy
 {
@@ -72,7 +74,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 builder.Services.AddAuthorization();
-builder.Services.AddInfrastructure(builder.Configuration);
 
 var app = builder.Build();
 
@@ -91,6 +92,7 @@ app.UseHttpsRedirection();
 app.UseRequestTimeouts();
 app.UseAuthentication();
 app.UseAuthorization();
+
 
 app.MapControllers();
 app.Run();

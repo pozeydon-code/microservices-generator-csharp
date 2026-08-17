@@ -31,7 +31,7 @@ func buildScaffoldPlan(solution SolutionTemplateData) ScaffoldPlan {
 			newProjectCommand("classlib", solution.TargetFramework, service.DomainProject),
 			newProjectCommand("classlib", solution.TargetFramework, service.ApplicationProject),
 			newProjectCommand("classlib", solution.TargetFramework, service.InfrastructureProject),
-			newProjectCommand("webapi --use-controllers --no-openapi", solution.TargetFramework, service.WebApiProject),
+			newProjectCommand("webapi --use-controllers", solution.TargetFramework, service.WebApiProject),
 			newProjectCommand("xunit", solution.TargetFramework, service.DomainTestsProject),
 			newProjectCommand("xunit", solution.TargetFramework, service.ApplicationTestsProject),
 			newProjectCommand("xunit", solution.TargetFramework, service.WebApiTestsProject),
@@ -83,6 +83,12 @@ func buildScaffoldPlan(solution SolutionTemplateData) ScaffoldPlan {
 			packageEntry(service.WebApiTestsProject, "Microsoft.AspNetCore.Mvc.Testing"),
 			packageEntry(service.WebApiTestsProject, "System.IdentityModel.Tokens.Jwt"),
 		)
+		if solution.SupportsOpenApiEndpoints {
+			plan.PackageEntries = append(plan.PackageEntries,
+				packageEntry(service.WebApiProject, "Microsoft.AspNetCore.OpenApi"),
+				packageEntry(service.WebApiProject, "Scalar.AspNetCore"),
+			)
+		}
 
 		for _, project := range []ProjectView{service.DomainTestsProject, service.ApplicationTestsProject, service.WebApiTestsProject, service.ArchitectureTestsProject, service.InfrastructureTestsProject} {
 			plan.PackageEntries = append(plan.PackageEntries,

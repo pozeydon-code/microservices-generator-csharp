@@ -117,8 +117,10 @@ public sealed class ProductEndpointsTests
         Assert.Equal(expectedStatus, response.StatusCode);
         if (token == "unknown-token")
         {
-            var error = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>();
-            Assert.Equal("Invalid concurrency token.", error!["error"]);
+            var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
+            Assert.NotNull(problem);
+            Assert.Equal("Bad Request", problem.Title);
+            AssertErrorCodes(problem, "ConcurrencyToken.Invalid");
         }
     }
 
@@ -142,8 +144,19 @@ public sealed class ProductEndpointsTests
         Assert.StartsWith("application/problem+json", response.Content.Headers.ContentType?.MediaType, StringComparison.Ordinal);
         var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDetails>();
         Assert.NotNull(problem);
-        Assert.Equal("Validation failed", problem.Title);
+        Assert.Equal("Bad Request", problem.Title);
         Assert.Equal(expectedKeys, problem.Errors.Keys.OrderBy(key => key, StringComparer.Ordinal).ToArray());
+        Assert.NotEmpty(ErrorCodes(problem));
+    }
+
+    private static void AssertErrorCodes(ProblemDetails problem, params string[] expectedCodes) =>
+        Assert.Equal(expectedCodes, ErrorCodes(problem));
+
+    private static string[] ErrorCodes(ProblemDetails problem)
+    {
+        Assert.True(problem.Extensions.TryGetValue("errorCodes", out var value));
+        var element = Assert.IsType<JsonElement>(value);
+        return element.EnumerateArray().Select(code => code.GetString()).OfType<string>().ToArray();
     }
 
     private const string ValidToken = "token-v1";

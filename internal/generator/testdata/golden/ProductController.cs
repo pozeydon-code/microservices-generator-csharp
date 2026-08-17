@@ -5,18 +5,18 @@ using ProductService.Application.Products.Commands.Update;
 using ProductService.Application.Products.Dtos;
 using ProductService.Application.Products.Queries.GetById;
 using ProductService.Application.Products.Queries.List;
-using ProductService.WebApi.Common;
 using ErrorOr;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using ProductService.WebApi.Controllers;
 
 namespace ProductService.WebApi.Controllers.Products;
 
 [ApiController]
 [Authorize]
 [Route("products")]
-public sealed class ProductController(ISender sender) : ControllerBase
+public sealed class ProductController(ISender sender) : ApiController
 {
     [HttpGet(Name = "ListProducts")]
     public async Task<ActionResult<PagedResult<ProductDto>>> List([FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken)
@@ -25,7 +25,7 @@ public sealed class ProductController(ISender sender) : ControllerBase
         {
             var result = await sender.Send(new ListProductQuery(page, pageSize), cancellationToken);
             return result.IsError
-                ? ErrorOrProblemMapper.ToActionResult<PagedResult<ProductDto>>(this, result.Errors)
+                ? Problem(result.Errors)
                 : Ok(result.Value);
         }
         catch (ArgumentOutOfRangeException ex)
@@ -39,7 +39,7 @@ public sealed class ProductController(ISender sender) : ControllerBase
     {
         var result = await sender.Send(new GetProductByIdQuery(id), cancellationToken);
         return result.IsError
-            ? ErrorOrProblemMapper.ToActionResult<ProductDto>(this, result.Errors)
+            ? Problem(result.Errors)
             : Ok(result.Value);
     }
 
@@ -54,7 +54,7 @@ public sealed class ProductController(ISender sender) : ControllerBase
         }, cancellationToken);
         if (created.IsError)
         {
-            return ErrorOrProblemMapper.ToActionResult<ProductDto>(this, created.Errors);
+            return Problem(created.Errors);
         }
         return CreatedAtRoute("GetProductById", new { id = created.Value.Id }, created.Value);
     }
@@ -71,7 +71,7 @@ public sealed class ProductController(ISender sender) : ControllerBase
             ConcurrencyToken = request.ConcurrencyToken,
         }, cancellationToken);
         return updated.IsError
-            ? ErrorOrProblemMapper.ToActionResult<ProductDto>(this, updated.Errors)
+            ? Problem(updated.Errors)
             : Ok(updated.Value);
     }
 
@@ -81,7 +81,7 @@ public sealed class ProductController(ISender sender) : ControllerBase
         var deleted = await sender.Send(new DeleteProductCommand(id, concurrencyToken ?? string.Empty), cancellationToken);
         if (deleted.IsError)
         {
-            return ErrorOrProblemMapper.ToActionResult<Deleted>(this, deleted.Errors).Result!;
+            return Problem(deleted.Errors);
         }
         return NoContent();
     }

@@ -109,7 +109,16 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		if err := g.appendRendered(&files, join("src", service.Name, service.WebApiProject.Directory, service.WebApiProject.FileName), templatePath(webAPITemplateDir, "webapi-project.tmpl"), service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("src", service.Name, service.WebApiProject.Directory, "Common", "ErrorOrProblemMapper.cs"), templatePath(webAPITemplateDir, "webapi-error-mapper.tmpl"), service); err != nil {
+		if err := g.appendRendered(&files, join("src", service.Name, service.WebApiProject.Directory, "Common", "Errors", "HttpContextItemKeys.cs"), templatePath(webAPITemplateDir, "http-context-item-keys.tmpl"), service); err != nil {
+			return nil, err
+		}
+		if err := g.appendRendered(&files, join("src", service.Name, service.WebApiProject.Directory, "Common", "Errors", "ApiProblemDetailsFactory.cs"), templatePath(webAPITemplateDir, "api-problem-details-factory.tmpl"), service); err != nil {
+			return nil, err
+		}
+		if err := g.appendRendered(&files, join("src", service.Name, service.WebApiProject.Directory, "DependencyInjection.cs"), templatePath(webAPITemplateDir, "webapi-di.tmpl"), service); err != nil {
+			return nil, err
+		}
+		if err := g.appendRendered(&files, join("src", service.Name, service.WebApiProject.Directory, "Controllers", "ApiController.cs"), templatePath(webAPITemplateDir, "api-controller.tmpl"), service); err != nil {
 			return nil, err
 		}
 		if err := g.appendRendered(&files, join("tests", service.Name, service.ApplicationTestsProject.Directory, service.ApplicationTestsProject.FileName), templatePath(testsTemplateDir, "application-tests-project.tmpl"), service); err != nil {
