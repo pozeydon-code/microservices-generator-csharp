@@ -19,6 +19,8 @@ public sealed class Product
     public ProductName Name { get; private set; } = null!;
     public ProductPrice Price { get; private set; } = null!;
 
+    public byte[] RowVersion { get; private set; } = [];
+
     public static Product Create(ProductState state) => new()
     {
         Id = Guid.NewGuid(),

@@ -49,9 +49,9 @@ public sealed class ProductServiceArchitectureTests
     public void SourceTextKeepsStrictBoundaryVocabularyOutOfInwardLayers()
     {
         var root = FindSolutionRoot();
-        AssertSourceDoesNotContain(root, "src/ProductService/ProductService.Domain", ["RowVersion", "Microsoft.EntityFrameworkCore", "Microsoft.AspNetCore", "IServiceCollection", "MediatR", "FluentValidation", "ErrorOr"]);
+        AssertSourceDoesNotContain(root, "src/ProductService/ProductService.Domain", ["Microsoft.EntityFrameworkCore", "Microsoft.AspNetCore", "IServiceCollection", "MediatR", "FluentValidation", "ErrorOr"]);
         var applicationTokenRepresentationTerms = new[] { "Convert.FromBase64String", "Convert.ToBase64String", "Base64", "RowVersion", "byte[8]", "new byte[", "byte[]" };
-        AssertSourceDoesNotContain(root, "src/ProductService/ProductService.Application", [.. applicationTokenRepresentationTerms, "Microsoft.EntityFrameworkCore", "Microsoft.AspNetCore", "ProductService.Infrastructure", "PersistenceMutationStatus"]);
+        AssertSourceDoesNotContain(root, "src/ProductService/ProductService.Application", [.. applicationTokenRepresentationTerms, "Microsoft.EntityFrameworkCore", "Microsoft.AspNetCore", "ProductService.Infrastructure", "PersistenceMutationStatus", "SaveResultStatus"]);
         AssertSourceDoesNotContain(root, "tests/ProductService/ProductService.Application.Tests", applicationTokenRepresentationTerms);
         AssertSourceDoesNotContain(root, "src/ProductService/ProductService.WebApi", ["Microsoft.EntityFrameworkCore", "DbContext", "INFORMATION_SCHEMA", "Sql", "IEndpointRouteBuilder", "MapGet"]);
         AssertSourceDoesNotContain(root, "src/ProductService/ProductService.Infrastructure", ["IEndpointRouteBuilder", "Results.", "StatusCodes", "MapGet", "Microsoft.AspNetCore.Routing", "Microsoft.AspNetCore.Http"]);

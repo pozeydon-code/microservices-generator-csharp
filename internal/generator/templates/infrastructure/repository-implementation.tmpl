@@ -56,34 +56,34 @@ public sealed class {{ .Entity.Name }}Repository({{ .Service.Name }}DbContext db
         await dbContext.{{ .Entity.Name }}s.AddAsync(entity, cancellationToken);
     }
 
-    public Task<SaveResultStatus> UpdateAsync({{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
+    public Task<MutationPreparationStatus> UpdateAsync({{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
     {
         using var activity = {{ .Service.Name }}.Infrastructure.DependencyInjection.ActivitySource.StartActivity("{{ .Entity.Name }}.update");
         _ = cancellationToken;
         if (!TryDecodeToken(concurrencyToken, out var rowVersion))
         {
-            return Task.FromResult(SaveResultStatus.InvalidToken);
+            return Task.FromResult(MutationPreparationStatus.InvalidToken);
         }
         dbContext.{{ .Entity.Name }}s.Update(entity);
-        dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
-        return Task.FromResult(SaveResultStatus.Saved);
+        dbContext.Entry(entity).Property(item => item.RowVersion).OriginalValue = rowVersion;
+        return Task.FromResult(MutationPreparationStatus.Prepared);
     }
 
-    public Task<SaveResultStatus> DeleteAsync({{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
+    public Task<MutationPreparationStatus> DeleteAsync({{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
     {
         using var activity = {{ .Service.Name }}.Infrastructure.DependencyInjection.ActivitySource.StartActivity("{{ .Entity.Name }}.delete");
         _ = cancellationToken;
         if (!TryDecodeToken(concurrencyToken, out var rowVersion))
         {
-            return Task.FromResult(SaveResultStatus.InvalidToken);
+            return Task.FromResult(MutationPreparationStatus.InvalidToken);
         }
         dbContext.{{ .Entity.Name }}s.Remove(entity);
-        dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
-        return Task.FromResult(SaveResultStatus.Saved);
+        dbContext.Entry(entity).Property(item => item.RowVersion).OriginalValue = rowVersion;
+        return Task.FromResult(MutationPreparationStatus.Prepared);
     }
 
     private EntitySnapshot<{{ .Entity.Name }}> ToSnapshot({{ .Entity.Name }} entity) =>
-        new(entity, Convert.ToBase64String((byte[])dbContext.Entry(entity).Property("RowVersion").CurrentValue!));
+        new(entity, Convert.ToBase64String(entity.RowVersion));
 
 {{ if .Entity.HasValueObjectFields }}    private async Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync(DomainReconstitutionException exception, Guid? id, CancellationToken cancellationToken)
     {

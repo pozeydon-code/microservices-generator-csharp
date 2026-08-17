@@ -11,7 +11,7 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
     public void Configure(EntityTypeBuilder<Product> builder)
     {
         builder.HasKey(item => item.Id);
-        builder.Property<byte[]>("RowVersion").IsRowVersion();
+        builder.Property(item => item.RowVersion).IsRowVersion();
         builder.Property(item => item.IsActive).IsRequired();
 
         builder.Property(item => item.Name)

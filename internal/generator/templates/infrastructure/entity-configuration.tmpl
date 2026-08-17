@@ -11,7 +11,7 @@ public sealed class {{ .Entity.Name }}Configuration : IEntityTypeConfiguration<{
     public void Configure(EntityTypeBuilder<{{ .Entity.Name }}> builder)
     {
         builder.HasKey(item => item.Id);
-        builder.Property<byte[]>("RowVersion").IsRowVersion();
+        builder.Property(item => item.RowVersion).IsRowVersion();
 {{ range .Entity.NonIDFields }}{{ if not .IsValueObject }}        builder.Property(item => item.{{ .Name }}).IsRequired();
 {{ end }}{{ end }}
 {{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        builder.Property(item => item.{{ .Name }})

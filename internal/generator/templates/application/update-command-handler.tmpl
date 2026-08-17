@@ -42,11 +42,7 @@ public sealed class Update{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Re
 {{ end }}        });
 
         var status = await repository.UpdateAsync(snapshot.Entity, request.ConcurrencyToken, cancellationToken);
-        if (status == SaveResultStatus.Conflict)
-        {
-            return Error.Conflict(code: "{{ .Entity.Name }}.ConcurrencyConflict", description: "{{ .Entity.Name }} was changed by another request.");
-        }
-        if (status == SaveResultStatus.InvalidToken)
+        if (status == MutationPreparationStatus.InvalidToken)
         {
             return Error.Validation(code: "ConcurrencyToken.Invalid", description: "Invalid concurrency token.", metadata: new Dictionary<string, object> { ["field"] = "concurrencyToken" });
         }

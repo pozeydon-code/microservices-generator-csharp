@@ -248,18 +248,18 @@ public sealed class ProductApplicationTests
             return Task.CompletedTask;
         }
 
-        public Task<SaveResultStatus> UpdateAsync(DomainProduct entity, string concurrencyToken, CancellationToken cancellationToken)
+        public Task<MutationPreparationStatus> UpdateAsync(DomainProduct entity, string concurrencyToken, CancellationToken cancellationToken)
         {
-            if (concurrencyToken != CurrentToken) return Task.FromResult(SaveResultStatus.InvalidToken);
+            if (concurrencyToken != CurrentToken) return Task.FromResult(MutationPreparationStatus.InvalidToken);
             PendingTokenUpdate = true;
-            return Task.FromResult(SaveResultStatus.Saved);
+            return Task.FromResult(MutationPreparationStatus.Prepared);
         }
 
-        public Task<SaveResultStatus> DeleteAsync(DomainProduct entity, string concurrencyToken, CancellationToken cancellationToken)
+        public Task<MutationPreparationStatus> DeleteAsync(DomainProduct entity, string concurrencyToken, CancellationToken cancellationToken)
         {
-            if (concurrencyToken != CurrentToken) return Task.FromResult(SaveResultStatus.InvalidToken);
+            if (concurrencyToken != CurrentToken) return Task.FromResult(MutationPreparationStatus.InvalidToken);
             PendingDelete = entity;
-            return Task.FromResult(SaveResultStatus.Saved);
+            return Task.FromResult(MutationPreparationStatus.Prepared);
         }
 
         public void Commit()

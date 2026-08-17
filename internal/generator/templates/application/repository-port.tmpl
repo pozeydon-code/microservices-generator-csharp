@@ -8,6 +8,6 @@ public interface I{{ .Entity.Name }}Repository
     Task<(IReadOnlyList<EntitySnapshot<{{ .Entity.Name }}>> Items, int TotalCount)> ListAsync(int skip, int take, CancellationToken cancellationToken);
     Task<EntitySnapshot<{{ .Entity.Name }}>?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
     Task AddAsync({{ .Entity.Name }} entity, CancellationToken cancellationToken);
-    Task<SaveResultStatus> UpdateAsync({{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken);
-    Task<SaveResultStatus> DeleteAsync({{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken);
+    Task<MutationPreparationStatus> UpdateAsync({{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken);
+    Task<MutationPreparationStatus> DeleteAsync({{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken);
 }

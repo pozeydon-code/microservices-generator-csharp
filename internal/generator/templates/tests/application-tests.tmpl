@@ -227,18 +227,18 @@ public sealed class {{ .Entity.Name }}ApplicationTests
             return Task.CompletedTask;
         }
 
-        public Task<SaveResultStatus> UpdateAsync(Domain{{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
+        public Task<MutationPreparationStatus> UpdateAsync(Domain{{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
         {
-            if (concurrencyToken != CurrentToken) return Task.FromResult(SaveResultStatus.InvalidToken);
+            if (concurrencyToken != CurrentToken) return Task.FromResult(MutationPreparationStatus.InvalidToken);
             PendingTokenUpdate = true;
-            return Task.FromResult(SaveResultStatus.Saved);
+            return Task.FromResult(MutationPreparationStatus.Prepared);
         }
 
-        public Task<SaveResultStatus> DeleteAsync(Domain{{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
+        public Task<MutationPreparationStatus> DeleteAsync(Domain{{ .Entity.Name }} entity, string concurrencyToken, CancellationToken cancellationToken)
         {
-            if (concurrencyToken != CurrentToken) return Task.FromResult(SaveResultStatus.InvalidToken);
+            if (concurrencyToken != CurrentToken) return Task.FromResult(MutationPreparationStatus.InvalidToken);
             PendingDelete = entity;
-            return Task.FromResult(SaveResultStatus.Saved);
+            return Task.FromResult(MutationPreparationStatus.Prepared);
         }
 
         public void Commit()

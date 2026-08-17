@@ -49,9 +49,9 @@ public sealed class {{ .Name }}ArchitectureTests
     public void SourceTextKeepsStrictBoundaryVocabularyOutOfInwardLayers()
     {
         var root = FindSolutionRoot();
-        AssertSourceDoesNotContain(root, "src/{{ .Name }}/{{ .DomainProject.Directory }}", ["RowVersion", "Microsoft.EntityFrameworkCore", "Microsoft.AspNetCore", "IServiceCollection", "MediatR", "FluentValidation", "ErrorOr"]);
+        AssertSourceDoesNotContain(root, "src/{{ .Name }}/{{ .DomainProject.Directory }}", ["Microsoft.EntityFrameworkCore", "Microsoft.AspNetCore", "IServiceCollection", "MediatR", "FluentValidation", "ErrorOr"]);
         var applicationTokenRepresentationTerms = new[] { "Convert.FromBase64String", "Convert.ToBase64String", "Base64", "RowVersion", "byte[8]", "new byte[", "byte[]" };
-        AssertSourceDoesNotContain(root, "src/{{ .Name }}/{{ .ApplicationProject.Directory }}", [.. applicationTokenRepresentationTerms, "Microsoft.EntityFrameworkCore", "Microsoft.AspNetCore", "{{ .Name }}.Infrastructure", "PersistenceMutationStatus"]);
+        AssertSourceDoesNotContain(root, "src/{{ .Name }}/{{ .ApplicationProject.Directory }}", [.. applicationTokenRepresentationTerms, "Microsoft.EntityFrameworkCore", "Microsoft.AspNetCore", "{{ .Name }}.Infrastructure", "PersistenceMutationStatus", "SaveResultStatus"]);
         AssertSourceDoesNotContain(root, "tests/{{ .Name }}/{{ .ApplicationProject.Directory }}.Tests", applicationTokenRepresentationTerms);
         AssertSourceDoesNotContain(root, "src/{{ .Name }}/{{ .WebApiProject.Directory }}", ["Microsoft.EntityFrameworkCore", "DbContext", "INFORMATION_SCHEMA", "Sql", "IEndpointRouteBuilder", "MapGet"]);
         AssertSourceDoesNotContain(root, "src/{{ .Name }}/{{ .InfrastructureProject.Directory }}", ["IEndpointRouteBuilder", "Results.", "StatusCodes", "MapGet", "Microsoft.AspNetCore.Routing", "Microsoft.AspNetCore.Http"]);

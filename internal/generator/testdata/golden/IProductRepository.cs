@@ -8,6 +8,6 @@ public interface IProductRepository
     Task<(IReadOnlyList<EntitySnapshot<Product>> Items, int TotalCount)> ListAsync(int skip, int take, CancellationToken cancellationToken);
     Task<EntitySnapshot<Product>?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
     Task AddAsync(Product entity, CancellationToken cancellationToken);
-    Task<SaveResultStatus> UpdateAsync(Product entity, string concurrencyToken, CancellationToken cancellationToken);
-    Task<SaveResultStatus> DeleteAsync(Product entity, string concurrencyToken, CancellationToken cancellationToken);
+    Task<MutationPreparationStatus> UpdateAsync(Product entity, string concurrencyToken, CancellationToken cancellationToken);
+    Task<MutationPreparationStatus> DeleteAsync(Product entity, string concurrencyToken, CancellationToken cancellationToken);
 }

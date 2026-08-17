@@ -56,34 +56,34 @@ public sealed class ProductRepository(ProductServiceDbContext dbContext, ILogger
         await dbContext.Products.AddAsync(entity, cancellationToken);
     }
 
-    public Task<SaveResultStatus> UpdateAsync(Product entity, string concurrencyToken, CancellationToken cancellationToken)
+    public Task<MutationPreparationStatus> UpdateAsync(Product entity, string concurrencyToken, CancellationToken cancellationToken)
     {
         using var activity = ProductService.Infrastructure.DependencyInjection.ActivitySource.StartActivity("Product.update");
         _ = cancellationToken;
         if (!TryDecodeToken(concurrencyToken, out var rowVersion))
         {
-            return Task.FromResult(SaveResultStatus.InvalidToken);
+            return Task.FromResult(MutationPreparationStatus.InvalidToken);
         }
         dbContext.Products.Update(entity);
-        dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
-        return Task.FromResult(SaveResultStatus.Saved);
+        dbContext.Entry(entity).Property(item => item.RowVersion).OriginalValue = rowVersion;
+        return Task.FromResult(MutationPreparationStatus.Prepared);
     }
 
-    public Task<SaveResultStatus> DeleteAsync(Product entity, string concurrencyToken, CancellationToken cancellationToken)
+    public Task<MutationPreparationStatus> DeleteAsync(Product entity, string concurrencyToken, CancellationToken cancellationToken)
     {
         using var activity = ProductService.Infrastructure.DependencyInjection.ActivitySource.StartActivity("Product.delete");
         _ = cancellationToken;
         if (!TryDecodeToken(concurrencyToken, out var rowVersion))
         {
-            return Task.FromResult(SaveResultStatus.InvalidToken);
+            return Task.FromResult(MutationPreparationStatus.InvalidToken);
         }
         dbContext.Products.Remove(entity);
-        dbContext.Entry(entity).Property("RowVersion").OriginalValue = rowVersion;
-        return Task.FromResult(SaveResultStatus.Saved);
+        dbContext.Entry(entity).Property(item => item.RowVersion).OriginalValue = rowVersion;
+        return Task.FromResult(MutationPreparationStatus.Prepared);
     }
 
     private EntitySnapshot<Product> ToSnapshot(Product entity) =>
-        new(entity, Convert.ToBase64String((byte[])dbContext.Entry(entity).Property("RowVersion").CurrentValue!));
+        new(entity, Convert.ToBase64String(entity.RowVersion));
 
     private async Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync(DomainReconstitutionException exception, Guid? id, CancellationToken cancellationToken)
     {

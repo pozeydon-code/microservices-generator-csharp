@@ -14,6 +14,8 @@ public sealed class {{ .Entity.Name }}
 
 {{ range .Entity.Fields }}    public {{ .DomainType }} {{ .Name }} { get; private set; }{{ .Initializer }}
 {{ end }}
+    public byte[] RowVersion { get; private set; } = [];
+
     public static {{ .Entity.Name }} Create({{ .Entity.Name }}State state) => new()
     {
         Id = Guid.NewGuid(),

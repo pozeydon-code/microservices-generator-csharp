@@ -128,7 +128,7 @@ public sealed class {{ .Name }}InfrastructureTests
         Assert.Equal(created.ConcurrencyToken, reloaded.ConcurrencyToken);
 
         reloaded.Entity.Update(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainUpdatedValue }}, {{ end }} });
-        Assert.Equal(SaveResultStatus.Saved, await reloadRepository.UpdateAsync(reloaded.Entity, reloaded.ConcurrencyToken, CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.Prepared, await reloadRepository.UpdateAsync(reloaded.Entity, reloaded.ConcurrencyToken, CancellationToken.None));
         await reloadUnitOfWork.SaveChangesAsync(CancellationToken.None);
         var updated = await reloadRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None);
         Assert.NotNull(updated);
@@ -136,26 +136,26 @@ public sealed class {{ .Name }}InfrastructureTests
 {{ range .NonIDFields }}        Assert.True(EqualityComparer<{{ .ContractType }}>.Default.Equals({{ .UpdatedValue }}, updated.Entity.{{ .ValueAccess }}));
 {{ end }}
         updated.Entity.Update(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
-        Assert.Equal(SaveResultStatus.Saved, await reloadRepository.UpdateAsync(updated.Entity, reloaded.ConcurrencyToken, CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.Prepared, await reloadRepository.UpdateAsync(updated.Entity, reloaded.ConcurrencyToken, CancellationToken.None));
         await Assert.ThrowsAsync<ConcurrencyConflictException>(() => reloadUnitOfWork.SaveChangesAsync(CancellationToken.None));
-        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, "not-base64", CancellationToken.None));
-        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String([]), CancellationToken.None));
-        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String([1]), CancellationToken.None));
-        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String(new byte[7]), CancellationToken.None));
-        Assert.Equal(SaveResultStatus.Saved, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String(new byte[8]), CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, "not-base64", CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String([]), CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String([1]), CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String(new byte[7]), CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.Prepared, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String(new byte[8]), CancellationToken.None));
         await Assert.ThrowsAsync<ConcurrencyConflictException>(() => reloadUnitOfWork.SaveChangesAsync(CancellationToken.None));
-        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String(new byte[9]), CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, Convert.ToBase64String(new byte[9]), CancellationToken.None));
 
-        Assert.Equal(SaveResultStatus.Saved, await reloadRepository.DeleteAsync(updated.Entity, reloaded.ConcurrencyToken, CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.Prepared, await reloadRepository.DeleteAsync(updated.Entity, reloaded.ConcurrencyToken, CancellationToken.None));
         await Assert.ThrowsAsync<ConcurrencyConflictException>(() => reloadUnitOfWork.SaveChangesAsync(CancellationToken.None));
-        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, "not-base64", CancellationToken.None));
-        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String([]), CancellationToken.None));
-        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String([1]), CancellationToken.None));
-        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String(new byte[7]), CancellationToken.None));
-        Assert.Equal(SaveResultStatus.Saved, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String(new byte[8]), CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, "not-base64", CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String([]), CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String([1]), CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String(new byte[7]), CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.Prepared, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String(new byte[8]), CancellationToken.None));
         await Assert.ThrowsAsync<ConcurrencyConflictException>(() => reloadUnitOfWork.SaveChangesAsync(CancellationToken.None));
-        Assert.Equal(SaveResultStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String(new byte[9]), CancellationToken.None));
-        Assert.Equal(SaveResultStatus.Saved, await reloadRepository.DeleteAsync(updated.Entity, updated.ConcurrencyToken, CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.InvalidToken, await reloadRepository.DeleteAsync(updated.Entity, Convert.ToBase64String(new byte[9]), CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.Prepared, await reloadRepository.DeleteAsync(updated.Entity, updated.ConcurrencyToken, CancellationToken.None));
         await reloadUnitOfWork.SaveChangesAsync(CancellationToken.None);
         Assert.Null(await reloadRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None));
     }
@@ -189,10 +189,10 @@ public sealed class {{ .Name }}InfrastructureTests
         Assert.NotNull(second);
 
         second.Entity.Update(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainUpdatedValue }}, {{ end }} });
-        Assert.Equal(SaveResultStatus.Saved, await secondRepository.UpdateAsync(second.Entity, second.ConcurrencyToken, CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.Prepared, await secondRepository.UpdateAsync(second.Entity, second.ConcurrencyToken, CancellationToken.None));
         await secondUnitOfWork.SaveChangesAsync(CancellationToken.None);
         first.Entity.Update(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
-        Assert.Equal(SaveResultStatus.Saved, await firstRepository.UpdateAsync(first.Entity, first.ConcurrencyToken, CancellationToken.None));
+        Assert.Equal(MutationPreparationStatus.Prepared, await firstRepository.UpdateAsync(first.Entity, first.ConcurrencyToken, CancellationToken.None));
         await Assert.ThrowsAsync<ConcurrencyConflictException>(() => firstUnitOfWork.SaveChangesAsync(CancellationToken.None));
     }
 

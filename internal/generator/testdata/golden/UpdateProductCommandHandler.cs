@@ -49,11 +49,7 @@ public sealed class UpdateProductCommandHandler(IProductRepository repository, I
         });
 
         var status = await repository.UpdateAsync(snapshot.Entity, request.ConcurrencyToken, cancellationToken);
-        if (status == SaveResultStatus.Conflict)
-        {
-            return Error.Conflict(code: "Product.ConcurrencyConflict", description: "Product was changed by another request.");
-        }
-        if (status == SaveResultStatus.InvalidToken)
+        if (status == MutationPreparationStatus.InvalidToken)
         {
             return Error.Validation(code: "ConcurrencyToken.Invalid", description: "Invalid concurrency token.", metadata: new Dictionary<string, object> { ["field"] = "concurrencyToken" });
         }
