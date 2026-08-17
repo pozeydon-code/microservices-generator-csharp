@@ -1,68 +1,31 @@
-# microgen: .NET CRUD microservice generator
+# microgen
 
-`microgen` generates deterministic .NET CRUD microservice scaffolds from JSON. The generator stays CLI-first and UI-independent; the TUI is an adapter over the same planning and generation core, not a place for business rules.
+`microgen` generates deterministic .NET CRUD microservice scaffolds from a strict JSON config. It is CLI-first, includes a simple terminal UI for guided edits, and writes Clean Architecture-style C# projects with ASP.NET Core, EF Core SQL Server, JWT Bearer auth, health checks, and test projects.
 
-## Quick path from a fresh clone
+## Quick Start
 
-Prerequisites: Go 1.22+ for the generator and a .NET SDK matching the configured generated target framework.
+Prerequisites: Go 1.22+ and a .NET SDK supported by your config (`net8.0`, `net9.0`, or `net10.0`).
 
 ```bash
+git clone <repo-url>
+cd generator-microservices-go
 go test ./...
-go vet ./...
 go run ./cmd/microgen generate --config examples/product-service.json --output ./out
 dotnet build ./out/CommercePlatform.sln -warnaserror
 ```
 
-Run a generated WebApi with a connection string supplied by environment/configuration:
+Run a generated WebApi by supplying normal .NET configuration values:
 
 ```bash
-ConnectionStrings__DefaultConnection='Server=sql.example.com;Database=Products;Encrypt=True;TrustServerCertificate=False' \
+ConnectionStrings__DefaultConnection='Server=localhost;Database=Products;TrustServerCertificate=True' \
 Authentication__Authority='https://issuer.example.com' \
 Authentication__Audience='ProductService' \
   dotnet run --project ./out/src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj
 ```
 
-For local development only, `TrustServerCertificate=True` can be used against a trusted local SQL Server instance. Production connection strings should validate certificates.
+Use trusted certificates outside local development.
 
-The generated `/health/live` endpoint does not access SQL Server. `/health/ready` checks database connectivity and verifies generated tables exist. Readiness failure responses are generic; detailed SQL/schema reasons are logged server-side only.
-
-Generated WebApi projects redirect HTTP to HTTPS and enable HSTS outside Development/Testing. Production traffic must use HTTPS all the way to the WebApi, including private backend TLS from a trusted reverse proxy, unless operators explicitly implement and audit trusted forwarded-header configuration. Do not treat arbitrary edge TLS termination as sufficient.
-
-Generated WebApi projects emit vendor-neutral OpenTelemetry traces and metrics with `service.name`, `service.version`, and `deployment.environment` resource attributes from deployment configuration. Configure `OTEL_EXPORTER_OTLP_ENDPOINT` for a collector or explicitly set `OTEL_SDK_DISABLED=true` to opt out; silent telemetry loss is not assumed safe. Production alert provisioning is deployment-specific; reasonable starting alerts are HTTP 5xx error rate above 2% for 5 minutes and p95 server latency above 1 second for 10 minutes.
-
-## Generated structure
-
-For each configured service, `microgen` emits:
-
-| Project | Responsibility |
-| --- | --- |
-| `{Service}.Domain`             | Enterprise entities, reusable Value Objects, and business validation; no framework, persistence, or rowversion dependency. |
-| `{Service}.Application`        | CQRS commands/queries, handlers, FluentValidation validators, repository ports, DTOs, opaque concurrency tokens, and pagination contracts; references Domain only. |
-| `{Service}.Infrastructure`     | EF Core SQL Server adapter, shadow rowversion conversion, bounded retries/timeouts, repositories, and SQL/schema readiness adapter registration. |
-| `{Service}.WebApi`             | ASP.NET Core controller presentation and executable composition root; wires auth, HTTPS/HSTS, request timeout budget, OpenTelemetry, ProblemDetails, middleware, health endpoints, Infrastructure, and startup guards. References Application and Infrastructure. |
-| `{Service}.Architecture.Tests` | Runtime, project-file, and source-text tests proving generated dependency boundaries. |
-| root `.sln` or `.slnx`         | References every generated project deterministically. |
-
-Dependency direction:
-
-```text
-Domain <- Application <- Infrastructure
-Application + Infrastructure <- WebApi
-```
-
-Create, List, GetById, Update, and Delete are CQRS vertical slices. Each entity gets Application commands/queries, handlers, and validators under its plural feature directory; MediatR dispatches every operation through closed validation behavior registrations, and ErrorOr carries success or neutral errors to WebApi. Handlers use the existing Application repository port, preserve pagination defaults/maxima and opaque concurrency DTO mapping, and map missing records and persistence conflicts without leaking infrastructure details. Invalid pagination and invalid concurrency tokens preserve the compact legacy `{ "error": ... }` response contract; field validation uses ProblemDetails. Delete resolves the entity before checking a non-empty token, so a missing entity intentionally returns `404` even when that token is malformed; an empty or whitespace token is rejected earlier by request validation with `400`.
-
-## Generated dependency policy
-
-Generated workspaces centralize NuGet versions in `Directory.Packages.props`. The generator emits only policy-backed `net8.0`, `net9.0`, and `net10.0` targets; a new target requires an explicit verified policy entry in `internal/generator/policy/dependency-policy.json` before it can be selected or generated. ASP.NET Core and EF Core package versions are target-major aligned, the EF Core SQL Server package follows the same EF version, and `Microsoft.Data.SqlClient` remains independently pinned by verified compatibility and audit policy. `MediatR`, `FluentValidation`, and `ErrorOr` remain independently versioned because they are not ASP.NET Core or EF Core trains. The Create slice pins verified stable `MediatR 14.2.0`, `FluentValidation 12.1.1`, `FluentValidation.DependencyInjectionExtensions 12.1.1`, and `ErrorOr 2.1.1`.
-
-NuGet audit remains enabled in generated workspaces. `CentralPackageTransitivePinningEnabled` is also enabled so the central XML package pin can override vulnerable transitives; NuGet still rejects unsafe downgrades with NU1109 instead of hiding audit failures.
-
-Generated workspaces centralize quality defaults in `Directory.Build.props`: nullable reference types, implicit usings, SDK recommended analyzers, code-style enforcement during build, and warnings-as-errors. The runtime harness keeps generated `net10.0` `.slnx` output warning-clean by restoring, building, and testing it when `dotnet` is available.
-
-When `dotnet` is available, the generator test harness validates a generated `net10.0` `.slnx` workspace with restore, build, and test runtime commands.
-
-## Command
+## Commands
 
 ```bash
 microgen version
@@ -71,161 +34,125 @@ microgen tui --config <path> --output <dir> [--force]
 microgen tui --new --config <path> --output <dir> [--force]
 ```
 
-- `--config`: path to a strict JSON config file.
-- `--output`: directory where files are planned or published.
-- `--force`: replaces only verified, unchanged directories previously generated by `microgen`.
-- `--new`: for `microgen tui`, creates a minimal starter JSON config at `--config` before opening the TUI. It refuses to overwrite an existing file.
+| Command | Use |
+| --- | --- |
+| `version` | Print release version, source commit, and build date. |
+| `generate` | Generate from an existing JSON config. |
+| `tui` | Open the terminal UI over the same generation core. |
+| `tui --new` | Create a starter config, then open the terminal UI. |
 
-`microgen version` reports the release version, source commit, and build date. Local builds use the deterministic `dev`/`unknown` fallback; tagged release builds inject these values at link time.
+Useful flags:
 
-## Releases
+- `--config`: strict JSON config path.
+- `--output`: directory to create or replace with generated files.
+- `--force`: replace only verified, unchanged output previously generated by `microgen`.
+- `--new`: create a starter config; refuses to overwrite an existing file.
 
-Tagged releases use the explicit GoReleaser v2 contract in `.goreleaser.yaml` and publish Linux, macOS, and Windows archives, SHA-256 checksums, SPDX JSON SBOMs, and GitHub artifact attestations. Validate the configuration locally with `goreleaser check` and a snapshot build; see [`RELEASE.md`](RELEASE.md) for stable names, independent verification, and repository permissions. Package-manager metadata foundations now render Homebrew, winget, and Chocolatey definitions from the exact tagged GitHub Release checksums, but no package repository is published and production distribution still requires ownership and clean-machine verification.
+## Terminal UI
 
-`microgen tui` opens a terminal UI over the same planning and generation core. Use existing JSON with `--config <path>`, or start from scratch with `--new --config <path>` and a required `--output <dir>`. The starter config includes schema/generation defaults, solution metadata, and one service/entity with `Guid` identity plus `string` name fields so the generator can plan immediately; the TUI confirms that the starter config was created and can be edited incrementally.
+The TUI is a guided editor for the same config and generation engine used by the CLI. Use it to create or adjust solution metadata, target framework, services, value objects, entities, fields, preview output, and generate. Basic navigation uses arrows or `j`/`k`, Enter to select or save, Esc to go back, and `q` or Ctrl+C to quit.
 
-`microgen tui` opens a fullscreen guided wizard. It starts with one clear question and a short menu for project setup, services/data-model configuration, change review, generation, the Advanced workspace, or quit. `Configure project` asks for the solution name and continues through `Services -> Value Objects -> Entities -> Fields -> Review -> Generate -> Result`: each data-model step presents current items, `Add`, `Edit`, and `Advanced configuration` actions, plus a focused detail panel for the selected item. Value Objects are configured first so fields can reference types already defined for the selected service. Value Objects can be configured, skipped to entities, or opened in the Advanced workspace; selecting configure reuses the existing value-object/rules editor. Review shows the solution, resource counts, output directory, planned impact, force requirement, and readiness hints before an explicit generation confirmation. New entities retain the default `Id Guid` field, and fields retain the existing scalar/value-object editing and validation behavior. Use arrows or `j`/`k` to move, Enter to select/save/confirm, Esc to go back, and `q` or Ctrl+C to quit. The wizard keeps the same application planning, callback, stale-plan, force, and output safety boundaries as the CLI.
+## Generated Architecture
 
-In the guided `Project` section, the current `Target framework` is shown prominently with the available framework suggestions. Enter on a suggestion changes the local draft only; `Continue to services` explicitly saves the solution name, description, and selected framework through the existing application callback and validation. A valid current framework remains visible even when it is not in the suggestion list. Choose `Edit solution name and description` to open the existing Project editor for text changes or manual target-framework entry; unsupported values remain subject to normal config validation.
+For each service, `microgen` emits Domain, Application, Infrastructure, WebApi, and architecture-test projects.
 
-Choose `Advanced workspace` from the menu, or `Advanced configuration` from any guided data-model step, to open the full route-based editor: `Overview`, `Project`, `Services`, `Entities`, `Value Objects`, `Preview`, `Generate`, and `Result`. The Advanced workspace retains the existing route shell, navigation rail, and editor shortcuts; Esc from its Overview returns to the wizard. Guided Project, Services, Value Objects, Entities, Fields, Review, Generate, and Result screens intentionally avoid the navigation rail and reuse the existing application callbacks and editors. Successful guided generation opens a minimal Result screen with output directory, impact, warning, build/test hint, and actions to return to the menu or Advanced workspace. If a save succeeds but plan refresh fails, readiness is shown as stale and generation stays locked until refresh succeeds; the guided screen provides `r` to retry. Existing output still requires explicit `--force`, and stale or unsafe plans remain blocked in both guided and Advanced modes.
+```mermaid
+flowchart LR
+  Domain["{Service}.Domain<br/>Primitives<br/>ValueObjects<br/>Entities"]
+  Application["{Service}.Application<br/>Features<br/>DTOs<br/>Repository ports<br/>Validation"]
+  Infrastructure["{Service}.Infrastructure<br/>EF configs<br/>Repositories<br/>UnitOfWork<br/>Readiness"]
+  WebApi["{Service}.WebApi<br/>Controllers<br/>Auth<br/>Health<br/>Composition root"]
+  Tests["{Service}.Architecture.Tests<br/>Boundary checks"]
 
-When existing generated output is present, the `Preview` impact summary compares planned files with on-disk generated files and counts `create`, `replace`, and `unchanged` file actions, plus deleted files. If replacing a verified generated directory would remove previously generated files that are no longer in the new plan, the preview shows a concise danger summary with sample paths; this is reporting only and does not change writer behavior. If all planned files are unchanged, the preview says that no generated file content changes were detected. Wide terminals use summary and list/detail columns; medium and narrow terminals stack the same sections.
+  Application --> Domain
+  Infrastructure --> Application
+  Infrastructure --> Domain
+  WebApi --> Application
+  WebApi --> Infrastructure
+  Tests -. verifies .-> Domain
+  Tests -. verifies .-> Application
+  Tests -. verifies .-> Infrastructure
+  Tests -. verifies .-> WebApi
+```
 
-Use `up`/`down`, `k`/`j`, `pgup`/`pgdown`, `home`, and `end` to inspect planned files on the `Preview` step, `a` to cycle the planned-file action filter, `r` to refresh the plan from disk, `e` to edit the active `Project` or service list, `g` to generate, and `q`, `esc`, or `ctrl+c` to quit. Project edit mode updates solution name, description, and target framework. On the `Services` step, `up`/`down` chooses the service whose entities and value objects are shown, `enter` edits that service's entity names, `e` edits the service list, and `v` edits value objects. Services, entity, and value-object edit modes use `up`/`down` to select, `a` to add, `r` to rename, `d` to delete, `enter` to save, and `esc` to cancel. In value-object edit mode, `o` opens the basic rules editor for the selected value object; it can edit type, string rules (`required`, `minLength`, `maxLength`, `pattern`, examples), numeric bounds (`minimum`, `maximum`), and `Guid.notEmpty` where those rules are valid in the current JSON spec. Entity and service editors keep at least one item locally; value objects may be emptied when no fields reference them. Referenced value objects cannot be renamed or deleted by the TUI slice because that would leave fields pointing at missing types, but their type and rules can be edited through the application boundary. From entity edit mode, `f` opens the selected entity's fields. Field edit mode can add `string` fields, rename fields, edit field types, delete fields while keeping at least one field, save, or return to entities. Config validation still requires exactly one `Id Guid` identity field. New entities get a minimal `Id Guid` field. New value objects are `string`-backed with conservative validation defaults. The value-object rules editor is intentionally basic and does not provide an advanced validation DSL. Target framework editing shows installed .NET SDK major-version suggestions first when `dotnet --list-sdks` is available; otherwise it falls back to a known newest-first list. You can also type a major or TFM manually, such as `6`, `7`, `net10.0`, or `net11.0`. Exit is blocked while saving settings or generating files.
+CRUD operations are generated as Application feature slices. Infrastructure owns EF Core SQL Server details, including rowversion concurrency mapping. WebApi is the executable composition root and wires controllers, auth, health checks, ProblemDetails, OpenTelemetry, Infrastructure, and startup guards.
 
-## Workspace navigation
-
-The Advanced workspace contains the route-based editor with `Overview`, `Project`, `Services`, `Entities`, `Value Objects`, `Preview`, `Generate`, and `Result` screens. Wide terminals show a persistent navigation rail; medium and narrow terminals use compact top navigation with stacked resource content. Use `up`/`down` or `j`/`k` to select a route or resource, `enter` to open it, `h`/`l` to switch screens, `left`/`right` or `tab` to switch the Services context, `1`-`8` for direct routes, and `?` for help. On Services, the contexts are `Services`, `Entities`, and `Value Objects`; `up`/`down` selects the service or resource in the active context, and `enter` opens the corresponding dedicated route/editor. The Entities route shows the selected service, entity list, field names/types, and referenced value objects. The Value Objects route shows the selected service, value-object list, type, compact validation rules, and referencing fields. `e` edits the active resource list, `f` opens Fields from Entities, `o` opens Rules from Value Objects, and `v` opens Value Objects from Services. Inside resource editors, `a` adds, `r` renames, `d` deletes, `enter` saves, and `esc` cancels. `esc` backs Entities and Value Objects to the matching Services context; nested Fields and Rules return to their parent resource route. `esc` from Result returns to Generate, and `esc` from Generate returns to Overview. `q` and `ctrl+c` quit.
-
-The workspace shell and Services resource workspace are incremental redesign slices. Existing editor callbacks, save/cancel behavior, value-object rules, and stale-plan locking remain reachable while deeper resource editor migration continues incrementally.
-
-## Config convention
-
-Configs may declare the current schema and generated .NET target framework:
+## Minimal Config
 
 ```json
 {
   "schemaVersion": 1,
-  "generation": { "targetFramework": "net8.0" },
-  "solution": { "name": "CommercePlatform" },
+  "generation": {
+    "targetFramework": "net8.0"
+  },
+  "solution": {
+    "name": "CommercePlatform"
+  },
   "services": [
     {
       "name": "ProductService",
+      "valueObjects": [
+        {
+          "name": "ProductName",
+          "type": "string",
+          "validations": {
+            "required": true,
+            "minLength": 3,
+            "maxLength": 100
+          }
+        }
+      ],
       "entities": [
-        { "name": "Product", "fields": [{ "name": "Id", "type": "Guid" }] }
+        {
+          "name": "Product",
+          "fields": [
+            { "name": "Id", "type": "Guid" },
+            { "name": "Name", "type": "ProductName" },
+            { "name": "Price", "type": "decimal" }
+          ]
+        }
       ]
     }
   ]
 }
 ```
 
-Configs that omit `schemaVersion` are treated as legacy input and migrated to the current schema when loaded. Explicit schema versions must be valid integers for a supported schema; `schemaVersion: 0` and future versions are rejected. `generation.targetFramework` defaults to `net8.0` and accepts the policy-backed `net8.0`, `net9.0`, and `net10.0` targets. Older targets remain rejected by the net8.0 minimum validation, and any new target requires a verified dependency policy entry before it can be used. TUI manual entry normalizes shorthand majors before saving, so typing `10` persists `net10.0`.
+Each entity needs exactly one `Id` field of type `Guid`. Supported scalar field types are `bool`, `DateTime`, `decimal`, `double`, `Guid`, `int`, `long`, and `string`. Value Objects can wrap supported scalar types and provide basic validation rules.
 
-`generation.solutionFormat` is optional. Explicit values are `sln` and `slnx`; when omitted, `net8.0` and `net9.0` generate `{Solution}.sln`, while `net10.0` generates `{Solution}.slnx` so modern .NET consumers start from the newer solution format.
+## Safety Guarantees
 
-Each entity must contain exactly one identity field:
+- Generation does not run `dotnet`, NuGet, shell commands, migrations, package installation, or database commands.
+- Config validation rejects unknown fields, duplicate names, invalid identifiers, invalid paths, unsupported target frameworks, and invalid entity identity fields before output is created.
+- Output is published through a private staging directory with deterministic ordering and formatting.
+- `--force` replaces only generated directories with a valid manifest, expected file hashes, and no unknown files or symlinks.
+- Generated CRUD routes require JWT Bearer authorization; no production signing secret is generated.
+- Generated dependency versions are centralized in `Directory.Packages.props` and controlled by `internal/generator/policy/dependency-policy.json`.
 
-```json
-{ "name": "Id", "type": "Guid" }
-```
+`microgen` protects normal local generation from accidental overwrites and misleading symlink paths. It is not a security sandbox against a malicious same-user process mutating the filesystem concurrently; generate into a trusted parent directory.
 
-Create/update request contracts intentionally exclude `Id`; the Application layer assigns identity on create and keeps identity from being replaced on update.
-Update/delete operations transport an opaque concurrency token and return conflict when the submitted version is stale. SQL Server rowversion remains an Infrastructure shadow property; Domain and Application do not know EF or byte-array rowversion storage.
+## Generated Output Notes
 
-Supported scalar field types: `bool`, `DateTime`, `decimal`, `double`, `Guid`, `int`, `long`, `string`.
+- Auth: WebApi reads `Authentication:Authority` and `Authentication:Audience`, including environment variables such as `Authentication__Authority` and `Authentication__Audience`.
+- Health: `/health/live` stays lightweight. `/health/ready` checks SQL connectivity and generated EF model smoke queries; external failure responses stay generic.
+- EF and SQL: Infrastructure uses EF Core SQL Server, bounded retries/timeouts, repositories, UnitOfWork, and shadow rowversion concurrency.
+- Migrations: generated Infrastructure includes EF design-time support. For local development, run:
 
-Services can declare reusable Value Objects and then reference them from entity fields:
+  ```bash
+  dotnet ef migrations add InitialCreate --project ./out/src/ProductService/ProductService.Infrastructure --startup-project ./out/src/ProductService/ProductService.Infrastructure
+  dotnet ef database update --project ./out/src/ProductService/ProductService.Infrastructure --startup-project ./out/src/ProductService/ProductService.Infrastructure
+  ```
 
-```json
-"valueObjects": [
-  {
-    "name": "ProductName",
-    "type": "string",
-    "validations": {
-      "required": true,
-      "minLength": 3,
-      "maxLength": 100,
-      "pattern": "^[A-Za-z0-9 .'-]+$",
-      "validExample": "Product Prime",
-      "invalidExample": "***"
-    }
-  },
-  {
-    "name": "ProductPrice",
-    "type": "decimal",
-    "validations": { "minimum": 0, "maximum": 999999.99 }
-  }
-]
-```
+  Production or shared deployments should use your team's reviewed migration process.
+- OpenTelemetry: generated WebApi emits vendor-neutral traces and metrics. Configure an OTLP collector with `OTEL_EXPORTER_OTLP_ENDPOINT` or explicitly disable the SDK when telemetry is not used.
 
-Initial rule support is intentionally small: strings support `required`, `minLength`, `maxLength`, and `pattern`; numeric types support `minimum` and `maximum`; `Guid` supports `notEmpty`; `DateTime` supports `notDefault`; `bool` has no rules yet. Unknown or inapplicable rules fail config validation before output is created. Nested/composed Value Objects are not supported yet.
+## Releases
 
-Generated HTTP create/update contracts expose primitive values, not a Domain JSON shape. Application constructs Value Objects through Domain factories, aggregates field-addressable validation issues, and avoids repository mutation on validation failure. WebApi controllers map those neutral validation outcomes to deterministic 400 validation ProblemDetails. Persisted Value Object data is reconstituted through Domain factories; invalid stored values raise a typed Domain signal that Infrastructure logs with service/entity/operation/value-object context without logging the sensitive value.
+Release builds publish platform archives, checksums, SPDX SBOMs, and GitHub artifact attestations from version tags. See [`RELEASE.md`](RELEASE.md) for release validation, artifact names, package metadata handoff, and repository requirements.
 
-## SQL Server and migrations
+## Current Limitations
 
-Generated Infrastructure uses EF Core SQL Server with framework-aligned package versions pinned by the generator. The WebApi reads `ConnectionStrings:DefaultConnection`, including from `ConnectionStrings__DefaultConnection`, and passes configuration into Infrastructure composition. SQL command timeout/retry settings are bounded so database work fits inside the WebApi request timeout budget. The generated EF execution strategy retries transient `SaveChangesAsync` failures once. If the connection is lost after the database commits but before the client receives the acknowledgement, the outcome is ambiguous: an exception, retry result, or conflict does not prove that the write failed. Generated code does not create idempotency keys or operation identities; callers that retry mutations must establish a durable operation-identity/idempotency boundary at the API/application edge and reconcile the final state by identity.
-JWT Bearer auth reads `Authentication:Authority` and `Authentication:Audience`, including `Authentication__Authority` and `Authentication__Audience`; no signing secrets are generated.
-
-Generated files do not contain credentials and do not run migrations, `EnsureCreated`, package installation, or database commands. Migration commands are manual user actions. A production runbook should include backup, target-environment verification, SQL review, apply, smoke test, readiness verification, repair criteria, and fix-forward planning:
-
-```bash
-TARGET_DATABASE='Products'
-TARGET_SERVER='<confirmed-server-name-or-host,port>'
-test -n "$TARGET_DATABASE"
-test -n "$TARGET_SERVER"
-dotnet ef migrations add InitialCreate --project ./out/src/ProductService/ProductService.Infrastructure --startup-project ./out/src/ProductService/ProductService.WebApi
-dotnet ef migrations script --idempotent --project ./out/src/ProductService/ProductService.Infrastructure --startup-project ./out/src/ProductService/ProductService.WebApi --output ./artifacts/ProductService-migration.sql
-# Review ./artifacts/ProductService-migration.sql before continuing.
-sqlcmd -S "$TARGET_SERVER" -d master -Q "IF DB_ID('$TARGET_DATABASE') IS NULL THROW 50000, 'Target database not found.', 1; SELECT @@SERVERNAME AS server_name, DB_NAME(DB_ID('$TARGET_DATABASE')) AS database_name"
-sqlcmd -S "$TARGET_SERVER" -d master -Q "BACKUP DATABASE [$TARGET_DATABASE] TO DISK = N'/var/opt/mssql/backups/$TARGET_DATABASE-predeploy.bak' WITH COPY_ONLY, CHECKSUM"
-sqlcmd -S "$TARGET_SERVER" -d master -Q "RESTORE VERIFYONLY FROM DISK = N'/var/opt/mssql/backups/$TARGET_DATABASE-predeploy.bak' WITH CHECKSUM"
-sqlcmd -S "$TARGET_SERVER" -d "$TARGET_DATABASE" -b -i ./artifacts/ProductService-migration.sql
-sqlcmd -S "$TARGET_SERVER" -d "$TARGET_DATABASE" -Q "SELECT 1 AS smoke_test"
-```
-
-Run database updates only after reviewing the idempotent SQL script, taking a backup, and confirming the connection string points at the intended database. Before tightening Value Object rules, run the generated `ValueObjectPreflight.sql` artifact, quarantine/backup identified rows, repair only in an explicit transaction with business-approved replacement values, rerun preflight, then deploy. Never invent replacement business data. After deployment, `/health/ready` verifies SQL connectivity plus generated table, column type, nullability, max-length, and rowversion expectations. SQL Server reports rowversion/timestamp as `IS_NULLABLE = YES` in `INFORMATION_SCHEMA` even though the column remains provider-managed concurrency metadata; generated readiness follows that provider metadata quirk while preserving semantic concurrency handling. If readiness or reconstitution logs identify bad persisted values, repair data with a reviewed SQL script against the confirmed target database, re-run readiness, then deploy a fix-forward migration when schema/code changes are needed. Prefer expand/contract migrations for releases; after a migration reaches production, rollback is usually a new fix-forward migration rather than deleting applied schema changes.
-
-## Safety guarantees
-
-- Does not run `dotnet`, NuGet, shell commands, migrations, package installation, or database commands during generation.
-- Keeps the core generation path UI-independent; the TUI adapter uses Bubble Tea.
-- Rejects unknown, duplicate, incorrectly cased, trailing, or oversized JSON config input.
-- Aggregates validation errors with actionable paths.
-- Rejects invalid identifiers, duplicate names, excessive counts, Windows reserved path segment names, and invalid/missing entity `Id` fields.
-- Rejects fields that collide with generated C# type names for the enclosing entity.
-- Requires JWT Bearer authorization on CRUD routes; liveness remains anonymous.
-- Generated WebApi tests exercise the real JwtBearer handler with deterministic test-only signing material; no production signing secret is generated.
-- Uses server-side pagination defaults and maximums instead of unbounded list queries.
-- Uses Infrastructure-owned SQL Server shadow rowversion for optimistic concurrency while exposing only opaque Application tokens.
-- Generated readiness checks use SQL connectivity plus generated schema verification, including string max-length checks, with generic external failure responses.
-- Generated Infrastructure.Tests require `MICROGEN_TEST_SQLSERVER` and verify readiness schema drift, EF materialization, scalar mapping, opaque concurrency token refresh, update/delete, malformed-token handling, stale conflicts, corrupt persisted Value Object signals, and two-context races against SQL Server.
-- Generates Architecture.Tests that inspect assembly references and enforce Domain/Application/Infrastructure/WebApi dependency boundaries.
-- Publishes generated output through a private sibling staging directory.
-- Before `--force`, verifies manifest ownership, generated file hashes, and absence of unknown files or symlinks.
-- Preserves the previous generated directory and attempts rollback if publication fails.
-- Uses deterministic ordering and formatting for generated files.
-
-## Local filesystem trust boundary
-
-`microgen` canonicalizes the nearest existing output ancestor and rejects symlinks in existing output trees before publishing. This protects normal local use from misleading paths and accidental symlink escapes. It is not a race-free security sandbox against a malicious same-user process mutating the filesystem concurrently; run it in a trusted parent directory.
-
-## CI supply-chain note
-
-The workflow uses pinned Go and .NET SDK versions. GitHub Actions are referenced by major tags (`actions/checkout@v4`, `actions/setup-go@v5`) because exact trusted commit SHAs were not verified locally; pinning those SHAs is a future hardening step.
-
-## Current limitations
-
-- Nested/composed Value Objects are a later slice; this generator remains CLI-first with a TUI adapter.
-- The TUI can edit solution metadata, target framework, services, basic entity names, basic entity fields, value-object names, and basic value-object rules. Advanced value-object validation builders and a custom rule DSL remain out of scope.
-- Request idempotency is not generated. A mutation response after a transient commit failure is not proof that the mutation was rolled back; add a durable idempotency key or operation ID at the API/application edge when mutation retries must be unambiguous.
-- Production telemetry exporters are deployment-specific; generated code provides logging/problem-details hooks but no vendor exporter.
 - JSON is the only input format.
-- Docker files and production telemetry exporters are future slices.
-
-## Roadmap
-
-1. Add nested/composed Value Objects when the simple reusable-VO model stabilizes.
-2. Add Docker packaging for generated services.
-3. Add TUI config editing over the existing spec/generation core.
+- Nested or composed Value Objects are not supported yet.
+- Docker files and vendor-specific telemetry exporters are not generated.
+- Request idempotency keys or operation IDs are not generated; add them at the API/application edge when mutation retries must be unambiguous.
+- Production database migration rollout, backup, review, and rollback/fix-forward policy remains a team process, not generated code.
