@@ -1,7 +1,7 @@
 using FluentValidation;
 using FluentValidation.Results;
 
-namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Delete;
+namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Commands.Delete;
 
 public sealed class Delete{{ .Entity.Name }}CommandValidator : AbstractValidator<Delete{{ .Entity.Name }}Command>
 {

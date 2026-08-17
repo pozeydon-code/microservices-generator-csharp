@@ -98,7 +98,9 @@ CRUD operations are generated as Application feature slices. Infrastructure owns
           "validations": {
             "required": true,
             "minLength": 3,
-            "maxLength": 100
+            "maxLength": 100,
+            "validExample": "Product Prime",
+            "invalidExample": "***"
           }
         }
       ],

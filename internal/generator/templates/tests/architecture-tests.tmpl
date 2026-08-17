@@ -9,7 +9,7 @@ public sealed class {{ .Name }}ArchitectureTests
     public void RuntimeAssemblyReferencesFollowCleanArchitectureBoundaries()
     {
         var domain = typeof({{ .Name }}.Domain.Entities.{{ (index .Entities 0).Name }}).Assembly;
-        var application = typeof({{ .Name }}.Application.Features.{{ (index .Entities 0).FeatureName }}.Create.Create{{ (index .Entities 0).Name }}Command).Assembly;
+        var application = typeof({{ .Name }}.Application.{{ (index .Entities 0).FeatureName }}.Commands.Create.Create{{ (index .Entities 0).Name }}Command).Assembly;
         var webApi = typeof({{ .Name }}.WebApi.Controllers.{{ (index .Entities 0).FeatureName }}.{{ (index .Entities 0).Name }}Controller).Assembly;
         var infrastructure = typeof({{ .Name }}.Infrastructure.DependencyInjection).Assembly;
         var webApiCompositionRoot = typeof(Program).Assembly;
@@ -25,14 +25,14 @@ public sealed class {{ .Name }}ArchitectureTests
     public void FeaturesUseMediatRAndDoNotExposeLegacyApplicationServices()
     {
         var root = FindSolutionRoot();
-{{ range .Entities }}        AssertSourceContains(root, "src/{{ $.Name }}/{{ $.ApplicationProject.Directory }}/Features/{{ .FeatureName }}", [
+{{ range .Entities }}        AssertSourceContains(root, "src/{{ $.Name }}/{{ $.ApplicationProject.Directory }}/{{ .FeatureName }}", [
             "Create{{ .Name }}Command : IRequest<ErrorOr<{{ .Name }}Dto>>",
             "List{{ .Name }}Query(int? Page, int? PageSize) : IRequest<ErrorOr<PagedResult<{{ .Name }}Dto>>>",
             "Get{{ .Name }}ByIdQuery(Guid Id) : IRequest<ErrorOr<{{ .Name }}Dto>>",
             "Update{{ .Name }}Command : IRequest<ErrorOr<{{ .Name }}Dto>>",
             "Delete{{ .Name }}Command(Guid Id, string ConcurrencyToken) : IRequest<ErrorOr<Deleted>>"
         ]);
-        AssertSourceDoesNotContain(root, "src/{{ $.Name }}/{{ $.ApplicationProject.Directory }}/Features/{{ .FeatureName }}", ["I{{ .Name }}UseCases", "{{ .Name }}UseCases"]);
+        AssertSourceDoesNotContain(root, "src/{{ $.Name }}/{{ $.ApplicationProject.Directory }}/{{ .FeatureName }}", ["I{{ .Name }}UseCases", "{{ .Name }}UseCases"]);
 {{ end }}    }
 
     [Fact]

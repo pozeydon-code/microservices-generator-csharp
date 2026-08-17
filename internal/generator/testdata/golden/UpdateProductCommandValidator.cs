@@ -3,7 +3,7 @@ using FluentValidation.Results;
 using ProductService.Domain.ValueObjects;
 
 
-namespace ProductService.Application.Features.Products.Update;
+namespace ProductService.Application.Products.Commands.Update;
 
 public sealed class UpdateProductCommandValidator : AbstractValidator<UpdateProductCommand>
 {

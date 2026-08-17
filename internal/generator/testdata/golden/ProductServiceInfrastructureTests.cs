@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using ProductService.Infrastructure;
 using ProductService.Application.Common;
-using ProductService.Application.Features.Products;
+using ProductService.Application.Products.Interfaces;
 using ProductService.Domain.Entities;
 using ProductService.Infrastructure.Persistence.Features.Products;
 using DomainProduct = ProductService.Domain.Entities.Product;

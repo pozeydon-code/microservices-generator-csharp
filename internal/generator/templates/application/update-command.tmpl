@@ -1,7 +1,8 @@
 using ErrorOr;
 using MediatR;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Dtos;
 
-namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Update;
+namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Commands.Update;
 
 public sealed record Update{{ .Entity.Name }}Command : IRequest<ErrorOr<{{ .Entity.Name }}Dto>>
 {

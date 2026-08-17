@@ -1,7 +1,8 @@
 using ErrorOr;
 using MediatR;
+using ProductService.Application.Products.Dtos;
 
-namespace ProductService.Application.Features.Products.Update;
+namespace ProductService.Application.Products.Commands.Update;
 
 public sealed record UpdateProductCommand : IRequest<ErrorOr<ProductDto>>
 {

@@ -1,10 +1,11 @@
 using ErrorOr;
 using MediatR;
 using ProductService.Application.Common;
-using ProductService.Application.Features.Products;
+using ProductService.Application.Products.Dtos;
+using ProductService.Application.Products.Interfaces;
 using ProductService.Domain.Entities;
 
-namespace ProductService.Application.Features.Products.GetById;
+namespace ProductService.Application.Products.Queries.GetById;
 
 public sealed class GetProductByIdQueryHandler(IProductRepository repository) : IRequestHandler<GetProductByIdQuery, ErrorOr<ProductDto>>
 {

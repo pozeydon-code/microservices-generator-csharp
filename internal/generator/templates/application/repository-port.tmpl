@@ -1,7 +1,7 @@
 using {{ .Service.Name }}.Application.Common;
 using {{ .Service.Name }}.Domain.Entities;
 
-namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Interfaces;
 
 public interface I{{ .Entity.Name }}Repository
 {

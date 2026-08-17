@@ -1,10 +1,11 @@
 using ErrorOr;
 using MediatR;
 using {{ .Service.Name }}.Application.Common;
-using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Dtos;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Interfaces;
 using {{ .Service.Name }}.Domain.Entities;
 
-namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.GetById;
+namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Queries.GetById;
 
 public sealed class Get{{ .Entity.Name }}ByIdQueryHandler(I{{ .Entity.Name }}Repository repository) : IRequestHandler<Get{{ .Entity.Name }}ByIdQuery, ErrorOr<{{ .Entity.Name }}Dto>>
 {

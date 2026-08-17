@@ -1,10 +1,10 @@
 using ProductService.Application.Common;
-using ProductService.Application.Features.Products;
-using ProductService.Application.Features.Products.Create;
-using ProductService.Application.Features.Products.Delete;
-using ProductService.Application.Features.Products.GetById;
-using ProductService.Application.Features.Products.List;
-using ProductService.Application.Features.Products.Update;
+using ProductService.Application.Products.Commands.Create;
+using ProductService.Application.Products.Commands.Delete;
+using ProductService.Application.Products.Commands.Update;
+using ProductService.Application.Products.Dtos;
+using ProductService.Application.Products.Queries.GetById;
+using ProductService.Application.Products.Queries.List;
 using ProductService.WebApi.Common;
 using ErrorOr;
 using MediatR;

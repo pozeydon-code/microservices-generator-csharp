@@ -9,7 +9,7 @@ public sealed class ProductServiceArchitectureTests
     public void RuntimeAssemblyReferencesFollowCleanArchitectureBoundaries()
     {
         var domain = typeof(ProductService.Domain.Entities.Product).Assembly;
-        var application = typeof(ProductService.Application.Features.Products.Create.CreateProductCommand).Assembly;
+        var application = typeof(ProductService.Application.Products.Commands.Create.CreateProductCommand).Assembly;
         var webApi = typeof(ProductService.WebApi.Controllers.Products.ProductController).Assembly;
         var infrastructure = typeof(ProductService.Infrastructure.DependencyInjection).Assembly;
         var webApiCompositionRoot = typeof(Program).Assembly;
@@ -25,14 +25,14 @@ public sealed class ProductServiceArchitectureTests
     public void FeaturesUseMediatRAndDoNotExposeLegacyApplicationServices()
     {
         var root = FindSolutionRoot();
-        AssertSourceContains(root, "src/ProductService/ProductService.Application/Features/Products", [
+        AssertSourceContains(root, "src/ProductService/ProductService.Application/Products", [
             "CreateProductCommand : IRequest<ErrorOr<ProductDto>>",
             "ListProductQuery(int? Page, int? PageSize) : IRequest<ErrorOr<PagedResult<ProductDto>>>",
             "GetProductByIdQuery(Guid Id) : IRequest<ErrorOr<ProductDto>>",
             "UpdateProductCommand : IRequest<ErrorOr<ProductDto>>",
             "DeleteProductCommand(Guid Id, string ConcurrencyToken) : IRequest<ErrorOr<Deleted>>"
         ]);
-        AssertSourceDoesNotContain(root, "src/ProductService/ProductService.Application/Features/Products", ["IProductUseCases", "ProductUseCases"]);
+        AssertSourceDoesNotContain(root, "src/ProductService/ProductService.Application/Products", ["IProductUseCases", "ProductUseCases"]);
     }
 
     [Fact]

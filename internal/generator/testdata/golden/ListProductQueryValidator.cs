@@ -2,7 +2,7 @@ using FluentValidation;
 using FluentValidation.Results;
 using ProductService.Application.Common;
 
-namespace ProductService.Application.Features.Products.List;
+namespace ProductService.Application.Products.Queries.List;
 
 public sealed class ListProductQueryValidator : AbstractValidator<ListProductQuery>
 {

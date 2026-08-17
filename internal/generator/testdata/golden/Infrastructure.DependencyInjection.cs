@@ -5,7 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ProductService.Application.Common;
-using ProductService.Application.Features.Products;
+using ProductService.Application.Products.Interfaces;
 using ProductService.Infrastructure.Persistence;
 using ProductService.Infrastructure.Persistence.Features.Products;
 

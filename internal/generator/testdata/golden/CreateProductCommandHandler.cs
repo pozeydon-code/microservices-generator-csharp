@@ -1,11 +1,13 @@
 using ErrorOr;
 using MediatR;
 using ProductService.Application.Common;
+using ProductService.Application.Products.Dtos;
+using ProductService.Application.Products.Interfaces;
 using ProductService.Domain.Entities;
 using ProductService.Domain.ValueObjects;
 
 
-namespace ProductService.Application.Features.Products.Create;
+namespace ProductService.Application.Products.Commands.Create;
 
 public sealed class CreateProductCommandHandler(IProductRepository repository, IUnitOfWork unitOfWork) : IRequestHandler<CreateProductCommand, ErrorOr<ProductDto>>
 {

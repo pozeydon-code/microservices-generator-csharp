@@ -3,7 +3,7 @@ using FluentValidation.Results;
 {{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.ValueObjects;
 {{ end }}
 
-namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Update;
+namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Commands.Update;
 
 public sealed class Update{{ .Entity.Name }}CommandValidator : AbstractValidator<Update{{ .Entity.Name }}Command>
 {

@@ -1,11 +1,13 @@
 using ErrorOr;
 using MediatR;
 using {{ .Service.Name }}.Application.Common;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Dtos;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Interfaces;
 using {{ .Service.Name }}.Domain.Entities;
 {{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.ValueObjects;
 {{ end }}
 
-namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Create;
+namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Commands.Create;
 
 public sealed class Create{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Repository repository, IUnitOfWork unitOfWork) : IRequestHandler<Create{{ .Entity.Name }}Command, ErrorOr<{{ .Entity.Name }}Dto>>
 {

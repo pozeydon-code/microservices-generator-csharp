@@ -1,10 +1,10 @@
 using {{ .Service.Name }}.Application.Common;
-using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
-using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Create;
-using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Delete;
-using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.GetById;
-using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.List;
-using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Update;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Commands.Create;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Commands.Delete;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Commands.Update;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Dtos;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Queries.GetById;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Queries.List;
 using {{ .Service.Name }}.WebApi.Common;
 using ErrorOr;
 using MediatR;

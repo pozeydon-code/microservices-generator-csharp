@@ -1,12 +1,13 @@
 using ErrorOr;
 using MediatR;
 using {{ .Service.Name }}.Application.Common;
-using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Dtos;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Interfaces;
 using {{ .Service.Name }}.Domain.Entities;
 {{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.ValueObjects;
 {{ end }}
 
-namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.List;
+namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Queries.List;
 
 public sealed class List{{ .Entity.Name }}QueryHandler(I{{ .Entity.Name }}Repository repository) : IRequestHandler<List{{ .Entity.Name }}Query, ErrorOr<PagedResult<{{ .Entity.Name }}Dto>>>
 {

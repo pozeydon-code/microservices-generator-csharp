@@ -1,8 +1,8 @@
 using ErrorOr;
 using MediatR;
 using ProductService.Application.Common;
-using ProductService.Application.Features.Products;
+using ProductService.Application.Products.Dtos;
 
-namespace ProductService.Application.Features.Products.List;
+namespace ProductService.Application.Products.Queries.List;
 
 public sealed record ListProductQuery(int? Page, int? PageSize) : IRequest<ErrorOr<PagedResult<ProductDto>>>;

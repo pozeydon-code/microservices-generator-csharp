@@ -5,7 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using {{ .Name }}.Application.Common;
-{{ range .Entities }}using {{ $.Name }}.Application.Features.{{ .FeatureName }};
+{{ range .Entities }}using {{ $.Name }}.Application.{{ .FeatureName }}.Interfaces;
 {{ end }}using {{ .Name }}.Infrastructure.Persistence;
 {{ range .Entities }}using {{ $.Name }}.Infrastructure.Persistence.Features.{{ .FeatureName }};
 {{ end }}

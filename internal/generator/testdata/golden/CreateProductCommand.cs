@@ -1,7 +1,8 @@
 using ErrorOr;
 using MediatR;
+using ProductService.Application.Products.Dtos;
 
-namespace ProductService.Application.Features.Products.Create;
+namespace ProductService.Application.Products.Commands.Create;
 
 public sealed record CreateProductCommand : IRequest<ErrorOr<ProductDto>>
 {

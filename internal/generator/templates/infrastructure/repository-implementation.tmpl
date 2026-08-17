@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using {{ .Service.Name }}.Application.Common;
-using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Interfaces;
 using {{ .Service.Name }}.Domain.Entities;
 using {{ .Service.Name }}.Domain.Primitives;
 using {{ .Service.Name }}.Infrastructure.Persistence;

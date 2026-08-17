@@ -1,6 +1,6 @@
 using ErrorOr;
 using MediatR;
 
-namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Delete;
+namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Commands.Delete;
 
 public sealed record Delete{{ .Entity.Name }}Command(Guid Id, string ConcurrencyToken) : IRequest<ErrorOr<Deleted>>;

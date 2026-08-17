@@ -1,8 +1,8 @@
 using ErrorOr;
 using MediatR;
 using {{ .Service.Name }}.Application.Common;
-using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Dtos;
 
-namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.List;
+namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Queries.List;
 
 public sealed record List{{ .Entity.Name }}Query(int? Page, int? PageSize) : IRequest<ErrorOr<PagedResult<{{ .Entity.Name }}Dto>>>;

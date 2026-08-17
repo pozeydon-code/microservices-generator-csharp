@@ -3,7 +3,7 @@ using FluentValidation.Results;
 {{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.ValueObjects;
 {{ end }}
 
-namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.Create;
+namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Commands.Create;
 
 public sealed class Create{{ .Entity.Name }}CommandValidator : AbstractValidator<Create{{ .Entity.Name }}Command>
 {

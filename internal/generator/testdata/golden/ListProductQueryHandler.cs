@@ -1,12 +1,13 @@
 using ErrorOr;
 using MediatR;
 using ProductService.Application.Common;
-using ProductService.Application.Features.Products;
+using ProductService.Application.Products.Dtos;
+using ProductService.Application.Products.Interfaces;
 using ProductService.Domain.Entities;
 using ProductService.Domain.ValueObjects;
 
 
-namespace ProductService.Application.Features.Products.List;
+namespace ProductService.Application.Products.Queries.List;
 
 public sealed class ListProductQueryHandler(IProductRepository repository) : IRequestHandler<ListProductQuery, ErrorOr<PagedResult<ProductDto>>>
 {

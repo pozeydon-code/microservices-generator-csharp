@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using {{ .Name }}.Infrastructure;
 using {{ .Name }}.Application.Common;
-{{ range .Entities }}using {{ $.Name }}.Application.Features.{{ .FeatureName }};
+{{ range .Entities }}using {{ $.Name }}.Application.{{ .FeatureName }}.Interfaces;
 using {{ $.Name }}.Domain.Entities;
 using {{ $.Name }}.Infrastructure.Persistence.Features.{{ .FeatureName }};
 using Domain{{ .Name }} = {{ $.Name }}.Domain.Entities.{{ .Name }};

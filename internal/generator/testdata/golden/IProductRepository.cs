@@ -1,7 +1,7 @@
 using ProductService.Application.Common;
 using ProductService.Domain.Entities;
 
-namespace ProductService.Application.Features.Products;
+namespace ProductService.Application.Products.Interfaces;
 
 public interface IProductRepository
 {

@@ -1,9 +1,10 @@
 using ErrorOr;
 using MediatR;
 using ProductService.Application.Common;
+using ProductService.Application.Products.Interfaces;
 using ProductService.Domain.Entities;
 
-namespace ProductService.Application.Features.Products.Delete;
+namespace ProductService.Application.Products.Commands.Delete;
 
 public sealed class DeleteProductCommandHandler(IProductRepository repository, IUnitOfWork unitOfWork) : IRequestHandler<DeleteProductCommand, ErrorOr<Deleted>>
 {

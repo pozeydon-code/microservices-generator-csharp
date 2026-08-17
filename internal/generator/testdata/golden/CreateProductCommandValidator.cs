@@ -3,7 +3,7 @@ using FluentValidation.Results;
 using ProductService.Domain.ValueObjects;
 
 
-namespace ProductService.Application.Features.Products.Create;
+namespace ProductService.Application.Products.Commands.Create;
 
 public sealed class CreateProductCommandValidator : AbstractValidator<CreateProductCommand>
 {

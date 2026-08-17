@@ -1,11 +1,13 @@
 using ErrorOr;
 using MediatR;
 using ProductService.Application.Common;
+using ProductService.Application.Products.Dtos;
+using ProductService.Application.Products.Interfaces;
 using ProductService.Domain.Entities;
 using ProductService.Domain.ValueObjects;
 
 
-namespace ProductService.Application.Features.Products.Update;
+namespace ProductService.Application.Products.Commands.Update;
 
 public sealed class UpdateProductCommandHandler(IProductRepository repository, IUnitOfWork unitOfWork) : IRequestHandler<UpdateProductCommand, ErrorOr<ProductDto>>
 {

@@ -1,7 +1,7 @@
 using ErrorOr;
 using MediatR;
-using {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }};
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Dtos;
 
-namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.GetById;
+namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Queries.GetById;
 
 public sealed record Get{{ .Entity.Name }}ByIdQuery(Guid Id) : IRequest<ErrorOr<{{ .Entity.Name }}Dto>>;

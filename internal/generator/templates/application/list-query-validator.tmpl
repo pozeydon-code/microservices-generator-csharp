@@ -2,7 +2,7 @@ using FluentValidation;
 using FluentValidation.Results;
 using {{ .Service.Name }}.Application.Common;
 
-namespace {{ .Service.Name }}.Application.Features.{{ .Entity.FeatureName }}.List;
+namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Queries.List;
 
 public sealed class List{{ .Entity.Name }}QueryValidator : AbstractValidator<List{{ .Entity.Name }}Query>
 {
