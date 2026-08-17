@@ -2,6 +2,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using ProductService.Infrastructure;
+using ProductService.Infrastructure.Health;
 using ProductService.Application.Common;
 using ProductService.Application.Products.Interfaces;
 using ProductService.Domain.Entities;

@@ -121,6 +121,7 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 		{path: "src/ProductService/ProductService.Domain/ValueObjects/ProductName.cs", goldenName: "ProductName.cs"},
 		{path: "src/ProductService/ProductService.Domain/ValueObjects/ProductPrice.cs", goldenName: "ProductPrice.cs"},
 		{path: "src/ProductService/ProductService.Infrastructure/DependencyInjection.cs", goldenName: "Infrastructure.DependencyInjection.cs"},
+		{path: "src/ProductService/ProductService.Infrastructure/Health/SqlReadinessProbe.cs", goldenName: "SqlReadinessProbe.cs"},
 		{path: "src/ProductService/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs", goldenName: "ProductConfiguration.cs"},
 		{path: "src/ProductService/ProductService.Infrastructure/Persistence/Features/Products/ProductRepository.cs", goldenName: "ProductRepository.cs"},
 		{path: "src/ProductService/ProductService.Infrastructure/Persistence/ProductServiceDbContext.cs", goldenName: "ProductServiceDbContext.cs"},
@@ -262,8 +263,11 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	assertNotContains(t, program, "AddValidatorsFromAssembly")
 	assertNotContains(t, program, "ValidationBehavior")
 	infraDI := contentByPath["src/ProductService/ProductService.Infrastructure/DependencyInjection.cs"]
+	readinessProbe := contentByPath["src/ProductService/ProductService.Infrastructure/Health/SqlReadinessProbe.cs"]
 	readme := contentByPath["README.md"]
 	assertContains(t, infraDI, "IReadinessProbe")
+	assertContains(t, infraDI, "ProductService.Infrastructure.Health")
+	assertNotContains(t, infraDI, "public sealed class SqlReadinessProbe")
 	assertContains(t, infraDI, "IUnitOfWork, UnitOfWork")
 	assertContains(t, infraDI, "public const int SqlConnectionTimeoutSeconds = 2")
 	assertContains(t, infraDI, "public const int SqlCommandTimeoutSeconds = 2")
@@ -273,15 +277,16 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	assertContains(t, readme, "A connection loss after the database commits but before the acknowledgement leaves the outcome ambiguous")
 	assertContains(t, readme, "operation-identity/idempotency boundary")
 	assertContains(t, infraDI, "public const int ReadinessTimeoutSeconds = 2")
-	assertContains(t, infraDI, "readinessCts.CancelAfter(TimeSpan.FromSeconds(ResiliencePolicy.ReadinessTimeoutSeconds))")
-	assertContains(t, infraDI, "dbContext.Database.CanConnectAsync(readinessCts.Token)")
-	assertContains(t, infraDI, "dbContext.Products.AsNoTracking().Take(1).ToListAsync(readinessCts.Token)")
-	assertContains(t, infraDI, "DependencyInjection.ActivitySource.StartActivity(\"sql.readiness\")")
-	assertContains(t, infraDI, "db.readiness.can_connect")
-	assertNotContains(t, infraDI, "ExpectedSchemaExistsAsync")
-	assertNotContains(t, infraDI, "INFORMATION_SCHEMA.COLUMNS")
-	assertNotContains(t, infraDI, "syscolumns.system_type_id = 189")
-	assertNotContains(t, infraDI, "CreateCommand()")
+	assertContains(t, readinessProbe, "namespace ProductService.Infrastructure.Health")
+	assertContains(t, readinessProbe, "readinessCts.CancelAfter(TimeSpan.FromSeconds(ResiliencePolicy.ReadinessTimeoutSeconds))")
+	assertContains(t, readinessProbe, "dbContext.Database.CanConnectAsync(readinessCts.Token)")
+	assertContains(t, readinessProbe, "dbContext.Products.AsNoTracking().Take(1).ToListAsync(readinessCts.Token)")
+	assertContains(t, readinessProbe, "DependencyInjection.ActivitySource.StartActivity(\"sql.readiness\")")
+	assertContains(t, readinessProbe, "db.readiness.can_connect")
+	assertNotContains(t, readinessProbe, "ExpectedSchemaExistsAsync")
+	assertNotContains(t, readinessProbe, "INFORMATION_SCHEMA.COLUMNS")
+	assertNotContains(t, readinessProbe, "syscolumns.system_type_id = 189")
+	assertNotContains(t, readinessProbe, "CreateCommand()")
 	assertNotContains(t, program, "CanConnectAsync")
 	assertNotContains(t, program, "foreach (var tableName")
 	assertNotContains(t, infraDI, "MapGet")

@@ -2,6 +2,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using {{ .Name }}.Infrastructure;
+using {{ .Name }}.Infrastructure.Health;
 using {{ .Name }}.Application.Common;
 {{ range .Entities }}using {{ $.Name }}.Application.{{ .FeatureName }}.Interfaces;
 using {{ $.Name }}.Domain.Entities;

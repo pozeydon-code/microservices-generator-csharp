@@ -159,6 +159,9 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		if err := g.appendRendered(&files, join("src", service.Name, service.InfrastructureProject.Directory, "DependencyInjection.cs"), templatePath(infrastructureTemplateDir, "infrastructure-di.tmpl"), service); err != nil {
 			return nil, err
 		}
+		if err := g.appendRendered(&files, join("src", service.Name, service.InfrastructureProject.Directory, "Health", "SqlReadinessProbe.cs"), templatePath(infrastructureTemplateDir, "sql-readiness-probe.tmpl"), service); err != nil {
+			return nil, err
+		}
 		if err := g.appendRendered(&files, join("src", service.Name, service.InfrastructureProject.Directory, "Persistence", "UnitOfWork.cs"), templatePath(infrastructureTemplateDir, "infrastructure-unit-of-work.tmpl"), service); err != nil {
 			return nil, err
 		}

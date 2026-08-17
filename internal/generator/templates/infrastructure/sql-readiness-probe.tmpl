@@ -1,0 +1,45 @@
+using System.Diagnostics;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using {{ .Name }}.Application.Common;
+using {{ .Name }}.Infrastructure;
+using {{ .Name }}.Infrastructure.Persistence;
+
+namespace {{ .Name }}.Infrastructure.Health;
+
+public sealed class SqlReadinessProbe({{ .Name }}DbContext dbContext, ILogger<SqlReadinessProbe> logger) : IReadinessProbe
+{
+    private static readonly Action<ILogger, Exception?> ReadinessCheckFailed = LoggerMessage.Define(
+        LogLevel.Warning,
+        new EventId(1, nameof(ReadinessCheckFailed)),
+        "Readiness check failed while validating SQL Server connectivity.");
+
+    public async Task<ReadinessResult> CheckAsync(CancellationToken cancellationToken)
+    {
+        using var readinessCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        readinessCts.CancelAfter(TimeSpan.FromSeconds(ResiliencePolicy.ReadinessTimeoutSeconds));
+        using var activity = DependencyInjection.ActivitySource.StartActivity("sql.readiness");
+        activity?.SetTag("db.system", "mssql");
+        try
+        {
+            var canConnect = await dbContext.Database.CanConnectAsync(readinessCts.Token);
+            activity?.SetTag("db.readiness.can_connect", canConnect);
+            if (!canConnect)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, "SQL Server connection failed.");
+                return new ReadinessResult(ReadinessStatus.NotReady);
+            }
+
+{{ range .Entities }}            await dbContext.{{ .Name }}s.AsNoTracking().Take(1).ToListAsync(readinessCts.Token);
+{{ end }}            activity?.SetStatus(ActivityStatusCode.Ok);
+            return new ReadinessResult(ReadinessStatus.Ready);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            activity?.SetTag("error.type", ex.GetType().FullName);
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            ReadinessCheckFailed(logger, ex);
+            return new ReadinessResult(ReadinessStatus.NotReady);
+        }
+    }
+}

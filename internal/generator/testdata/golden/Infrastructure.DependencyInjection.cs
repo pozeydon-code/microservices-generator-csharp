@@ -3,9 +3,9 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using ProductService.Application.Common;
 using ProductService.Application.Products.Interfaces;
+using ProductService.Infrastructure.Health;
 using ProductService.Infrastructure.Persistence;
 using ProductService.Infrastructure.Persistence.Features.Products;
 
@@ -48,41 +48,4 @@ internal static class ResiliencePolicy
     public const int SqlRetryCount = 1;
     public static readonly TimeSpan SqlRetryDelay = TimeSpan.FromMilliseconds(250);
     public const int ReadinessTimeoutSeconds = 2;
-}
-
-public sealed class SqlReadinessProbe(ProductServiceDbContext dbContext, ILogger<SqlReadinessProbe> logger) : IReadinessProbe
-{
-    private static readonly Action<ILogger, Exception?> ReadinessCheckFailed = LoggerMessage.Define(
-        LogLevel.Warning,
-        new EventId(1, nameof(ReadinessCheckFailed)),
-        "Readiness check failed while validating SQL Server connectivity.");
-
-    public async Task<ReadinessResult> CheckAsync(CancellationToken cancellationToken)
-    {
-        using var readinessCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        readinessCts.CancelAfter(TimeSpan.FromSeconds(ResiliencePolicy.ReadinessTimeoutSeconds));
-        using var activity = DependencyInjection.ActivitySource.StartActivity("sql.readiness");
-        activity?.SetTag("db.system", "mssql");
-        try
-        {
-            var canConnect = await dbContext.Database.CanConnectAsync(readinessCts.Token);
-            activity?.SetTag("db.readiness.can_connect", canConnect);
-            if (!canConnect)
-            {
-                activity?.SetStatus(ActivityStatusCode.Error, "SQL Server connection failed.");
-                return new ReadinessResult(ReadinessStatus.NotReady);
-            }
-
-            await dbContext.Products.AsNoTracking().Take(1).ToListAsync(readinessCts.Token);
-            activity?.SetStatus(ActivityStatusCode.Ok);
-            return new ReadinessResult(ReadinessStatus.Ready);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
-        {
-            activity?.SetTag("error.type", ex.GetType().FullName);
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            ReadinessCheckFailed(logger, ex);
-            return new ReadinessResult(ReadinessStatus.NotReady);
-        }
-    }
 }
