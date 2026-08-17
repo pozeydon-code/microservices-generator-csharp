@@ -2,146 +2,46 @@
 
 Minimal generated .NET 8 microservice workspace for product management.
 
-## Services
+Generated services use Clean Architecture, CQRS slices, EF Core SQL Server persistence, JWT authentication, health checks, and manual database-change steps.
 
-- `ProductService` Domain, Application, Infrastructure, WebApi, and test projects.
+## Quick start
 
-## Architecture
+1. Configure the values in the table below.
+2. Restore, build, and test the solution.
+3. Run the WebApi project for the service you want to start.
 
-Generated services use a four-project Clean Architecture model:
-
-| Project | Responsibility |
+| Setting | Purpose |
 |---|---|
-| `{Service}.Domain` | Entities with private setters and explicit create/update behavior. No framework, EF, persistence token, or rowversion dependency. |
-| `{Service}.Application` | CQRS commands/handlers/validators for Create/Update/Delete, List/GetById CQRS queries/handlers, repository ports, DTOs, pagination contracts, and opaque concurrency tokens. References Domain only. |
-| `{Service}.Infrastructure` | EF Core SQL Server adapter, shadow rowversion conversion, repository implementations, bounded retries/timeouts, and SQL/schema readiness adapter registration. |
-| `{Service}.WebApi` | ASP.NET Core controller presentation and executable composition root for auth, HTTPS/HSTS, request timeout budget, OpenTelemetry, ProblemDetails, middleware, health endpoints, Infrastructure composition, and startup guards. References Application and Infrastructure. |
+| `ConnectionStrings__DefaultConnection` | SQL Server connection string. Use trusted certificates in production; `TrustServerCertificate=True` is for local development only. |
+| `Authentication__Authority` | JWT issuer/authority. |
+| `Authentication__Audience` | JWT audience expected by the API. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Optional OpenTelemetry OTLP endpoint. Set `OTEL_SDK_DISABLED=true` to opt out. |
 
-```text
-Domain <- Application <- Infrastructure
-Application + Infrastructure <- WebApi
+## Project map
+
+```mermaid
+flowchart LR
+    Domain["Domain\nPrimitives, ValueObjects, Entities"]
+    Application["Application\nFeatures, CQRS, validation, ports"]
+    Infrastructure["Infrastructure\nEF Core, configurations, repositories, readiness"]
+    WebApi["WebApi\nControllers, auth, health, composition"]
+
+    Domain --> Application
+    Application --> Infrastructure
+    Application --> WebApi
+    Infrastructure --> WebApi
 ```
 
-`{Service}.Architecture.Tests` inspects generated assembly references, project references, and source text to enforce these boundaries. Value Objects live in Domain; Application constructs them and WebApi only maps validation outcomes to HTTP.
-
-## CQRS slices
-
-Create, List, GetById, Update, and Delete are generated vertical slices under `Application/Features/{PluralEntity}`. FluentValidation runs through closed Application MediatR behavior registrations, handlers use the Application repository port and return `ErrorOr`, and WebApi dispatches every operation through `ISender`. List preserves its pagination exception and legacy `{ "error": ... }` 400 contract; concurrency-token failures use the same compact 400 contract, while field validation uses RFC-compatible ProblemDetails.
-
-Delete resolves the entity before checking a non-empty concurrency token. A missing entity therefore returns `NotFound` even when that token is malformed; an empty or whitespace token is rejected earlier by request validation. An existing entity returns a compact validation error for a malformed token and a conflict for a stale valid token.
-
-## Commit outcome and retries
-
-Infrastructure enables one bounded EF transient retry around database work, including `SaveChangesAsync`. A connection loss after the database commits but before the acknowledgement leaves the outcome ambiguous; an exception, retry result, or concurrency conflict does not prove that the write failed. Generated code does not provide idempotency keys or operation identities. Add a durable operation-identity/idempotency boundary at the API or Application edge when mutation retries must be safely reconciled.
-
-## Value Objects
-
-Service-level Value Objects wrap supported scalar primitives and keep business validation in Domain. Create/update request contracts use primitive JSON values. Application constructs Value Objects, aggregates field-addressable validation issues, and does not call repositories when validation fails. WebApi maps validation failures to RFC-compatible 400 validation ProblemDetails. Persisted Value Object data is reconstituted through Domain factories; invalid stored values raise a typed Domain signal that Infrastructure logs with service/entity/operation/value-object context without logging the sensitive value.
-
-Supported rules: strings use `required`, `minLength`, `maxLength`, and `pattern`; numeric types use `minimum` and `maximum`; `Guid` uses `notEmpty`; `DateTime` uses `notDefault`; `bool` has no rules yet. Nested/composed Value Objects are intentionally out of scope for this slice.
-
-## Safety
-
-Generation itself does not run dotnet, NuGet, migrations, shell commands, or database commands. No executable scaffold or installer is emitted.
-
-## Dotnet scaffold command plan (documentation only)
-
-The following is a documentation-only plan for manually reproducing the SDK project structure. It is not an installer, script, or instruction to execute as generated output. Adapt and review each command for the installed SDK and the intended destination before running it.
-
-The solution command must match the generated file format: omit `--format` for `.sln` files because .NET 8 does not support that option, and use `--format 'slnx'` for `.slnx` files on .NET 10 or newer. The plan creates SDK-created Domain, Application, Infrastructure, WebApi, and test projects, solution membership, and project references; it does not generate the domain, application, controller, or other source templates emitted by the normal generator output.
-
-Package versions are intentionally omitted from project/package commands. Generated `Directory.Packages.props` owns versions through central package management, including target-framework-specific EF Core and ASP.NET Core packages plus the compatible SqlClient policy pin. The Create slice uses verified stable `MediatR 14.2.0`, `FluentValidation 12.1.1`, `FluentValidation.DependencyInjectionExtensions 12.1.1`, and `ErrorOr 2.1.1`; the first three are consumed on `net8.0` and remain compatible with supported `net9.0` and `net10.0` targets through their `net8.0` assets where applicable.
-
-```text
-dotnet new sln --name 'CommercePlatform'
-dotnet new classlib --framework 'net8.0' --name 'ProductService.Domain' --output './src/ProductService/ProductService.Domain' --no-restore
-dotnet new classlib --framework 'net8.0' --name 'ProductService.Application' --output './src/ProductService/ProductService.Application' --no-restore
-dotnet new classlib --framework 'net8.0' --name 'ProductService.Infrastructure' --output './src/ProductService/ProductService.Infrastructure' --no-restore
-dotnet new webapi --use-controllers --no-openapi --framework 'net8.0' --name 'ProductService.WebApi' --output './src/ProductService/ProductService.WebApi' --no-restore
-dotnet new xunit --framework 'net8.0' --name 'ProductService.Domain.Tests' --output './tests/ProductService/ProductService.Domain.Tests' --no-restore
-dotnet new xunit --framework 'net8.0' --name 'ProductService.Application.Tests' --output './tests/ProductService/ProductService.Application.Tests' --no-restore
-dotnet new xunit --framework 'net8.0' --name 'ProductService.WebApi.Tests' --output './tests/ProductService/ProductService.WebApi.Tests' --no-restore
-dotnet new xunit --framework 'net8.0' --name 'ProductService.Architecture.Tests' --output './tests/ProductService/ProductService.Architecture.Tests' --no-restore
-dotnet new xunit --framework 'net8.0' --name 'ProductService.Infrastructure.Tests' --output './tests/ProductService/ProductService.Infrastructure.Tests' --no-restore
-dotnet sln './CommercePlatform.sln' add './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
-dotnet sln './CommercePlatform.sln' add './src/ProductService/ProductService.Application/ProductService.Application.csproj'
-dotnet sln './CommercePlatform.sln' add './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj'
-dotnet sln './CommercePlatform.sln' add './src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj'
-dotnet sln './CommercePlatform.sln' add './tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj'
-dotnet sln './CommercePlatform.sln' add './tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj'
-dotnet sln './CommercePlatform.sln' add './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj'
-dotnet sln './CommercePlatform.sln' add './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj'
-dotnet sln './CommercePlatform.sln' add './tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj'
-dotnet add './src/ProductService/ProductService.Application/ProductService.Application.csproj' reference './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
-dotnet add './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj' reference './src/ProductService/ProductService.Application/ProductService.Application.csproj'
-dotnet add './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj' reference './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
-dotnet add './src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj' reference './src/ProductService/ProductService.Application/ProductService.Application.csproj'
-dotnet add './src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj' reference './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj'
-dotnet add './tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj' reference './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
-dotnet add './tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj' reference './src/ProductService/ProductService.Application/ProductService.Application.csproj'
-dotnet add './tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj' reference './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
-dotnet add './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj' reference './src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj'
-dotnet add './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj' reference './src/ProductService/ProductService.Application/ProductService.Application.csproj'
-dotnet add './tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj' reference './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
-dotnet add './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj' reference './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
-dotnet add './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj' reference './src/ProductService/ProductService.Application/ProductService.Application.csproj'
-dotnet add './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj' reference './src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj'
-dotnet add './tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj' reference './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj'
-dotnet add './tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj' reference './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj'
-dotnet add './tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj' reference './src/ProductService/ProductService.Application/ProductService.Application.csproj'
-dotnet add './tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj' reference './src/ProductService/ProductService.Domain/ProductService.Domain.csproj'
-```
-
-Versionless package plan:
-
-| Project | Package |
+| Project | What lives here |
 |---|---|
-| `src/ProductService/ProductService.Application/ProductService.Application.csproj` | `ErrorOr` |
-| `src/ProductService/ProductService.Application/ProductService.Application.csproj` | `FluentValidation` |
-| `src/ProductService/ProductService.Application/ProductService.Application.csproj` | `MediatR` |
-| `src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj` | `Microsoft.AspNetCore.Authentication.JwtBearer` |
-| `src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj` | `ErrorOr` |
-| `src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj` | `FluentValidation.DependencyInjectionExtensions` |
-| `src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj` | `MediatR` |
-| `src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj` | `OpenTelemetry.Exporter.OpenTelemetryProtocol` |
-| `src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj` | `OpenTelemetry.Extensions.Hosting` |
-| `src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj` | `OpenTelemetry.Instrumentation.AspNetCore` |
-| `src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj` | `OpenTelemetry.Instrumentation.Http` |
-| `src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj` | `Microsoft.EntityFrameworkCore.Design` |
-| `src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj` | `Microsoft.EntityFrameworkCore.Tools` |
-| `src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj` | `Microsoft.EntityFrameworkCore.SqlServer` |
-| `src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj` | `Microsoft.Data.SqlClient` |
-| `tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj` | `Microsoft.AspNetCore.Mvc.Testing` |
-| `tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj` | `System.IdentityModel.Tokens.Jwt` |
-| `tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj` | `Microsoft.NET.Test.Sdk` |
-| `tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj` | `xunit` |
-| `tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj` | `xunit.runner.visualstudio` |
-| `tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj` | `Microsoft.NET.Test.Sdk` |
-| `tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj` | `xunit` |
-| `tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj` | `xunit.runner.visualstudio` |
-| `tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj` | `Microsoft.NET.Test.Sdk` |
-| `tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj` | `xunit` |
-| `tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj` | `xunit.runner.visualstudio` |
-| `tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj` | `Microsoft.NET.Test.Sdk` |
-| `tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj` | `xunit` |
-| `tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj` | `xunit.runner.visualstudio` |
-| `tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj` | `Microsoft.NET.Test.Sdk` |
-| `tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj` | `xunit` |
-| `tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj` | `xunit.runner.visualstudio` |
-| `tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj` | `Microsoft.EntityFrameworkCore.SqlServer` |
-| `tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj` | `Microsoft.Data.SqlClient` |
+| `{Service}.Domain` | `Primitives`, `ValueObjects`, and `Entities`. No EF, WebApi, rowversion, or framework dependency. |
+| `{Service}.Application` | `Features/{Entity}` vertical slices, commands, queries, validators, DTOs, repository ports, pagination, and unit-of-work port. |
+| `{Service}.Infrastructure` | EF Core SQL Server adapter, `Persistence/Configurations`, repositories, UnitOfWork, DbContext factory, readiness probe, and `ValueObjectPreflight.sql`. |
+| `{Service}.WebApi` | Controllers, JWT auth, HTTPS/HSTS, request timeout, OpenTelemetry, ProblemDetails, health endpoints, and startup wiring. |
 
-## Configuration
+Architecture tests verify the generated project boundaries.
 
-- Set `ConnectionStrings__DefaultConnection` to a SQL Server connection string. WebApi configuration passes it to Infrastructure; production strings should validate certificates, and `TrustServerCertificate=True` is a local-development exception only.
-- Set `Authentication__Authority` and `Authentication__Audience` for JWT Bearer authentication. No signing secrets are generated.
-- CRUD endpoints require authorization. `/health/live` is anonymous and process-only. `/health/ready` checks SQL connectivity and verifies generated table, column type, nullability, max-length, and rowversion expectations. External readiness failures use a generic response; detailed failure reasons are written to logs only.
-- WebApi projects redirect HTTP to HTTPS and enable HSTS outside Development/Testing. Production traffic must use HTTPS all the way to the WebApi, including private backend TLS from a trusted reverse proxy, unless operators explicitly implement and audit trusted forwarded-header configuration.
-- Configure OpenTelemetry OTLP export with `OTEL_EXPORTER_OTLP_ENDPOINT` and standard `OTEL_EXPORTER_OTLP_*` variables, or explicitly set `OTEL_SDK_DISABLED=true` to opt out. Generated code does not provision vendor alerts; start with deployment-specific HTTP 5xx and p95 latency alerts.
-
-## Build and test
-
-Generated workspaces keep quality defaults in `Directory.Build.props`: nullable reference types, implicit usings, SDK recommended analyzers, code-style enforcement during build, and warnings-as-errors. The generator runtime harness restores, builds, and tests the generated `net10.0` `.slnx` workspace with these settings so clean output is validated continuously.
+## Common commands
 
 ```bash
 dotnet restore ./CommercePlatform.sln
@@ -150,55 +50,48 @@ MICROGEN_TEST_SQLSERVER='Server=localhost,1433;User Id=sa;Password=<password>;En
   dotnet test ./CommercePlatform.sln --nologo -warnaserror --blame-hang --blame-hang-timeout 90s --logger "trx;LogFileName=generated-tests.trx"
 ```
 
-## Manual migrations
+| Task | Command |
+|---|---|
+| Run `ProductService` | `dotnet run --project ./src/ProductService/ProductService.WebApi` |
+| Build all | `dotnet build ./CommercePlatform.sln --nologo -warnaserror` |
+| Test all | `dotnet test ./CommercePlatform.sln --nologo -warnaserror` |
 
-Create and apply EF migrations manually after review, backup, staging validation, and deployment approval. The generator prepares EF Core design-time tooling and a DbContext factory, but it never generates migration files, runs migrations, or opens a database connection.
+Generated workspaces enable nullable reference types, implicit usings, recommended analyzers, code-style checks during build, and warnings as errors.
 
-Run the same sequence for each generated service:
+## Database changes
+
+The generator prepares EF Core migration tooling, but it does not create migration files, run migrations, or open database connections.
 
 ### ProductService
 
-1. Build and test the generated solution.
-2. Resolve and confirm one explicit target server/database from runtime configuration.
-3. Create or update the reviewed migration source with the Infrastructure project as both the migrations project and design-time startup project.
-4. Generate an idempotent SQL artifact.
-5. Review the generated SQL artifact before deployment.
-6. Validate the reviewed SQL artifact against staging before production.
-7. Back up the target database and verify the restore path.
-8. Apply the reviewed SQL artifact with `sqlcmd` or your approved deployment tool in the approved deployment window.
-9. Smoke test the API and readiness endpoint after the application version is deployed.
-10. If readiness or reconstitution logs identify bad persisted values, repair data only with a reviewed SQL script against the confirmed target database, re-run readiness, and preserve the repair script with the deployment artifact.
-
 ```bash
-mkdir -p ./artifacts
-dotnet build ./CommercePlatform.sln --nologo -warnaserror
-dotnet test ./CommercePlatform.sln --nologo -warnaserror --logger "trx;LogFileName=ProductService-tests.trx"
-TARGET_DATABASE='<confirmed-database-name>'
-TARGET_SERVER='<confirmed-server-name-or-host,port>'
-test -n "$TARGET_DATABASE"
-test -n "$TARGET_SERVER"
 dotnet ef migrations add InitialCreate --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Infrastructure --output-dir Persistence/Migrations
-dotnet ef migrations script --idempotent --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Infrastructure --output ./artifacts/ProductService-migration.sql
-# Review ./artifacts/ProductService-migration.sql before continuing.
-# Validate the reviewed script in staging before continuing.
-sqlcmd -S "$TARGET_SERVER" -d master -Q "IF DB_ID('$TARGET_DATABASE') IS NULL THROW 50000, 'Target database not found.', 1; SELECT @@SERVERNAME AS server_name, DB_NAME(DB_ID('$TARGET_DATABASE')) AS database_name"
-sqlcmd -S "$TARGET_SERVER" -d master -Q "BACKUP DATABASE [$TARGET_DATABASE] TO DISK = N'/var/opt/mssql/backups/$TARGET_DATABASE-predeploy.bak' WITH COPY_ONLY, CHECKSUM"
-sqlcmd -S "$TARGET_SERVER" -d master -Q "RESTORE VERIFYONLY FROM DISK = N'/var/opt/mssql/backups/$TARGET_DATABASE-predeploy.bak' WITH CHECKSUM"
-sqlcmd -S "$TARGET_SERVER" -d "$TARGET_DATABASE" -b -i ./artifacts/ProductService-migration.sql
-sqlcmd -S "$TARGET_SERVER" -d "$TARGET_DATABASE" -Q "SELECT 1 AS smoke_test"
+dotnet ef database update --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Infrastructure
 ```
 
-Before tightening Value Object rules, run `./src/ProductService/ProductService.Infrastructure/Persistence/ValueObjectPreflight.sql` against the confirmed target database. The script covers SQL-safe rules only: null/required, min/max length, numeric min/max, Guid empty, and DateTime default. Regex rules require application/manual audit because regex semantics are not safely portable to SQL. Quarantine and back up identified rows, repair only in an explicit transaction with business-approved values, rerun preflight, and only then deploy the migration. Never invent replacement business data.
+For shared, staging, or production environments, use your team's deployment process.
 
-Rollback limitations: database rollback is not automatically reversible after schema changes. If rollback-to-target is required, create and review a target-specific SQL script from a verified backup/restore plan; otherwise prefer fix-forward.
+## Health and readiness
 
-Fix-forward flow:
+| Endpoint | Access | Meaning |
+|---|---|---|
+| `/health/live` | Anonymous | Process is running. |
+| `/health/ready` | Anonymous | SQL connection and generated EF mappings are ready. Failure responses stay generic; logs keep details. |
 
-```bash
-dotnet ef migrations add FixForwardDescription --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Infrastructure --output-dir Persistence/Migrations
-dotnet ef migrations script --idempotent --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Infrastructure --output ./artifacts/ProductService-fix-forward.sql
-# Review and validate ./artifacts/ProductService-fix-forward.sql in staging.
-sqlcmd -S "$TARGET_SERVER" -d "$TARGET_DATABASE" -b -i ./artifacts/ProductService-fix-forward.sql
-```
+## Generated services and files
 
-Prefer expand/contract changes for releases. Never auto-run generated migration commands from the generator or CI unless your delivery process explicitly owns that database deployment step.
+| Service | Generated areas |
+|---|---|
+| `ProductService` | Domain, Application, Infrastructure, WebApi, Domain.Tests, Application.Tests, Infrastructure.Tests, WebApi.Tests, Architecture.Tests |
+
+The scaffold command plan and package list are represented in the generated project files. Package versions are centralized in `Directory.Packages.props`.
+
+## Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| Build fails on warnings | Generated projects treat warnings as errors; fix the first compiler/analyzer message. |
+| API returns `401` | Confirm `Authentication__Authority`, `Authentication__Audience`, and the bearer token. |
+| `/health/ready` is unavailable | Check SQL connectivity, migrations, mapped columns, and application logs. |
+| Value Object migration is risky | Run `ValueObjectPreflight.sql` and repair invalid rows with business-approved values before creating the migration. |
+| Retry outcome is unclear | A connection loss after the database commits but before the acknowledgement leaves the outcome ambiguous; add an operation-identity/idempotency boundary before relying on mutation retries. |

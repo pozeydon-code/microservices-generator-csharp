@@ -35,7 +35,7 @@ func TestGeneratedWebApiTestsDoNotContainUnusedJsonPropertyFields(t *testing.T) 
 	assertNotContains(t, content, "AllowedValidationProblemProperties")
 }
 
-func TestGeneratedReadmeUsesReviewedSqlMigrationRunbook(t *testing.T) {
+func TestGeneratedReadmeUsesSimpleLocalMigrationCommands(t *testing.T) {
 	gen, err := New()
 	if err != nil {
 		t.Fatalf("new generator: %v", err)
@@ -47,18 +47,12 @@ func TestGeneratedReadmeUsesReviewedSqlMigrationRunbook(t *testing.T) {
 	}
 
 	content := string(generatedContent(t, files, "README.md"))
-	assertContains(t, content, "dotnet ef migrations script --idempotent")
-	assertContains(t, content, "# Review ./artifacts/ProductService-migration.sql before continuing.")
-	assertContains(t, content, "BACKUP DATABASE [$TARGET_DATABASE]")
-	assertContains(t, content, `sqlcmd -S "$TARGET_SERVER" -d "$TARGET_DATABASE" -b -i ./artifacts/ProductService-migration.sql`)
-	assertNotContains(t, content, "dotnet ef database update")
-
-	reviewIndex := strings.Index(content, "# Review ./artifacts/ProductService-migration.sql before continuing.")
-	backupIndex := strings.Index(content, "BACKUP DATABASE [$TARGET_DATABASE]")
-	applyIndex := strings.Index(content, `sqlcmd -S "$TARGET_SERVER" -d "$TARGET_DATABASE" -b -i ./artifacts/ProductService-migration.sql`)
-	if reviewIndex == -1 || backupIndex == -1 || applyIndex == -1 || !(reviewIndex < backupIndex && backupIndex < applyIndex) {
-		t.Fatalf("expected README migration runbook to review SQL, back up, then apply reviewed SQL")
-	}
+	assertContains(t, content, "dotnet ef migrations add InitialCreate")
+	assertContains(t, content, "dotnet ef database update --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Infrastructure")
+	assertContains(t, content, "For shared, staging, or production environments, use your team's deployment process.")
+	assertNotContains(t, content, "dotnet ef migrations script --idempotent")
+	assertNotContains(t, content, "sqlcmd")
+	assertNotContains(t, content, "BACKUP DATABASE")
 }
 
 func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
