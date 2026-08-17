@@ -10,6 +10,7 @@ using ProductService.Domain.Entities;
 using DomainProduct = ProductService.Domain.Entities.Product;
 using ProductService.Domain.ValueObjects;
 
+using FluentValidation;
 using ErrorOr;
 using Xunit;
 
@@ -53,6 +54,41 @@ public sealed class ProductApplicationTests
         });
 
         Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public async Task ValidationBehaviorReturnsTypedValidationErrorsAndSkipsHandler()
+    {
+        var validators = new IValidator<CreateProductCommand>[] { new CreateProductCommandValidator() };
+        var behavior = new ValidationBehavior<CreateProductCommand, ErrorOr<ProductDto>>(validators);
+        var handlerCalled = false;
+
+        var result = await behavior.Handle(new CreateProductCommand
+        {
+            IsActive = true,
+            Name = "",
+            Price = 0m - 1m,
+        }, _ =>
+        {
+            handlerCalled = true;
+            return Task.FromResult<ErrorOr<ProductDto>>(new ProductDto(Guid.NewGuid(), true, "Product Prime", 0m, "token-v1"));
+        }, CancellationToken.None);
+
+        Assert.False(handlerCalled);
+        Assert.True(result.IsError);
+        Assert.Contains(result.Errors, error => error.Code == "ProductName.Required");
+        Assert.Contains(result.Errors, error => error.Code == "ProductPrice.Minimum");
+    }
+
+    [Fact]
+    public async Task ValidationBehaviorCallsHandlerWhenNoValidatorsAreRegistered()
+    {
+        var behavior = new ValidationBehavior<CreateProductCommand, ErrorOr<ProductDto>>([]);
+
+        var result = await behavior.Handle(new CreateProductCommand(), _ =>
+            Task.FromResult<ErrorOr<ProductDto>>(new ProductDto(Guid.NewGuid(), true, "Product Prime", 0m, "token-v1")), CancellationToken.None);
+
+        Assert.False(result.IsError);
     }
 
     [Fact]

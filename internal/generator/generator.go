@@ -76,6 +76,12 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		if err := g.appendRendered(&files, join("src", service.Name, service.ApplicationProject.Directory, service.ApplicationProject.FileName), templatePath(applicationTemplateDir, "application-project.tmpl"), service); err != nil {
 			return nil, err
 		}
+		if err := g.appendRendered(&files, join("src", service.Name, service.ApplicationProject.Directory, "ApplicationAssemblyReference.cs"), templatePath(applicationTemplateDir, "application-assembly-reference.tmpl"), service); err != nil {
+			return nil, err
+		}
+		if err := g.appendRendered(&files, join("src", service.Name, service.ApplicationProject.Directory, "DependencyInjection.cs"), templatePath(applicationTemplateDir, "application-di.tmpl"), service); err != nil {
+			return nil, err
+		}
 		if err := g.appendRendered(&files, join("src", service.Name, service.ApplicationProject.Directory, "Common", "Results.cs"), templatePath(applicationTemplateDir, "application-results.tmpl"), service); err != nil {
 			return nil, err
 		}

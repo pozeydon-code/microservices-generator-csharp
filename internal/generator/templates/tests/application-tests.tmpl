@@ -10,6 +10,7 @@ using {{ .Service.Name }}.Domain.Entities;
 using Domain{{ .Entity.Name }} = {{ .Service.Name }}.Domain.Entities.{{ .Entity.Name }};
 {{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.ValueObjects;
 {{ end }}
+using FluentValidation;
 using ErrorOr;
 using Xunit;
 
@@ -47,6 +48,38 @@ public sealed class {{ .Entity.Name }}ApplicationTests
 {{ end }}        });
 
         Assert.True(result.IsValid);
+    }
+
+{{ if .Entity.HasValueObjectFields }}    [Fact]
+    public async Task ValidationBehaviorReturnsTypedValidationErrorsAndSkipsHandler()
+    {
+        var validators = new IValidator<Create{{ .Entity.Name }}Command>[] { new Create{{ .Entity.Name }}CommandValidator() };
+        var behavior = new ValidationBehavior<Create{{ .Entity.Name }}Command, ErrorOr<{{ .Entity.Name }}Dto>>(validators);
+        var handlerCalled = false;
+
+        var result = await behavior.Handle(new Create{{ .Entity.Name }}Command
+        {
+{{ range .Entity.NonIDFields }}            {{ .Name }} = {{ if .IsValueObject }}{{ .InvalidValue }}{{ else }}{{ .SampleValue }}{{ end }},
+{{ end }}        }, _ =>
+        {
+            handlerCalled = true;
+            return Task.FromResult<ErrorOr<{{ .Entity.Name }}Dto>>(new {{ .Entity.Name }}Dto({{ range .Entity.Fields }}{{ if eq .Name "Id" }}Guid.NewGuid(){{ else }}{{ .SampleValue }}{{ end }}, {{ end }}"token-v1"));
+        }, CancellationToken.None);
+
+        Assert.False(handlerCalled);
+        Assert.True(result.IsError);
+{{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        Assert.Contains(result.Errors, error => error.Code == "{{ .InvalidCode }}");
+{{ end }}{{ end }}    }
+
+{{ end }}    [Fact]
+    public async Task ValidationBehaviorCallsHandlerWhenNoValidatorsAreRegistered()
+    {
+        var behavior = new ValidationBehavior<Create{{ .Entity.Name }}Command, ErrorOr<{{ .Entity.Name }}Dto>>([]);
+
+        var result = await behavior.Handle(new Create{{ .Entity.Name }}Command(), _ =>
+            Task.FromResult<ErrorOr<{{ .Entity.Name }}Dto>>(new {{ .Entity.Name }}Dto({{ range .Entity.Fields }}{{ if eq .Name "Id" }}Guid.NewGuid(){{ else }}{{ .SampleValue }}{{ end }}, {{ end }}"token-v1")), CancellationToken.None);
+
+        Assert.False(result.IsError);
     }
 
 {{ if .Entity.HasValueObjectFields }}    [Fact]

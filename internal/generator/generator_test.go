@@ -88,11 +88,13 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 		{path: "Directory.Packages.props", goldenName: "Directory.Packages.props"},
 		{path: "README.md", goldenName: "README.md"},
 		{path: "microgen.json", goldenName: "microgen.json"},
+		{path: "src/ProductService/ProductService.Application/ApplicationAssemblyReference.cs", goldenName: "ApplicationAssemblyReference.cs"},
 		{path: "src/ProductService/ProductService.Application/Common/PaginationPolicy.cs", goldenName: "PaginationPolicy.cs"},
 		{path: "src/ProductService/ProductService.Application/Common/Readiness.cs", goldenName: "Readiness.cs"},
 		{path: "src/ProductService/ProductService.Application/Common/Results.cs", goldenName: "Results.cs"},
 		{path: "src/ProductService/ProductService.Application/Common/UnitOfWork.cs", goldenName: "UnitOfWork.cs"},
 		{path: "src/ProductService/ProductService.Application/Common/ValidationBehavior.cs", goldenName: "ValidationBehavior.cs"},
+		{path: "src/ProductService/ProductService.Application/DependencyInjection.cs", goldenName: "Application.DependencyInjection.cs"},
 		{path: "src/ProductService/ProductService.Application/ProductService.Application.csproj", goldenName: "ProductService.Application.csproj"},
 		{path: "src/ProductService/ProductService.Application/Products/Commands/Create/CreateProductCommand.cs", goldenName: "CreateProductCommand.cs"},
 		{path: "src/ProductService/ProductService.Application/Products/Commands/Create/CreateProductCommandHandler.cs", goldenName: "CreateProductCommandHandler.cs"},
@@ -239,9 +241,21 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	assertNotContains(t, webAPIProject, "Microsoft.AspNetCore.Mvc.Testing")
 	assertNotContains(t, webAPIProject, "Version=")
 	program := contentByPath["src/ProductService/ProductService.WebApi/Program.cs"]
+	applicationAssemblyReference := contentByPath["src/ProductService/ProductService.Application/ApplicationAssemblyReference.cs"]
+	applicationDI := contentByPath["src/ProductService/ProductService.Application/DependencyInjection.cs"]
+	assertContains(t, applicationAssemblyReference, "namespace ProductService.Application")
+	assertContains(t, applicationAssemblyReference, "internal static readonly Assembly Assembly = typeof(ApplicationAssemblyReference).Assembly")
+	assertContains(t, applicationDI, "namespace ProductService.Application")
+	assertContains(t, applicationDI, "RegisterServicesFromAssembly(ApplicationAssemblyReference.Assembly)")
+	assertContains(t, applicationDI, "AddOpenBehavior(typeof(ValidationBehavior<,>))")
+	assertContains(t, applicationDI, "AddValidatorsFromAssembly(ApplicationAssemblyReference.Assembly)")
+	assertContains(t, program, "AddApplication()")
 	assertContains(t, program, "AddInfrastructure(builder.Configuration)")
 	assertContains(t, program, "AddControllers()")
 	assertContains(t, program, "MapControllers()")
+	assertNotContains(t, program, "AddMediatR")
+	assertNotContains(t, program, "AddValidatorsFromAssembly")
+	assertNotContains(t, program, "ValidationBehavior")
 	infraDI := contentByPath["src/ProductService/ProductService.Infrastructure/DependencyInjection.cs"]
 	readme := contentByPath["README.md"]
 	assertContains(t, infraDI, "IReadinessProbe")
@@ -300,6 +314,8 @@ func TestGenerateCreateCQRSSliceUsesApplicationPipelineAndWebApiMapping(t *testi
 	createRequest := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Dtos/CreateProductRequest.cs"))
 	controller := string(generatedContent(t, files, "src/ProductService/ProductService.WebApi/Controllers/Products/ProductController.cs"))
 	program := string(generatedContent(t, files, "src/ProductService/ProductService.WebApi/Program.cs"))
+	validationBehavior := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Common/ValidationBehavior.cs"))
+	applicationDI := string(generatedContent(t, files, "src/ProductService/ProductService.Application/DependencyInjection.cs"))
 	packages := string(generatedContent(t, files, "Directory.Packages.props"))
 
 	assertContains(t, command, "namespace ProductService.Application.Products.Commands.Create")
@@ -319,9 +335,17 @@ func TestGenerateCreateCQRSSliceUsesApplicationPipelineAndWebApiMapping(t *testi
 	assertContains(t, controller, "ISender sender")
 	assertContains(t, controller, "sender.Send(new CreateProductCommand")
 	assertNotContains(t, controller, "useCases.CreateAsync")
-	assertContains(t, program, "AddBehavior<ValidationBehavior<CreateProductCommand, ProductDto>>()")
-	assertNotContains(t, program, "AddOpenBehavior(typeof(ValidationBehavior<,>))")
-	assertContains(t, program, "AddValidatorsFromAssemblyContaining<CreateProductCommandValidator>()")
+	assertContains(t, validationBehavior, "IPipelineBehavior<TRequest, TResponse>")
+	assertContains(t, validationBehavior, "where TRequest : notnull, IRequest<TResponse>")
+	assertContains(t, validationBehavior, "where TResponse : IErrorOr")
+	assertContains(t, validationBehavior, "IEnumerable<IValidator<TRequest>> validators")
+	assertContains(t, validationBehavior, "return (TResponse)(dynamic)errors;")
+	assertNotContains(t, validationBehavior, "IPipelineBehavior<TRequest, ErrorOr<TResponse>>")
+	assertContains(t, applicationDI, "AddOpenBehavior(typeof(ValidationBehavior<,>))")
+	assertContains(t, applicationDI, "AddValidatorsFromAssembly(ApplicationAssemblyReference.Assembly)")
+	assertContains(t, program, "AddApplication();")
+	assertNotContains(t, program, "AddBehavior<ValidationBehavior<CreateProductCommand, ProductDto>>()")
+	assertNotContains(t, program, "AddValidatorsFromAssemblyContaining<CreateProductCommandValidator>()")
 	assertContains(t, packages, `PackageVersion Include="MediatR" Version="14.2.0"`)
 	assertContains(t, packages, `PackageVersion Include="FluentValidation" Version="12.1.1"`)
 	assertContains(t, packages, `PackageVersion Include="ErrorOr" Version="2.1.1"`)
@@ -375,10 +399,11 @@ func TestGenerateReadCQRSSliceUsesQueriesAndPreservesLegacyPaginationContract(t 
 	assertNotContains(t, controller, "useCases.GetByIdAsync")
 	assertContains(t, controller, "sender.Send(new UpdateProductCommand")
 	assertContains(t, controller, "sender.Send(new DeleteProductCommand")
-	assertContains(t, program, "AddBehavior<ValidationBehavior<ListProductQuery, PagedResult<ProductDto>>>()")
+	assertContains(t, program, "AddApplication();")
+	assertNotContains(t, program, "AddBehavior<ValidationBehavior<ListProductQuery, PagedResult<ProductDto>>>()")
 	assertNotContains(t, program, "AddBehavior<ValidationBehavior<GetProductByIdQuery, ProductDto>>()")
-	assertContains(t, program, "AddBehavior<ValidationBehavior<UpdateProductCommand, ProductDto>>()")
-	assertContains(t, program, "AddBehavior<ValidationBehavior<DeleteProductCommand, Deleted>>()")
+	assertNotContains(t, program, "AddBehavior<ValidationBehavior<UpdateProductCommand, ProductDto>>()")
+	assertNotContains(t, program, "AddBehavior<ValidationBehavior<DeleteProductCommand, Deleted>>()")
 	assertNotContains(t, program, "IProductUseCases")
 }
 
@@ -489,9 +514,10 @@ func TestScaffoldPlanUsesTargetFrameworkAndCentralPackagePolicy(t *testing.T) {
 			assertContains(t, packages, "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj -> Microsoft.Data.SqlClient")
 			assertContains(t, packages, "src/ProductService/ProductService.Application/ProductService.Application.csproj -> MediatR")
 			assertContains(t, packages, "src/ProductService/ProductService.Application/ProductService.Application.csproj -> FluentValidation")
+			assertContains(t, packages, "src/ProductService/ProductService.Application/ProductService.Application.csproj -> FluentValidation.DependencyInjectionExtensions")
 			assertContains(t, packages, "src/ProductService/ProductService.Application/ProductService.Application.csproj -> ErrorOr")
 			assertContains(t, packages, "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj -> MediatR")
-			assertContains(t, packages, "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj -> FluentValidation.DependencyInjectionExtensions")
+			assertNotContains(t, packages, "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj -> FluentValidation.DependencyInjectionExtensions")
 			assertContains(t, packages, "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj -> ErrorOr")
 			assertNotContains(t, packages, tt.entityFramework)
 			assertNotContains(t, packages, tt.sqlClient)

@@ -1,17 +1,8 @@
-using ProductService.Application.Products.Commands.Create;
-using ProductService.Application.Products.Commands.Delete;
-using ProductService.Application.Products.Commands.Update;
-using ProductService.Application.Products.Dtos;
-using ProductService.Application.Products.Queries.List;
-
-using ProductService.Application.Common;
-using ErrorOr;
+using ProductService.Application;
 using ProductService.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.IdentityModel.Tokens;
-using FluentValidation;
-using MediatR;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -23,15 +14,7 @@ var telemetry = TelemetryOptions.From(builder.Configuration);
 builder.Logging.AddConsole();
 builder.Services.AddProblemDetails();
 builder.Services.AddControllers();
-builder.Services.AddMediatR(config =>
-{
-    config.RegisterServicesFromAssembly(typeof(CreateProductCommand).Assembly);
-    config.AddBehavior<ValidationBehavior<CreateProductCommand, ProductDto>>();
-    config.AddBehavior<ValidationBehavior<UpdateProductCommand, ProductDto>>();
-    config.AddBehavior<ValidationBehavior<DeleteProductCommand, Deleted>>();
-    config.AddBehavior<ValidationBehavior<ListProductQuery, PagedResult<ProductDto>>>();
-});
-builder.Services.AddValidatorsFromAssemblyContaining<CreateProductCommandValidator>();
+builder.Services.AddApplication();
 builder.Services.AddHttpClient();
 builder.Services.AddRequestTimeouts(options => options.DefaultPolicy = new RequestTimeoutPolicy
 {

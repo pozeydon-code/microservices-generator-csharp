@@ -1,17 +1,8 @@
-{{ range .Entities }}using {{ $.Name }}.Application.{{ .FeatureName }}.Commands.Create;
-using {{ $.Name }}.Application.{{ .FeatureName }}.Commands.Delete;
-using {{ $.Name }}.Application.{{ .FeatureName }}.Commands.Update;
-using {{ $.Name }}.Application.{{ .FeatureName }}.Dtos;
-using {{ $.Name }}.Application.{{ .FeatureName }}.Queries.List;
-{{ end }}
-using {{ .Name }}.Application.Common;
-using ErrorOr;
+using {{ .Name }}.Application;
 using {{ .Name }}.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.IdentityModel.Tokens;
-using FluentValidation;
-using MediatR;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -23,15 +14,7 @@ var telemetry = TelemetryOptions.From(builder.Configuration);
 builder.Logging.AddConsole();
 builder.Services.AddProblemDetails();
 builder.Services.AddControllers();
-builder.Services.AddMediatR(config =>
-{
-    config.RegisterServicesFromAssembly(typeof(Create{{ (index .Entities 0).Name }}Command).Assembly);
-{{ range .Entities }}    config.AddBehavior<ValidationBehavior<Create{{ .Name }}Command, {{ .Name }}Dto>>();
-    config.AddBehavior<ValidationBehavior<Update{{ .Name }}Command, {{ .Name }}Dto>>();
-    config.AddBehavior<ValidationBehavior<Delete{{ .Name }}Command, Deleted>>();
-    config.AddBehavior<ValidationBehavior<List{{ .Name }}Query, PagedResult<{{ .Name }}Dto>>>();
-{{ end }}});
-builder.Services.AddValidatorsFromAssemblyContaining<Create{{ (index .Entities 0).Name }}CommandValidator>();
+builder.Services.AddApplication();
 builder.Services.AddHttpClient();
 builder.Services.AddRequestTimeouts(options => options.DefaultPolicy = new RequestTimeoutPolicy
 {

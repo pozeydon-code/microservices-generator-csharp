@@ -5,10 +5,11 @@ using MediatR;
 
 namespace ProductService.Application.Common;
 
-public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidator<TRequest>> validators) : IPipelineBehavior<TRequest, ErrorOr<TResponse>>
-    where TRequest : IRequest<ErrorOr<TResponse>>
+public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidator<TRequest>> validators) : IPipelineBehavior<TRequest, TResponse>
+    where TRequest : notnull, IRequest<TResponse>
+    where TResponse : IErrorOr
 {
-    public async Task<ErrorOr<TResponse>> Handle(TRequest request, RequestHandlerDelegate<ErrorOr<TResponse>> next, CancellationToken cancellationToken)
+    public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
     {
         var failures = new List<ValidationFailure>();
         foreach (var validator in validators)
@@ -22,12 +23,14 @@ public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidat
             return await next(cancellationToken);
         }
 
-        return failures
+        var errors = failures
             .Select(failure => Error.Validation(
                 code: failure.ErrorCode,
                 description: failure.ErrorMessage,
                 metadata: new Dictionary<string, object> { ["field"] = ToCamelCase(failure.PropertyName) }))
             .ToList();
+
+        return (TResponse)(dynamic)errors;
     }
 
     private static string ToCamelCase(string value) => string.IsNullOrEmpty(value)
