@@ -66,6 +66,16 @@ jobs:
             gh release create "${RELEASE_TAG}" "${assets[@]}" \
               --repo "${GH_REPO}" \
               --verify-tag \
+              --draft \
               --generate-notes \
               --title "${RELEASE_TAG}"
           fi
+
+          gh release edit "${RELEASE_TAG}" \
+            --repo "${GH_REPO}" \
+            --draft=false
+
+          gh release view "${RELEASE_TAG}" \
+            --repo "${GH_REPO}" \
+            --json isDraft \
+            --jq '.isDraft' | grep -qx false
