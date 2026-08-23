@@ -325,6 +325,34 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	}
 }
 
+func TestGatewayFoundationIsRootLevelAndDisabledByDefault(t *testing.T) {
+	disabled, err := buildSolutionView(testConfig())
+	if err != nil {
+		t.Fatalf("build disabled solution view: %v", err)
+	}
+	if disabled.Gateway.Enabled || disabled.Gateway.Project != (ProjectView{}) || len(disabled.Gateway.Routes) != 0 {
+		t.Fatalf("expected disabled gateway to have no model footprint, got %#v", disabled.Gateway)
+	}
+
+	enabledConfig := testConfig()
+	enabledConfig.Solution.Name = "ShopPlatform"
+	enabledConfig.Generation.Gateway.Enabled = true
+	enabled, err := buildSolutionView(enabledConfig)
+	if err != nil {
+		t.Fatalf("build enabled solution view: %v", err)
+	}
+	if enabled.Gateway.Project.Path != "src/ShopPlatform.Gateway/ShopPlatform.Gateway.csproj" {
+		t.Fatalf("expected root gateway project path, got %q", enabled.Gateway.Project.Path)
+	}
+	for _, service := range enabled.Services {
+		for _, project := range []ProjectView{service.DomainProject, service.ApplicationProject, service.InfrastructureProject} {
+			if project.Name == enabled.Gateway.Project.Name || project.Path == enabled.Gateway.Project.Path {
+				t.Fatalf("gateway project leaked into service layer: %#v", project)
+			}
+		}
+	}
+}
+
 func TestGenerateCreateCQRSSliceUsesApplicationPipelineAndWebApiMapping(t *testing.T) {
 	gen, err := New()
 	if err != nil {

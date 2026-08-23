@@ -26,8 +26,24 @@ type SolutionTemplateData struct {
 	CryptographyXmlVersion     string
 	SupportsOpenApiEndpoints   bool
 	ScaffoldPlan               ScaffoldPlan
+	Gateway                    GatewayView
 	Services                   []ServiceView
 	Projects                   []ProjectView
+}
+
+type GatewayView struct {
+	Enabled bool
+	Project ProjectView
+	Routes  []GatewayRouteView
+}
+
+type GatewayRouteView struct {
+	ServiceName        string
+	RouteID            string
+	ClusterID          string
+	Path               string
+	DestinationAddress string
+	LocalPort          int
 }
 
 type PackageVersion struct {
@@ -163,7 +179,7 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 		Solution:                   cfg.Solution,
 		TargetFramework:            targetFramework,
 		SolutionFormat:             solutionFormat,
-		PackageVersions:            dependencyPackageVersions(dependencyPolicy),
+		PackageVersions:            dependencyPackageVersions(dependencyPolicy, cfg.Generation.Gateway.Enabled),
 		MediatRVersion:             dependencyPackageVersion(dependencyPolicy, "MediatR"),
 		FluentValidationVersion:    dependencyPackageVersion(dependencyPolicy, "FluentValidation"),
 		ErrorOrVersion:             dependencyPackageVersion(dependencyPolicy, "ErrorOr"),
@@ -232,9 +248,46 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 		view.Services = append(view.Services, serviceView)
 		view.Projects = append(view.Projects, serviceView.Projects...)
 	}
+	if cfg.Generation.Gateway.Enabled {
+		view.Gateway = gatewayView(cfg.Solution.Name, services)
+		view.Projects = append(view.Projects, view.Gateway.Project)
+	}
 	sort.Slice(view.Projects, func(i, j int) bool { return view.Projects[i].Path < view.Projects[j].Path })
 	view.ScaffoldPlan = buildScaffoldPlan(view)
 	return view, nil
+}
+
+func gatewayView(solutionName string, services []spec.Service) GatewayView {
+	projectName := solutionName + ".Gateway"
+	view := GatewayView{
+		Enabled: true,
+		Project: rootProjectView(projectName),
+		Routes:  make([]GatewayRouteView, 0, len(services)),
+	}
+	for index, service := range services {
+		serviceRouteName := strings.ToLower(service.Name)
+		localPort := defaultGatewayServicePort(index)
+		view.Routes = append(view.Routes, GatewayRouteView{
+			ServiceName:        service.Name,
+			RouteID:            serviceRouteName + "-route",
+			ClusterID:          serviceRouteName + "-cluster",
+			Path:               "/" + serviceRouteName + "/{**catch-all}",
+			DestinationAddress: fmt.Sprintf("http://localhost:%d/", localPort),
+			LocalPort:          localPort,
+		})
+	}
+	return view
+}
+
+func rootProjectView(projectName string) ProjectView {
+	directory := projectName
+	fileName := projectName + ".csproj"
+	solutionPath := join("src", directory, fileName)
+	return ProjectView{Name: projectName, Directory: directory, FileName: fileName, Path: solutionPath, SolutionPath: solutionPath, GUID: deterministicGUID(projectName)}
+}
+
+func defaultGatewayServicePort(sortedIndex int) int {
+	return 5100 + sortedIndex
 }
 
 func projectView(serviceName, projectName string) ProjectView {

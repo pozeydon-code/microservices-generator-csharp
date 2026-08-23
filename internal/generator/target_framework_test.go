@@ -21,11 +21,14 @@ func TestDependencyPolicyManifestLoads(t *testing.T) {
 			t.Fatalf("manifest is missing targetMajor %d", targetMajor)
 		}
 	}
-	if len(commonPackages) != 14 {
-		t.Fatalf("expected fourteen common package pins, got %d", len(commonPackages))
+	if len(commonPackages) != 15 {
+		t.Fatalf("expected fifteen common package pins, got %d", len(commonPackages))
 	}
-	if len(packageOrder) != 22 {
-		t.Fatalf("expected twenty-two package names in manifest order, got %d", len(packageOrder))
+	if len(packageOrder) != 23 {
+		t.Fatalf("expected twenty-three package names in manifest order, got %d", len(packageOrder))
+	}
+	if got := commonPackages["Yarp.ReverseProxy"]; got != "2.3.0" {
+		t.Fatalf("expected Yarp.ReverseProxy 2.3.0 common package pin, got %q", got)
 	}
 }
 
@@ -67,11 +70,12 @@ func TestDependencyPolicyManifestMatchesRenderedPackageProps(t *testing.T) {
 			for packageName, version := range policy.Packages {
 				expected[packageName] = version
 			}
+			delete(expected, "Yarp.ReverseProxy")
 			if !reflect.DeepEqual(actual, expected) {
 				t.Fatalf("rendered package set mismatch\nexpected: %#v\nactual:   %#v", expected, actual)
 			}
-			if len(actual) != len(dependencyPolicyPackageOrder) {
-				t.Fatalf("expected %d rendered packages, got %d", len(dependencyPolicyPackageOrder), len(actual))
+			if len(actual) != len(dependencyPolicyPackageOrder)-1 {
+				t.Fatalf("expected %d rendered packages, got %d", len(dependencyPolicyPackageOrder)-1, len(actual))
 			}
 		})
 	}

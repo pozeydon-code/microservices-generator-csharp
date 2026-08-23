@@ -28,6 +28,47 @@ func TestConfigValidateDefaultsMissingSchemaVersionAndTargetFramework(t *testing
 	}
 }
 
+func TestConfigGatewayOptionsDefaultDisabledAndParseEnabled(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+		want bool
+	}{
+		{
+			name: "omitted gateway remains disabled",
+			data: `{
+				"solution":{"name":"CommercePlatform","description":"Product management."},
+				"services":[{"name":"ProductService","entities":[{"name":"Product","fields":[{"name":"Id","type":"Guid"}]}]}]
+			}`,
+			want: false,
+		},
+		{
+			name: "enabled gateway parses true",
+			data: `{
+				"generation":{"gateway":{"enabled":true}},
+				"solution":{"name":"CommercePlatform","description":"Product management."},
+				"services":[{"name":"ProductService","entities":[{"name":"Product","fields":[{"name":"Id","type":"Guid"}]}]}]
+			}`,
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cfg Config
+			if err := json.Unmarshal([]byte(tt.data), &cfg); err != nil {
+				t.Fatalf("unmarshal config: %v", err)
+			}
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("expected gateway config to validate, got %v", err)
+			}
+			if cfg.Generation.Gateway.Enabled != tt.want {
+				t.Fatalf("expected gateway enabled %t, got %t", tt.want, cfg.Generation.Gateway.Enabled)
+			}
+		})
+	}
+}
+
 func TestConfigValidateAcceptsSupportedTargetFrameworks(t *testing.T) {
 	for _, targetFramework := range []string{"net8.0", "net9.0", "net10.0"} {
 		t.Run(targetFramework, func(t *testing.T) {

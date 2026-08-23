@@ -21,6 +21,7 @@
     "Scalar.AspNetCore",
     "System.IdentityModel.Tokens.Jwt",
     "System.Security.Cryptography.Xml",
+    "Yarp.ReverseProxy",
     "xunit",
     "xunit.runner.visualstudio"
   ],
@@ -37,6 +38,7 @@
     "OpenTelemetry.Instrumentation.Http": "1.16.0",
     "Scalar.AspNetCore": "2.16.20",
     "System.IdentityModel.Tokens.Jwt": "8.14.0",
+    "Yarp.ReverseProxy": "2.3.0",
     "xunit": "2.9.3",
     "xunit.runner.visualstudio": "2.8.2"
   },

@@ -244,9 +244,12 @@ func dependencyPackageVersion(policy dependencyPolicy, packageName string) strin
 	return policy.Packages[packageName]
 }
 
-func dependencyPackageVersions(policy dependencyPolicy) []PackageVersion {
+func dependencyPackageVersions(policy dependencyPolicy, includeGateway bool) []PackageVersion {
 	packages := make([]PackageVersion, 0, len(dependencyPolicyPackageOrder))
 	for _, packageName := range dependencyPolicyPackageOrder {
+		if packageName == "Yarp.ReverseProxy" && !includeGateway {
+			continue
+		}
 		comment := ""
 		if packageName == "System.Security.Cryptography.Xml" {
 			comment = "<!-- Pinned for NuGet audit safety when EF/Core build transitives request vulnerable XML versions. -->"

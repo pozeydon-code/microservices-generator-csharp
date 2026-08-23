@@ -29,9 +29,14 @@ type Config struct {
 }
 
 type GenerationOptions struct {
-	TargetFramework            string `json:"targetFramework,omitempty"`
-	SolutionFormat             string `json:"solutionFormat,omitempty"`
-	EnableValueObjectPreflight bool   `json:"enableValueObjectPreflight,omitempty"`
+	TargetFramework            string         `json:"targetFramework,omitempty"`
+	SolutionFormat             string         `json:"solutionFormat,omitempty"`
+	EnableValueObjectPreflight bool           `json:"enableValueObjectPreflight,omitempty"`
+	Gateway                    GatewayOptions `json:"gateway,omitempty"`
+}
+
+type GatewayOptions struct {
+	Enabled bool `json:"enabled,omitempty"`
 }
 
 type Solution struct {
