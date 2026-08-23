@@ -3,5 +3,6 @@
   "targetFramework": "net8.0",
   "solution": "ShopPlatform",
   "services": ["ProductService"],
-  "gateway": "ShopPlatform.Gateway"
+  "gateway": "ShopPlatform.Gateway",
+  "gatewayPath": "Gateway/ShopPlatform.Gateway.csproj"
 }

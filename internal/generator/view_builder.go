@@ -263,7 +263,7 @@ func gatewayView(solutionName string, services []spec.Service) GatewayView {
 	projectName := solutionName + ".Gateway"
 	view := GatewayView{
 		Enabled: true,
-		Project: rootProjectView(projectName),
+		Project: gatewayProjectView(projectName),
 		Routes:  make([]GatewayRouteView, 0, len(services)),
 	}
 	for index, service := range services {
@@ -286,6 +286,12 @@ func rootProjectView(projectName string) ProjectView {
 	fileName := projectName + ".csproj"
 	solutionPath := join("src", directory, fileName)
 	return ProjectView{Name: projectName, Directory: directory, FileName: fileName, Path: solutionPath, SolutionPath: solutionPath, GUID: deterministicGUID(projectName)}
+}
+
+func gatewayProjectView(projectName string) ProjectView {
+	fileName := projectName + ".csproj"
+	solutionPath := join("Gateway", fileName)
+	return ProjectView{Name: projectName, Directory: "Gateway", FileName: fileName, Path: solutionPath, SolutionPath: solutionPath, GUID: deterministicGUID(projectName)}
 }
 
 func rootSolutionProjectView(project ProjectView) ProjectView {

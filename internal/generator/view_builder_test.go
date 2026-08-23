@@ -18,10 +18,10 @@ func TestBuildSolutionViewGatewayRoutesAreDeterministicForWebApis(t *testing.T) 
 
 	wantProject := ProjectView{
 		Name:         "ShopPlatform.Gateway",
-		Directory:    "ShopPlatform.Gateway",
+		Directory:    "Gateway",
 		FileName:     "ShopPlatform.Gateway.csproj",
-		Path:         "src/ShopPlatform.Gateway/ShopPlatform.Gateway.csproj",
-		SolutionPath: "src/ShopPlatform.Gateway/ShopPlatform.Gateway.csproj",
+		Path:         "Gateway/ShopPlatform.Gateway.csproj",
+		SolutionPath: "Gateway/ShopPlatform.Gateway.csproj",
 		GUID:         deterministicGUID("ShopPlatform.Gateway"),
 	}
 	if !reflect.DeepEqual(view.Gateway.Project, wantProject) {
@@ -50,6 +50,11 @@ func TestBuildSolutionViewGatewayDisabledHasNoModelFootprint(t *testing.T) {
 	}
 	if len(view.Gateway.Routes) != 0 {
 		t.Fatalf("expected no disabled gateway routes, got %#v", view.Gateway.Routes)
+	}
+	for _, project := range view.Projects {
+		if project.Directory == "Gateway" || project.Path == "Gateway/ShopPlatform.Gateway.csproj" {
+			t.Fatalf("expected no disabled gateway project in root projects, got %#v", project)
+		}
 	}
 }
 

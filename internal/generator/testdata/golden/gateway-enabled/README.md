@@ -56,7 +56,7 @@ MICROGEN_TEST_SQLSERVER='Server=localhost,1433;User Id=sa;Password=<password>;En
 | Run `ProductService` | `dotnet run --project ./ProductService/src/ProductService.WebApi` |
 | Build `ProductService` | `dotnet build ./ProductService/ProductService.sln --nologo -warnaserror` |
 | Test `ProductService` | `dotnet test ./ProductService/ProductService.sln --nologo -warnaserror` |
-| Run gateway | `dotnet run --project ./src/ShopPlatform.Gateway` |
+| Run gateway | `dotnet run --project ./Gateway` |
 
 ### Gateway routing
 
@@ -64,7 +64,7 @@ Run each generated WebApi on the deterministic local port shown below, then star
 
 ```bash
 ASPNETCORE_URLS=http://localhost:5100 dotnet run --project ./ProductService/src/ProductService.WebApi
-dotnet run --project ./src/ShopPlatform.Gateway
+dotnet run --project ./Gateway
 ```
 
 
