@@ -1,0 +1,7 @@
+{
+  "generator": "microgen",
+  "targetFramework": "net8.0",
+  "solution": "ShopPlatform",
+  "services": ["ProductService"],
+  "gateway": "ShopPlatform.Gateway"
+}

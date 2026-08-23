@@ -1,0 +1,24 @@
+{
+  "ReverseProxy": {
+    "Routes": {      "productservice-route": {
+        "ClusterId": "productservice-cluster",
+        "Match": {
+          "Path": "/productservice/{**catch-all}"
+        },
+        "Transforms": [
+          {
+            "PathRemovePrefix": "/productservice"
+          }
+        ]
+      }
+    },
+    "Clusters": {      "productservice-cluster": {
+        "Destinations": {
+          "default": {
+            "Address": "http://localhost:5100/"
+          }
+        }
+      }
+    }
+  }
+}

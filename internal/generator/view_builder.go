@@ -246,7 +246,9 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 			serviceView.ExpectedSchemaItems += len(entityView.Fields) + 1
 		}
 		view.Services = append(view.Services, serviceView)
-		view.Projects = append(view.Projects, serviceView.Projects...)
+		for _, project := range serviceView.Projects {
+			view.Projects = append(view.Projects, rootSolutionProjectView(project))
+		}
 	}
 	if cfg.Generation.Gateway.Enabled {
 		view.Gateway = gatewayView(cfg.Solution.Name, services)
@@ -284,6 +286,11 @@ func rootProjectView(projectName string) ProjectView {
 	fileName := projectName + ".csproj"
 	solutionPath := join("src", directory, fileName)
 	return ProjectView{Name: projectName, Directory: directory, FileName: fileName, Path: solutionPath, SolutionPath: solutionPath, GUID: deterministicGUID(projectName)}
+}
+
+func rootSolutionProjectView(project ProjectView) ProjectView {
+	project.SolutionPath = project.Path
+	return project
 }
 
 func defaultGatewayServicePort(sortedIndex int) int {

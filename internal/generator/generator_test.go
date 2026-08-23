@@ -3,6 +3,7 @@ package generator
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/pozeydon-code/microservices-generator-csharp/internal/spec"
 )
+
+var updateGolden = flag.Bool("update", false, "update generator golden files")
 
 func TestGeneratedWebApiTestsDoNotContainUnusedJsonPropertyFields(t *testing.T) {
 	gen, err := New()
@@ -165,6 +168,51 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 	if !reflect.DeepEqual(actualPaths, expectedPaths) {
 		t.Fatalf("generated path set mismatch\nexpected: %#v\nactual:   %#v", expectedPaths, actualPaths)
 	}
+	for _, file := range expectedFiles {
+		assertGoldenFile(t, first, file.path, file.goldenName)
+	}
+}
+
+func TestGenerateGatewayProducesDeterministicGoldenOutput(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := testConfig()
+	cfg.Solution.Name = "ShopPlatform"
+	cfg.Generation.Gateway.Enabled = true
+
+	first, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate first gateway: %v", err)
+	}
+	second, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate second gateway: %v", err)
+	}
+
+	if len(first) != len(second) {
+		t.Fatalf("expected same gateway file count, got %d and %d", len(first), len(second))
+	}
+	for index := range first {
+		if first[index].Path != second[index].Path || !bytes.Equal(first[index].Content, second[index].Content) {
+			t.Fatalf("gateway generation is not deterministic at index %d", index)
+		}
+	}
+
+	expectedFiles := []struct {
+		path       string
+		goldenName string
+	}{
+		{path: "Directory.Packages.props", goldenName: filepath.Join("gateway-enabled", "Directory.Packages.props")},
+		{path: "README.md", goldenName: filepath.Join("gateway-enabled", "README.md")},
+		{path: "ShopPlatform.sln", goldenName: filepath.Join("gateway-enabled", "ShopPlatform.sln")},
+		{path: "microgen.json", goldenName: filepath.Join("gateway-enabled", "microgen.json")},
+		{path: "src/ShopPlatform.Gateway/ShopPlatform.Gateway.csproj", goldenName: filepath.Join("gateway-enabled", "ShopPlatform.Gateway.csproj")},
+		{path: "src/ShopPlatform.Gateway/Program.cs", goldenName: filepath.Join("gateway-enabled", "Gateway.Program.cs")},
+		{path: "src/ShopPlatform.Gateway/appsettings.json", goldenName: filepath.Join("gateway-enabled", "Gateway.appsettings.json")},
+	}
+
 	for _, file := range expectedFiles {
 		assertGoldenFile(t, first, file.path, file.goldenName)
 	}
@@ -420,6 +468,9 @@ func TestGenerateGatewayUpdatesRootSolutionReadmeAndScaffoldPlan(t *testing.T) {
 	}
 
 	assertContains(t, solution, `ShopPlatform.Gateway", "src/ShopPlatform.Gateway/ShopPlatform.Gateway.csproj`)
+	assertContains(t, solution, `ProductService.Application", "ProductService/src/ProductService.Application/ProductService.Application.csproj`)
+	assertContains(t, solution, `ProductService.WebApi", "ProductService/src/ProductService.WebApi/ProductService.WebApi.csproj`)
+	assertNotContains(t, solution, `ProductService.Application", "src/ProductService.Application/ProductService.Application.csproj`)
 	assertContains(t, readme, `Run gateway`)
 	assertContains(t, readme, `ASPNETCORE_URLS=http://localhost:5100 dotnet run --project ./ProductService/src/ProductService.WebApi`)
 	assertContains(t, readme, `dotnet run --project ./src/ShopPlatform.Gateway`)
@@ -1305,7 +1356,16 @@ func assertGoldenFile(t *testing.T, files []GeneratedFile, generatedPath, golden
 	if actual == nil {
 		t.Fatalf("generated file %s not found", generatedPath)
 	}
-	expected, err := os.ReadFile(filepath.Join("testdata", "golden", goldenName))
+	goldenPath := filepath.Join("testdata", "golden", goldenName)
+	if *updateGolden {
+		if err := os.MkdirAll(filepath.Dir(goldenPath), 0755); err != nil {
+			t.Fatalf("create golden parent: %v", err)
+		}
+		if err := os.WriteFile(goldenPath, actual, 0644); err != nil {
+			t.Fatalf("write golden file: %v", err)
+		}
+	}
+	expected, err := os.ReadFile(goldenPath)
 	if err != nil {
 		t.Fatalf("read golden file: %v", err)
 	}
