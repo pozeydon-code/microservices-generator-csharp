@@ -18,6 +18,21 @@ type ScaffoldPackageEntry struct {
 
 func buildScaffoldPlan(solution SolutionTemplateData) ScaffoldPlan {
 	plan := ScaffoldPlan{}
+	if solution.Gateway.Enabled {
+		solutionCommand := []string{"dotnet", "new", "sln"}
+		if solution.SolutionFormat == "slnx" {
+			solutionCommand = append(solutionCommand, "--format", solution.SolutionFormat)
+		}
+		solutionCommand = append(solutionCommand, "--name", solution.Solution.Name, "--output", ".")
+		plan.Commands = append(plan.Commands,
+			ScaffoldCommand{Command: shellCommand(solutionCommand...)},
+			newProjectCommand("web", solution.TargetFramework, solution.Gateway.Project),
+		)
+		for _, project := range solution.Projects {
+			plan.Commands = append(plan.Commands, ScaffoldCommand{Command: shellCommand("dotnet", "sln", "./"+solution.Solution.Name+"."+solution.SolutionFormat, "add", "./"+project.Path)})
+		}
+		plan.PackageEntries = append(plan.PackageEntries, packageEntry(solution.Gateway.Project, "Yarp.ReverseProxy"))
+	}
 
 	for _, service := range solution.Services {
 		solutionCommand := []string{"dotnet", "new", "sln"}
@@ -154,7 +169,7 @@ func shellLiteral(parts []string, index int) bool {
 	}
 	if len(parts) > 1 && parts[1] == "new" && index == 2 {
 		switch value {
-		case "sln", "classlib", "webapi", "xunit":
+		case "sln", "classlib", "web", "webapi", "xunit":
 			return true
 		}
 	}

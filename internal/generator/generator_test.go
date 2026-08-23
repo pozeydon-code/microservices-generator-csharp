@@ -353,6 +353,82 @@ func TestGatewayFoundationIsRootLevelAndDisabledByDefault(t *testing.T) {
 	}
 }
 
+func TestGenerateGatewayTemplatesAndReverseProxyConfigWhenEnabled(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := testConfig()
+	cfg.Solution.Name = "ShopPlatform"
+	cfg.Generation.Gateway.Enabled = true
+	cfg.Services = append(cfg.Services, spec.Service{
+		Name: "OrderingService",
+		Entities: []spec.Entity{{
+			Name:   "Order",
+			Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Number", Type: "string"}},
+		}},
+	})
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate gateway config: %v", err)
+	}
+
+	gatewayProject := string(generatedContent(t, files, "src/ShopPlatform.Gateway/ShopPlatform.Gateway.csproj"))
+	gatewayProgram := string(generatedContent(t, files, "src/ShopPlatform.Gateway/Program.cs"))
+	gatewaySettings := string(generatedContent(t, files, "src/ShopPlatform.Gateway/appsettings.json"))
+	packages := string(generatedContent(t, files, "Directory.Packages.props"))
+
+	assertContains(t, gatewayProject, `<Project Sdk="Microsoft.NET.Sdk.Web">`)
+	assertContains(t, gatewayProject, `<PackageReference Include="Yarp.ReverseProxy" />`)
+	assertNotContains(t, gatewayProject, "ProjectReference")
+	assertContains(t, gatewayProgram, "builder.Services.AddReverseProxy()")
+	assertContains(t, gatewayProgram, `.LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"))`)
+	assertContains(t, gatewayProgram, "app.MapReverseProxy();")
+	assertContains(t, gatewaySettings, `"productservice-route"`)
+	assertContains(t, gatewaySettings, `"productservice-cluster"`)
+	assertContains(t, gatewaySettings, `"Path": "/productservice/{**catch-all}"`)
+	assertContains(t, gatewaySettings, `"PathRemovePrefix": "/productservice"`)
+	assertContains(t, gatewaySettings, `"Address": "http://localhost:5100/"`)
+	assertContains(t, gatewaySettings, `"orderingservice-route"`)
+	assertContains(t, gatewaySettings, `"orderingservice-cluster"`)
+	assertContains(t, gatewaySettings, `"Path": "/orderingservice/{**catch-all}"`)
+	assertContains(t, gatewaySettings, `"PathRemovePrefix": "/orderingservice"`)
+	assertContains(t, gatewaySettings, `"Address": "http://localhost:5101/"`)
+	assertContains(t, packages, `Yarp.ReverseProxy" Version="2.3.0`)
+}
+
+func TestGenerateGatewayUpdatesRootSolutionReadmeAndScaffoldPlan(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := testConfig()
+	cfg.Solution.Name = "ShopPlatform"
+	cfg.Generation.Gateway.Enabled = true
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate gateway config: %v", err)
+	}
+	readme := string(generatedContent(t, files, "README.md"))
+	solution := string(generatedContent(t, files, "ShopPlatform.sln"))
+	metadata := string(generatedContent(t, files, "microgen.json"))
+	view, err := buildSolutionView(cfg)
+	if err != nil {
+		t.Fatalf("build gateway solution view: %v", err)
+	}
+
+	assertContains(t, solution, `ShopPlatform.Gateway", "src/ShopPlatform.Gateway/ShopPlatform.Gateway.csproj`)
+	assertContains(t, readme, `Run gateway`)
+	assertContains(t, readme, `ASPNETCORE_URLS=http://localhost:5100 dotnet run --project ./ProductService/src/ProductService.WebApi`)
+	assertContains(t, readme, `dotnet run --project ./src/ShopPlatform.Gateway`)
+	assertContains(t, metadata, `"gateway": "ShopPlatform.Gateway"`)
+	assertContains(t, scaffoldCommandText(view.ScaffoldPlan), "dotnet new web --framework 'net8.0' --name 'ShopPlatform.Gateway' --output './src/ShopPlatform.Gateway' --no-restore")
+	assertContains(t, scaffoldCommandText(view.ScaffoldPlan), "dotnet sln './ShopPlatform.sln' add './src/ShopPlatform.Gateway/ShopPlatform.Gateway.csproj'")
+	assertContains(t, scaffoldPackageText(view.ScaffoldPlan), "src/ShopPlatform.Gateway/ShopPlatform.Gateway.csproj -> Yarp.ReverseProxy")
+}
+
 func TestGenerateCreateCQRSSliceUsesApplicationPipelineAndWebApiMapping(t *testing.T) {
 	gen, err := New()
 	if err != nil {

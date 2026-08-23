@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"text/template"
 
 	"github.com/pozeydon-code/microservices-generator-csharp/internal/spec"
@@ -21,6 +22,7 @@ const (
 	applicationTemplateDir    = "application"
 	infrastructureTemplateDir = "infrastructure"
 	webAPITemplateDir         = "webapi"
+	gatewayTemplateDir        = "gateway"
 	testsTemplateDir          = "tests"
 )
 
@@ -34,7 +36,9 @@ type Generator struct {
 }
 
 func New() (*Generator, error) {
-	templates, err := template.New("").Option("missingkey=error").ParseFS(templatesFS, "templates/*/*.tmpl")
+	templates, err := template.New("").Funcs(template.FuncMap{
+		"trimSuffix": strings.TrimSuffix,
+	}).Option("missingkey=error").ParseFS(templatesFS, "templates/*/*.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
 	}
@@ -63,6 +67,21 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 	}
 	if err := g.appendRendered(&files, "microgen.json", templatePath(rootTemplateDir, "solution-metadata.tmpl"), solution); err != nil {
 		return nil, err
+	}
+	if solution.Gateway.Enabled {
+		solutionTemplate := templatePath(rootTemplateDir, "solution-"+solution.SolutionFormat+".tmpl")
+		if err := g.appendRendered(&files, solution.Solution.Name+"."+solution.SolutionFormat, solutionTemplate, solution); err != nil {
+			return nil, err
+		}
+		if err := g.appendRendered(&files, join("src", solution.Gateway.Project.Directory, solution.Gateway.Project.FileName), templatePath(gatewayTemplateDir, "gateway-project.tmpl"), solution.Gateway); err != nil {
+			return nil, err
+		}
+		if err := g.appendRendered(&files, join("src", solution.Gateway.Project.Directory, "Program.cs"), templatePath(gatewayTemplateDir, "gateway-program.tmpl"), solution.Gateway); err != nil {
+			return nil, err
+		}
+		if err := g.appendRendered(&files, join("src", solution.Gateway.Project.Directory, "appsettings.json"), templatePath(gatewayTemplateDir, "gateway-appsettings.tmpl"), solution.Gateway); err != nil {
+			return nil, err
+		}
 	}
 	for _, service := range solution.Services {
 		solutionTemplate := templatePath(rootTemplateDir, "solution-"+solution.SolutionFormat+".tmpl")

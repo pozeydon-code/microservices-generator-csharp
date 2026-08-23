@@ -2,5 +2,6 @@
   "generator": "microgen",
   "targetFramework": "{{ .TargetFramework }}",
   "solution": "{{ .Solution.Name }}",
-  "services": [{{ range $index, $service := .Services }}{{ if $index }}, {{ end }}"{{ $service.Name }}"{{ end }}]
+  "services": [{{ range $index, $service := .Services }}{{ if $index }}, {{ end }}"{{ $service.Name }}"{{ end }}]{{ if .Gateway.Enabled }},
+  "gateway": "{{ .Gateway.Project.Name }}"{{ end }}
 }

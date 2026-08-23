@@ -8,7 +8,7 @@ Generated services use Clean Architecture, CQRS slices, EF Core SQL Server persi
 
 1. Configure the values in the table below.
 2. Restore, build, and test each service solution.
-3. Run the WebApi project for the service you want to start.
+3. Run the WebApi project for the service you want to start.{{ if .Gateway.Enabled }} Start the gateway after service WebApi projects are listening on their configured local ports.{{ end }}
 
 | Setting | Purpose |
 |---|---|
@@ -37,7 +37,8 @@ flowchart LR
 | `{Service}.Domain` | `Primitives`, `ValueObjects`, and `Entities`. No EF, WebApi, rowversion, or framework dependency. |
 | `{Service}.Application` | `Features/{Entity}` vertical slices, commands, queries, validators, DTOs, repository ports, pagination, and unit-of-work port. |
 | `{Service}.Infrastructure` | EF Core SQL Server adapter, `Persistence/Configurations`, repositories, UnitOfWork, DbContext factory, and readiness probe. |
-| `{Service}.WebApi` | Controllers, JWT auth, HTTPS/HSTS, request timeout, OpenTelemetry, ProblemDetails, health endpoints, and startup wiring. |
+| `{Service}.WebApi` | Controllers, JWT auth, HTTPS/HSTS, request timeout, OpenTelemetry, ProblemDetails, health endpoints, and startup wiring. |{{ if .Gateway.Enabled }}
+| `{{ .Gateway.Project.Name }}` | YARP reverse proxy composition for generated WebApi services. |{{ end }}
 
 Architecture tests verify the generated project boundaries.
 
@@ -58,7 +59,20 @@ MICROGEN_TEST_SQLSERVER='Server=localhost,1433;User Id=sa;Password=<password>;En
 | Run `{{ .Name }}` | `dotnet run --project ./{{ .Name }}/src/{{ .Name }}.WebApi` |
 | Build `{{ .Name }}` | `dotnet build ./{{ .Name }}/{{ .SolutionFileName }} --nologo -warnaserror` |
 | Test `{{ .Name }}` | `dotnet test ./{{ .Name }}/{{ .SolutionFileName }} --nologo -warnaserror` |
+{{- end }}{{ if .Gateway.Enabled }}
+| Run gateway | `dotnet run --project ./src/{{ .Gateway.Project.Directory }}` |
+
+### Gateway routing
+
+Run each generated WebApi on the deterministic local port shown below, then start `{{ .Gateway.Project.Name }}`.
+
+```bash
+{{- range .Gateway.Routes }}
+ASPNETCORE_URLS=http://localhost:{{ .LocalPort }} dotnet run --project ./{{ .ServiceName }}/src/{{ .ServiceName }}.WebApi
 {{- end }}
+dotnet run --project ./src/{{ .Gateway.Project.Directory }}
+```
+{{ end }}
 
 Generated workspaces enable nullable reference types, implicit usings, recommended analyzers, code-style checks during build, and warnings as errors.
 
@@ -87,7 +101,8 @@ dotnet ef database update --project ./{{ .Name }}/src/{{ .Name }}.Infrastructure
 | Service | Generated areas |
 |---|---|
 {{ range .Services }}| `{{ .Name }}` | Domain, Application, Infrastructure, WebApi, Domain.Tests, Application.Tests, Infrastructure.Tests, WebApi.Tests, Architecture.Tests |
-{{- end }}
+{{- end }}{{ if .Gateway.Enabled }}
+| `{{ .Gateway.Project.Name }}` | Gateway project, YARP route configuration, and reverse-proxy startup. |{{ end }}
 
 The scaffold command plan and package list are represented in the generated project files. Package versions are centralized in `Directory.Packages.props`.
 

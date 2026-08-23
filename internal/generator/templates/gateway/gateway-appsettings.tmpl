@@ -1,0 +1,28 @@
+{
+  "ReverseProxy": {
+    "Routes": {
+{{- range $index, $route := .Routes }}{{ if $index }},
+{{ end }}      "{{ $route.RouteID }}": {
+        "ClusterId": "{{ $route.ClusterID }}",
+        "Match": {
+          "Path": "{{ $route.Path }}"
+        },
+        "Transforms": [
+          {
+            "PathRemovePrefix": "{{ trimSuffix $route.Path "/{**catch-all}" }}"
+          }
+        ]
+      }{{ end }}
+    },
+    "Clusters": {
+{{- range $index, $route := .Routes }}{{ if $index }},
+{{ end }}      "{{ $route.ClusterID }}": {
+        "Destinations": {
+          "default": {
+            "Address": "{{ $route.DestinationAddress }}"
+          }
+        }
+      }{{ end }}
+    }
+  }
+}
