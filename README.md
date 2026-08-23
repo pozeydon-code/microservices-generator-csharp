@@ -83,7 +83,8 @@ CRUD operations are generated as Application feature slices. Infrastructure owns
 {
   "schemaVersion": 1,
   "generation": {
-    "targetFramework": "net8.0"
+    "targetFramework": "net8.0",
+    "enableValueObjectPreflight": false
   },
   "solution": {
     "name": "CommercePlatform"

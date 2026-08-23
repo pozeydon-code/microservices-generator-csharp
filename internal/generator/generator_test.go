@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -28,7 +29,7 @@ func TestGeneratedWebApiTestsDoNotContainUnusedJsonPropertyFields(t *testing.T) 
 	content := string(generatedContent(
 		t,
 		files,
-		"tests/ProductService/ProductService.WebApi.Tests/Features/Products/ProductControllerTests.cs",
+		"ProductService/tests/ProductService.WebApi.Tests/Features/Products/ProductControllerTests.cs",
 	))
 
 	assertNotContains(t, content, "ExpectedProductJsonProperties")
@@ -48,7 +49,7 @@ func TestGeneratedReadmeUsesSimpleLocalMigrationCommands(t *testing.T) {
 
 	content := string(generatedContent(t, files, "README.md"))
 	assertContains(t, content, "dotnet ef migrations add InitialCreate")
-	assertContains(t, content, "dotnet ef database update --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Infrastructure")
+	assertContains(t, content, "dotnet ef database update --project ./ProductService/src/ProductService.Infrastructure --startup-project ./ProductService/src/ProductService.Infrastructure")
 	assertContains(t, content, "For shared, staging, or production environments, use your team's deployment process.")
 	assertNotContains(t, content, "dotnet ef migrations script --idempotent")
 	assertNotContains(t, content, "sqlcmd")
@@ -83,76 +84,75 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 		path       string
 		goldenName string
 	}{
-		{path: "CommercePlatform.sln", goldenName: "CommercePlatform.sln"},
 		{path: "Directory.Build.props", goldenName: "Directory.Build.props"},
 		{path: "Directory.Packages.props", goldenName: "Directory.Packages.props"},
+		{path: "ProductService/ProductService.sln", goldenName: "ProductService.sln"},
+		{path: "ProductService/src/ProductService.Application/ApplicationAssemblyReference.cs", goldenName: "ApplicationAssemblyReference.cs"},
+		{path: "ProductService/src/ProductService.Application/Common/PaginationPolicy.cs", goldenName: "PaginationPolicy.cs"},
+		{path: "ProductService/src/ProductService.Application/Common/Readiness.cs", goldenName: "Readiness.cs"},
+		{path: "ProductService/src/ProductService.Application/Common/Results.cs", goldenName: "Results.cs"},
+		{path: "ProductService/src/ProductService.Application/Common/UnitOfWork.cs", goldenName: "UnitOfWork.cs"},
+		{path: "ProductService/src/ProductService.Application/Common/ValidationBehavior.cs", goldenName: "ValidationBehavior.cs"},
+		{path: "ProductService/src/ProductService.Application/DependencyInjection.cs", goldenName: "Application.DependencyInjection.cs"},
+		{path: "ProductService/src/ProductService.Application/ProductService.Application.csproj", goldenName: "ProductService.Application.csproj"},
+		{path: "ProductService/src/ProductService.Application/Products/Commands/Create/CreateProductCommand.cs", goldenName: "CreateProductCommand.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Commands/Create/CreateProductCommandHandler.cs", goldenName: "CreateProductCommandHandler.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Commands/Create/CreateProductCommandValidator.cs", goldenName: "CreateProductCommandValidator.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Commands/Delete/DeleteProductCommand.cs", goldenName: "DeleteProductCommand.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Commands/Delete/DeleteProductCommandHandler.cs", goldenName: "DeleteProductCommandHandler.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Commands/Delete/DeleteProductCommandValidator.cs", goldenName: "DeleteProductCommandValidator.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Commands/Update/UpdateProductCommand.cs", goldenName: "UpdateProductCommand.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Commands/Update/UpdateProductCommandHandler.cs", goldenName: "UpdateProductCommandHandler.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Commands/Update/UpdateProductCommandValidator.cs", goldenName: "UpdateProductCommandValidator.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Dtos/CreateProductRequest.cs", goldenName: "CreateProductRequest.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Dtos/ProductDto.cs", goldenName: "ProductDto.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Dtos/UpdateProductRequest.cs", goldenName: "UpdateProductRequest.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Interfaces/IProductRepository.cs", goldenName: "IProductRepository.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Queries/GetById/GetProductByIdQuery.cs", goldenName: "GetProductByIdQuery.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Queries/GetById/GetProductByIdQueryHandler.cs", goldenName: "GetProductByIdQueryHandler.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Queries/List/ListProductQuery.cs", goldenName: "ListProductQuery.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Queries/List/ListProductQueryHandler.cs", goldenName: "ListProductQueryHandler.cs"},
+		{path: "ProductService/src/ProductService.Application/Products/Queries/List/ListProductQueryValidator.cs", goldenName: "ListProductQueryValidator.cs"},
+		{path: "ProductService/src/ProductService.Domain/Entities/Product.cs", goldenName: "Product.cs"},
+		{path: "ProductService/src/ProductService.Domain/Primitives/DomainReconstitutionException.cs", goldenName: "DomainReconstitutionException.cs"},
+		{path: "ProductService/src/ProductService.Domain/Primitives/DomainResult.cs", goldenName: "DomainResult.cs"},
+		{path: "ProductService/src/ProductService.Domain/ProductService.Domain.csproj", goldenName: "ProductService.Domain.csproj"},
+		{path: "ProductService/src/ProductService.Domain/ValueObjects/ProductName.cs", goldenName: "ProductName.cs"},
+		{path: "ProductService/src/ProductService.Domain/ValueObjects/ProductPrice.cs", goldenName: "ProductPrice.cs"},
+		{path: "ProductService/src/ProductService.Infrastructure/DependencyInjection.cs", goldenName: "Infrastructure.DependencyInjection.cs"},
+		{path: "ProductService/src/ProductService.Infrastructure/Health/SqlReadinessProbe.cs", goldenName: "SqlReadinessProbe.cs"},
+		{path: "ProductService/src/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs", goldenName: "ProductConfiguration.cs"},
+		{path: "ProductService/src/ProductService.Infrastructure/Persistence/Features/Products/ProductRepository.cs", goldenName: "ProductRepository.cs"},
+		{path: "ProductService/src/ProductService.Infrastructure/Persistence/ProductServiceDbContext.cs", goldenName: "ProductServiceDbContext.cs"},
+		{path: "ProductService/src/ProductService.Infrastructure/Persistence/ProductServiceDbContextFactory.cs", goldenName: "ProductServiceDbContextFactory.cs"},
+		{path: "ProductService/src/ProductService.Infrastructure/Persistence/UnitOfWork.cs", goldenName: "Infrastructure.UnitOfWork.cs"},
+		{path: "ProductService/src/ProductService.Infrastructure/ProductService.Infrastructure.csproj", goldenName: "ProductService.Infrastructure.csproj"},
+		{path: "ProductService/src/ProductService.WebApi/Common/Errors/ApiProblemDetailsFactory.cs", goldenName: "ApiProblemDetailsFactory.cs"},
+		{path: "ProductService/src/ProductService.WebApi/Common/Errors/HttpContextItemKeys.cs", goldenName: "HttpContextItemKeys.cs"},
+		{path: "ProductService/src/ProductService.WebApi/Controllers/ApiController.cs", goldenName: "ApiController.cs"},
+		{path: "ProductService/src/ProductService.WebApi/Controllers/Products/ProductController.cs", goldenName: "ProductController.cs"},
+		{path: "ProductService/src/ProductService.WebApi/DependencyInjection.cs", goldenName: "WebApi.DependencyInjection.cs"},
+		{path: "ProductService/src/ProductService.WebApi/Health/HealthController.cs", goldenName: "HealthController.cs"},
+		{path: "ProductService/src/ProductService.WebApi/ProductService.WebApi.csproj", goldenName: "ProductService.WebApi.csproj"},
+		{path: "ProductService/src/ProductService.WebApi/Program.cs", goldenName: "Program.cs"},
+		{path: "ProductService/src/ProductService.WebApi/appsettings.Development.json", goldenName: "appsettings.Development.json"},
+		{path: "ProductService/src/ProductService.WebApi/appsettings.json", goldenName: "appsettings.json"},
+		{path: "ProductService/tests/ProductService.Application.Tests/Features/Products/ProductApplicationTests.cs", goldenName: "ProductApplicationTests.cs"},
+		{path: "ProductService/tests/ProductService.Application.Tests/ProductService.Application.Tests.csproj", goldenName: "ProductService.Application.Tests.csproj"},
+		{path: "ProductService/tests/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj", goldenName: "ProductService.Architecture.Tests.csproj"},
+		{path: "ProductService/tests/ProductService.Architecture.Tests/ProductServiceArchitectureTests.cs", goldenName: "ProductServiceArchitectureTests.cs"},
+		{path: "ProductService/tests/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj", goldenName: "ProductService.Domain.Tests.csproj"},
+		{path: "ProductService/tests/ProductService.Domain.Tests/ProductServiceDomainTests.cs", goldenName: "ProductServiceDomainTests.cs"},
+		{path: "ProductService/tests/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj", goldenName: "ProductService.Infrastructure.Tests.csproj"},
+		{path: "ProductService/tests/ProductService.Infrastructure.Tests/ProductServiceInfrastructureTests.cs", goldenName: "ProductServiceInfrastructureTests.cs"},
+		{path: "ProductService/tests/ProductService.WebApi.Tests/AuthenticationTests.cs", goldenName: "AuthenticationTests.cs"},
+		{path: "ProductService/tests/ProductService.WebApi.Tests/Features/Products/ProductControllerTests.cs", goldenName: "ProductControllerTests.cs"},
+		{path: "ProductService/tests/ProductService.WebApi.Tests/HealthControllerTests.cs", goldenName: "HealthControllerTests.cs"},
+		{path: "ProductService/tests/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj", goldenName: "ProductService.WebApi.Tests.csproj"},
+		{path: "ProductService/tests/ProductService.WebApi.Tests/TestJwtTokens.cs", goldenName: "TestJwtTokens.cs"},
+		{path: "ProductService/tests/ProductService.WebApi.Tests/TestWebApiFactory.cs", goldenName: "TestWebApiFactory.cs"},
 		{path: "README.md", goldenName: "README.md"},
 		{path: "microgen.json", goldenName: "microgen.json"},
-		{path: "src/ProductService/ProductService.Application/ApplicationAssemblyReference.cs", goldenName: "ApplicationAssemblyReference.cs"},
-		{path: "src/ProductService/ProductService.Application/Common/PaginationPolicy.cs", goldenName: "PaginationPolicy.cs"},
-		{path: "src/ProductService/ProductService.Application/Common/Readiness.cs", goldenName: "Readiness.cs"},
-		{path: "src/ProductService/ProductService.Application/Common/Results.cs", goldenName: "Results.cs"},
-		{path: "src/ProductService/ProductService.Application/Common/UnitOfWork.cs", goldenName: "UnitOfWork.cs"},
-		{path: "src/ProductService/ProductService.Application/Common/ValidationBehavior.cs", goldenName: "ValidationBehavior.cs"},
-		{path: "src/ProductService/ProductService.Application/DependencyInjection.cs", goldenName: "Application.DependencyInjection.cs"},
-		{path: "src/ProductService/ProductService.Application/ProductService.Application.csproj", goldenName: "ProductService.Application.csproj"},
-		{path: "src/ProductService/ProductService.Application/Products/Commands/Create/CreateProductCommand.cs", goldenName: "CreateProductCommand.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Commands/Create/CreateProductCommandHandler.cs", goldenName: "CreateProductCommandHandler.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Commands/Create/CreateProductCommandValidator.cs", goldenName: "CreateProductCommandValidator.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Commands/Delete/DeleteProductCommand.cs", goldenName: "DeleteProductCommand.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Commands/Delete/DeleteProductCommandHandler.cs", goldenName: "DeleteProductCommandHandler.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Commands/Delete/DeleteProductCommandValidator.cs", goldenName: "DeleteProductCommandValidator.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Commands/Update/UpdateProductCommand.cs", goldenName: "UpdateProductCommand.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Commands/Update/UpdateProductCommandHandler.cs", goldenName: "UpdateProductCommandHandler.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Commands/Update/UpdateProductCommandValidator.cs", goldenName: "UpdateProductCommandValidator.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Dtos/CreateProductRequest.cs", goldenName: "CreateProductRequest.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Dtos/ProductDto.cs", goldenName: "ProductDto.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Dtos/UpdateProductRequest.cs", goldenName: "UpdateProductRequest.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Interfaces/IProductRepository.cs", goldenName: "IProductRepository.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Queries/GetById/GetProductByIdQuery.cs", goldenName: "GetProductByIdQuery.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Queries/GetById/GetProductByIdQueryHandler.cs", goldenName: "GetProductByIdQueryHandler.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Queries/List/ListProductQuery.cs", goldenName: "ListProductQuery.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Queries/List/ListProductQueryHandler.cs", goldenName: "ListProductQueryHandler.cs"},
-		{path: "src/ProductService/ProductService.Application/Products/Queries/List/ListProductQueryValidator.cs", goldenName: "ListProductQueryValidator.cs"},
-		{path: "src/ProductService/ProductService.Domain/Entities/Product.cs", goldenName: "Product.cs"},
-		{path: "src/ProductService/ProductService.Domain/Primitives/DomainReconstitutionException.cs", goldenName: "DomainReconstitutionException.cs"},
-		{path: "src/ProductService/ProductService.Domain/Primitives/DomainResult.cs", goldenName: "DomainResult.cs"},
-		{path: "src/ProductService/ProductService.Domain/ProductService.Domain.csproj", goldenName: "ProductService.Domain.csproj"},
-		{path: "src/ProductService/ProductService.Domain/ValueObjects/ProductName.cs", goldenName: "ProductName.cs"},
-		{path: "src/ProductService/ProductService.Domain/ValueObjects/ProductPrice.cs", goldenName: "ProductPrice.cs"},
-		{path: "src/ProductService/ProductService.Infrastructure/DependencyInjection.cs", goldenName: "Infrastructure.DependencyInjection.cs"},
-		{path: "src/ProductService/ProductService.Infrastructure/Health/SqlReadinessProbe.cs", goldenName: "SqlReadinessProbe.cs"},
-		{path: "src/ProductService/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs", goldenName: "ProductConfiguration.cs"},
-		{path: "src/ProductService/ProductService.Infrastructure/Persistence/Features/Products/ProductRepository.cs", goldenName: "ProductRepository.cs"},
-		{path: "src/ProductService/ProductService.Infrastructure/Persistence/ProductServiceDbContext.cs", goldenName: "ProductServiceDbContext.cs"},
-		{path: "src/ProductService/ProductService.Infrastructure/Persistence/ProductServiceDbContextFactory.cs", goldenName: "ProductServiceDbContextFactory.cs"},
-		{path: "src/ProductService/ProductService.Infrastructure/Persistence/UnitOfWork.cs", goldenName: "Infrastructure.UnitOfWork.cs"},
-		{path: "src/ProductService/ProductService.Infrastructure/Persistence/ValueObjectPreflight.sql", goldenName: "ValueObjectPreflight.sql"},
-		{path: "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj", goldenName: "ProductService.Infrastructure.csproj"},
-		{path: "src/ProductService/ProductService.WebApi/Common/Errors/ApiProblemDetailsFactory.cs", goldenName: "ApiProblemDetailsFactory.cs"},
-		{path: "src/ProductService/ProductService.WebApi/Common/Errors/HttpContextItemKeys.cs", goldenName: "HttpContextItemKeys.cs"},
-		{path: "src/ProductService/ProductService.WebApi/Controllers/ApiController.cs", goldenName: "ApiController.cs"},
-		{path: "src/ProductService/ProductService.WebApi/Controllers/Products/ProductController.cs", goldenName: "ProductController.cs"},
-		{path: "src/ProductService/ProductService.WebApi/DependencyInjection.cs", goldenName: "WebApi.DependencyInjection.cs"},
-		{path: "src/ProductService/ProductService.WebApi/Health/HealthController.cs", goldenName: "HealthController.cs"},
-		{path: "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj", goldenName: "ProductService.WebApi.csproj"},
-		{path: "src/ProductService/ProductService.WebApi/Program.cs", goldenName: "Program.cs"},
-		{path: "src/ProductService/ProductService.WebApi/appsettings.Development.json", goldenName: "appsettings.Development.json"},
-		{path: "src/ProductService/ProductService.WebApi/appsettings.json", goldenName: "appsettings.json"},
-		{path: "tests/ProductService/ProductService.Application.Tests/Features/Products/ProductApplicationTests.cs", goldenName: "ProductApplicationTests.cs"},
-		{path: "tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj", goldenName: "ProductService.Application.Tests.csproj"},
-		{path: "tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj", goldenName: "ProductService.Architecture.Tests.csproj"},
-		{path: "tests/ProductService/ProductService.Architecture.Tests/ProductServiceArchitectureTests.cs", goldenName: "ProductServiceArchitectureTests.cs"},
-		{path: "tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj", goldenName: "ProductService.Domain.Tests.csproj"},
-		{path: "tests/ProductService/ProductService.Domain.Tests/ProductServiceDomainTests.cs", goldenName: "ProductServiceDomainTests.cs"},
-		{path: "tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj", goldenName: "ProductService.Infrastructure.Tests.csproj"},
-		{path: "tests/ProductService/ProductService.Infrastructure.Tests/ProductServiceInfrastructureTests.cs", goldenName: "ProductServiceInfrastructureTests.cs"},
-		{path: "tests/ProductService/ProductService.WebApi.Tests/AuthenticationTests.cs", goldenName: "AuthenticationTests.cs"},
-		{path: "tests/ProductService/ProductService.WebApi.Tests/Features/Products/ProductControllerTests.cs", goldenName: "ProductControllerTests.cs"},
-		{path: "tests/ProductService/ProductService.WebApi.Tests/HealthControllerTests.cs", goldenName: "HealthControllerTests.cs"},
-		{path: "tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj", goldenName: "ProductService.WebApi.Tests.csproj"},
-		{path: "tests/ProductService/ProductService.WebApi.Tests/TestJwtTokens.cs", goldenName: "TestJwtTokens.cs"},
-		{path: "tests/ProductService/ProductService.WebApi.Tests/TestWebApiFactory.cs", goldenName: "TestWebApiFactory.cs"},
 	}
 	actualPaths := make([]string, 0, len(first))
 	for _, file := range first {
@@ -193,7 +193,7 @@ func TestGenerateIdOnlyEntityOmitsUnsafeSchemaTransition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate Id-only config: %v", err)
 	}
-	infrastructureTests := string(generatedContent(t, files, "tests/IdentityService/IdentityService.Infrastructure.Tests/IdentityServiceInfrastructureTests.cs"))
+	infrastructureTests := string(generatedContent(t, files, "IdentityService/tests/IdentityService.Infrastructure.Tests/IdentityServiceInfrastructureTests.cs"))
 	assertContains(t, infrastructureTests, "Assert.Equal(ReadinessStatus.Ready, healthy.Status);")
 	assertNotContains(t, infrastructureTests, "DROP COLUMN")
 	assertNotContains(t, infrastructureTests, "<no value>")
@@ -213,22 +213,22 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 		contentByPath[file.Path] = string(file.Content)
 	}
 
-	assertContains(t, contentByPath["src/ProductService/ProductService.Application/ProductService.Application.csproj"], "ProductService.Domain.csproj")
-	assertNotContains(t, contentByPath["src/ProductService/ProductService.Application/ProductService.Application.csproj"], "ProductService.Infrastructure")
-	assertNotContains(t, contentByPath["src/ProductService/ProductService.Application/ProductService.Application.csproj"], "ProductService.WebApi")
-	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj"], "ProductService.Application.csproj")
-	assertContains(t, contentByPath["src/ProductService/ProductService.Domain/ValueObjects/ProductName.cs"], "DomainResult<ProductName>")
-	assertContains(t, contentByPath["src/ProductService/ProductService.Application/Common/UnitOfWork.cs"], "Task<int> SaveChangesAsync(CancellationToken cancellationToken)")
-	assertContains(t, contentByPath["src/ProductService/ProductService.Application/Common/Results.cs"], "public enum MutationPreparationStatus { Prepared, InvalidToken }")
-	assertNotContains(t, contentByPath["src/ProductService/ProductService.Application/Common/Results.cs"], "SaveResultStatus")
-	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/UnitOfWork.cs"], "catch (DbUpdateConcurrencyException)")
-	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/ProductServiceDbContext.cs"], "ApplyConfigurationsFromAssembly(typeof(ProductServiceDbContext).Assembly)")
-	assertNotContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/ProductServiceDbContext.cs"], "modelBuilder.Entity<Product>")
-	assertContains(t, contentByPath["src/ProductService/ProductService.Domain/Entities/Product.cs"], "public byte[] RowVersion { get; private set; } = [];")
-	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs"], "IEntityTypeConfiguration<Product>")
-	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs"], "builder.Property(item => item.RowVersion).IsRowVersion()")
-	assertNotContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs"], "Property<byte[]>(\"RowVersion\")")
-	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs"], "HasConversion(value => value.Value, value => ProductService.Domain.ValueObjects.ProductName.Rehydrate(value))")
+	assertContains(t, contentByPath["ProductService/src/ProductService.Application/ProductService.Application.csproj"], "ProductService.Domain.csproj")
+	assertNotContains(t, contentByPath["ProductService/src/ProductService.Application/ProductService.Application.csproj"], "ProductService.Infrastructure")
+	assertNotContains(t, contentByPath["ProductService/src/ProductService.Application/ProductService.Application.csproj"], "ProductService.WebApi")
+	assertContains(t, contentByPath["ProductService/src/ProductService.Infrastructure/ProductService.Infrastructure.csproj"], "ProductService.Application.csproj")
+	assertContains(t, contentByPath["ProductService/src/ProductService.Domain/ValueObjects/ProductName.cs"], "DomainResult<ProductName>")
+	assertContains(t, contentByPath["ProductService/src/ProductService.Application/Common/UnitOfWork.cs"], "Task<int> SaveChangesAsync(CancellationToken cancellationToken)")
+	assertContains(t, contentByPath["ProductService/src/ProductService.Application/Common/Results.cs"], "public enum MutationPreparationStatus { Prepared, InvalidToken }")
+	assertNotContains(t, contentByPath["ProductService/src/ProductService.Application/Common/Results.cs"], "SaveResultStatus")
+	assertContains(t, contentByPath["ProductService/src/ProductService.Infrastructure/Persistence/UnitOfWork.cs"], "catch (DbUpdateConcurrencyException)")
+	assertContains(t, contentByPath["ProductService/src/ProductService.Infrastructure/Persistence/ProductServiceDbContext.cs"], "ApplyConfigurationsFromAssembly(typeof(ProductServiceDbContext).Assembly)")
+	assertNotContains(t, contentByPath["ProductService/src/ProductService.Infrastructure/Persistence/ProductServiceDbContext.cs"], "modelBuilder.Entity<Product>")
+	assertContains(t, contentByPath["ProductService/src/ProductService.Domain/Entities/Product.cs"], "public byte[] RowVersion { get; private set; } = [];")
+	assertContains(t, contentByPath["ProductService/src/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs"], "IEntityTypeConfiguration<Product>")
+	assertContains(t, contentByPath["ProductService/src/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs"], "builder.Property(item => item.RowVersion).IsRowVersion()")
+	assertNotContains(t, contentByPath["ProductService/src/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs"], "Property<byte[]>(\"RowVersion\")")
+	assertContains(t, contentByPath["ProductService/src/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs"], "HasConversion(value => value.Value, value => ProductService.Domain.ValueObjects.ProductName.Rehydrate(value))")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.EntityFrameworkCore.SqlServer\" Version=\"8.0.28")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.EntityFrameworkCore.Tools\" Version=\"8.0.28")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.AspNetCore.Mvc.Testing\" Version=\"8.0.28")
@@ -238,36 +238,36 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	assertContains(t, contentByPath["Directory.Packages.props"], "Allows central PackageVersion entries to override vulnerable transitives; NuGet rejects downgrades with NU1109.")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Pinned for NuGet audit safety when EF/Core build transitives request vulnerable XML versions.")
 	assertContains(t, contentByPath["Directory.Packages.props"], "CentralPackageTransitivePinningEnabled>true")
-	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj"], "Microsoft.EntityFrameworkCore.SqlServer")
-	assertContains(t, contentByPath["src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj"], "Microsoft.EntityFrameworkCore.Tools")
-	dbContextFactory := contentByPath["src/ProductService/ProductService.Infrastructure/Persistence/ProductServiceDbContextFactory.cs"]
+	assertContains(t, contentByPath["ProductService/src/ProductService.Infrastructure/ProductService.Infrastructure.csproj"], "Microsoft.EntityFrameworkCore.SqlServer")
+	assertContains(t, contentByPath["ProductService/src/ProductService.Infrastructure/ProductService.Infrastructure.csproj"], "Microsoft.EntityFrameworkCore.Tools")
+	dbContextFactory := contentByPath["ProductService/src/ProductService.Infrastructure/Persistence/ProductServiceDbContextFactory.cs"]
 	assertContains(t, dbContextFactory, "IDesignTimeDbContextFactory<ProductServiceDbContext>")
 	assertContains(t, dbContextFactory, "Environment.GetEnvironmentVariable(\"ConnectionStrings__DefaultConnection\")")
 	assertContains(t, dbContextFactory, "UseSqlServer(")
-	webAPIProject := contentByPath["src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj"]
+	webAPIProject := contentByPath["ProductService/src/ProductService.WebApi/ProductService.WebApi.csproj"]
 	assertContains(t, webAPIProject, "ProductService.Infrastructure.csproj")
 	assertContains(t, webAPIProject, "ProductService.Application.csproj")
 	assertNotContains(t, webAPIProject, "Microsoft.AspNetCore.OpenApi")
 	assertNotContains(t, webAPIProject, "Scalar.AspNetCore")
 	assertNotContains(t, webAPIProject, "Microsoft.AspNetCore.Mvc.Testing")
 	assertNotContains(t, webAPIProject, "Version=")
-	program := contentByPath["src/ProductService/ProductService.WebApi/Program.cs"]
-	applicationAssemblyReference := contentByPath["src/ProductService/ProductService.Application/ApplicationAssemblyReference.cs"]
-	applicationDI := contentByPath["src/ProductService/ProductService.Application/DependencyInjection.cs"]
+	program := contentByPath["ProductService/src/ProductService.WebApi/Program.cs"]
+	applicationAssemblyReference := contentByPath["ProductService/src/ProductService.Application/ApplicationAssemblyReference.cs"]
+	applicationDI := contentByPath["ProductService/src/ProductService.Application/DependencyInjection.cs"]
 	assertContains(t, applicationAssemblyReference, "namespace ProductService.Application")
 	assertContains(t, applicationAssemblyReference, "internal static readonly Assembly Assembly = typeof(ApplicationAssemblyReference).Assembly")
 	assertContains(t, applicationDI, "namespace ProductService.Application")
 	assertContains(t, applicationDI, "RegisterServicesFromAssembly(ApplicationAssemblyReference.Assembly)")
 	assertContains(t, applicationDI, "AddOpenBehavior(typeof(ValidationBehavior<,>))")
 	assertContains(t, applicationDI, "AddValidatorsFromAssembly(ApplicationAssemblyReference.Assembly)")
-	assertContains(t, contentByPath["src/ProductService/ProductService.WebApi/DependencyInjection.cs"], "AddPresentation(this IServiceCollection services)")
-	assertContains(t, contentByPath["src/ProductService/ProductService.WebApi/DependencyInjection.cs"], "AddControllers()")
-	assertContains(t, contentByPath["src/ProductService/ProductService.WebApi/DependencyInjection.cs"], "AddProblemDetails()")
-	assertNotContains(t, contentByPath["src/ProductService/ProductService.WebApi/DependencyInjection.cs"], "AddOpenApi()")
-	assertContains(t, contentByPath["src/ProductService/ProductService.WebApi/DependencyInjection.cs"], "ProblemDetailsFactory, ApiProblemDetailsFactory")
-	assertContains(t, contentByPath["src/ProductService/ProductService.WebApi/Controllers/ApiController.cs"], "protected ActionResult Problem(IReadOnlyList<Error> errors)")
-	assertContains(t, contentByPath["src/ProductService/ProductService.WebApi/Common/Errors/ApiProblemDetailsFactory.cs"], "problemDetails.Extensions[\"traceId\"]")
-	assertContains(t, contentByPath["src/ProductService/ProductService.WebApi/Common/Errors/ApiProblemDetailsFactory.cs"], "problemDetails.Extensions[\"errorCodes\"]")
+	assertContains(t, contentByPath["ProductService/src/ProductService.WebApi/DependencyInjection.cs"], "AddPresentation(this IServiceCollection services)")
+	assertContains(t, contentByPath["ProductService/src/ProductService.WebApi/DependencyInjection.cs"], "AddControllers()")
+	assertContains(t, contentByPath["ProductService/src/ProductService.WebApi/DependencyInjection.cs"], "AddProblemDetails()")
+	assertNotContains(t, contentByPath["ProductService/src/ProductService.WebApi/DependencyInjection.cs"], "AddOpenApi()")
+	assertContains(t, contentByPath["ProductService/src/ProductService.WebApi/DependencyInjection.cs"], "ProblemDetailsFactory, ApiProblemDetailsFactory")
+	assertContains(t, contentByPath["ProductService/src/ProductService.WebApi/Controllers/ApiController.cs"], "protected ActionResult Problem(IReadOnlyList<Error> errors)")
+	assertContains(t, contentByPath["ProductService/src/ProductService.WebApi/Common/Errors/ApiProblemDetailsFactory.cs"], "problemDetails.Extensions[\"traceId\"]")
+	assertContains(t, contentByPath["ProductService/src/ProductService.WebApi/Common/Errors/ApiProblemDetailsFactory.cs"], "problemDetails.Extensions[\"errorCodes\"]")
 	assertContains(t, program, "AddPresentation()")
 	assertContains(t, program, ".AddApplication()")
 	assertContains(t, program, ".AddInfrastructure(builder.Configuration)")
@@ -280,8 +280,8 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	assertNotContains(t, program, "AddMediatR")
 	assertNotContains(t, program, "AddValidatorsFromAssembly")
 	assertNotContains(t, program, "ValidationBehavior")
-	infraDI := contentByPath["src/ProductService/ProductService.Infrastructure/DependencyInjection.cs"]
-	readinessProbe := contentByPath["src/ProductService/ProductService.Infrastructure/Health/SqlReadinessProbe.cs"]
+	infraDI := contentByPath["ProductService/src/ProductService.Infrastructure/DependencyInjection.cs"]
+	readinessProbe := contentByPath["ProductService/src/ProductService.Infrastructure/Health/SqlReadinessProbe.cs"]
 	readme := contentByPath["README.md"]
 	assertContains(t, infraDI, "IReadinessProbe")
 	assertContains(t, infraDI, "ProductService.Infrastructure.Health")
@@ -312,7 +312,7 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 
 	for path, content := range contentByPath {
 		for _, forbidden := range []string{"EnsureCreated", "Migrate(", "Database.Migrate", "Password=", "User Id=", "Server=localhost"} {
-			if strings.HasPrefix(path, "tests/") && forbidden == "EnsureCreated" {
+			if strings.Contains(path, "/tests/") && forbidden == "EnsureCreated" {
 				continue
 			}
 			if strings.HasSuffix(path, ".md") && (forbidden == "Password=" || forbidden == "User Id=" || forbidden == "Server=localhost") {
@@ -335,15 +335,15 @@ func TestGenerateCreateCQRSSliceUsesApplicationPipelineAndWebApiMapping(t *testi
 		t.Fatalf("generate: %v", err)
 	}
 
-	command := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Commands/Create/CreateProductCommand.cs"))
-	handler := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Commands/Create/CreateProductCommandHandler.cs"))
-	validator := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Commands/Create/CreateProductCommandValidator.cs"))
-	dto := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Dtos/ProductDto.cs"))
-	createRequest := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Dtos/CreateProductRequest.cs"))
-	controller := string(generatedContent(t, files, "src/ProductService/ProductService.WebApi/Controllers/Products/ProductController.cs"))
-	program := string(generatedContent(t, files, "src/ProductService/ProductService.WebApi/Program.cs"))
-	validationBehavior := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Common/ValidationBehavior.cs"))
-	applicationDI := string(generatedContent(t, files, "src/ProductService/ProductService.Application/DependencyInjection.cs"))
+	command := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Commands/Create/CreateProductCommand.cs"))
+	handler := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Commands/Create/CreateProductCommandHandler.cs"))
+	validator := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Commands/Create/CreateProductCommandValidator.cs"))
+	dto := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Dtos/ProductDto.cs"))
+	createRequest := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Dtos/CreateProductRequest.cs"))
+	controller := string(generatedContent(t, files, "ProductService/src/ProductService.WebApi/Controllers/Products/ProductController.cs"))
+	program := string(generatedContent(t, files, "ProductService/src/ProductService.WebApi/Program.cs"))
+	validationBehavior := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Common/ValidationBehavior.cs"))
+	applicationDI := string(generatedContent(t, files, "ProductService/src/ProductService.Application/DependencyInjection.cs"))
 	packages := string(generatedContent(t, files, "Directory.Packages.props"))
 
 	assertContains(t, command, "namespace ProductService.Application.Products.Commands.Create")
@@ -389,20 +389,20 @@ func TestGenerateReadCQRSSliceUsesQueriesAndPreservesLegacyPaginationContract(t 
 		t.Fatalf("generate: %v", err)
 	}
 
-	listQuery := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Queries/List/ListProductQuery.cs"))
-	listHandler := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Queries/List/ListProductQueryHandler.cs"))
-	listValidator := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Queries/List/ListProductQueryValidator.cs"))
-	getQuery := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Queries/GetById/GetProductByIdQuery.cs"))
-	getHandler := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Queries/GetById/GetProductByIdQueryHandler.cs"))
-	updateCommand := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Commands/Update/UpdateProductCommand.cs"))
-	updateHandler := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Commands/Update/UpdateProductCommandHandler.cs"))
-	updateValidator := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Commands/Update/UpdateProductCommandValidator.cs"))
-	deleteCommand := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Commands/Delete/DeleteProductCommand.cs"))
-	deleteHandler := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Commands/Delete/DeleteProductCommandHandler.cs"))
-	deleteValidator := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Commands/Delete/DeleteProductCommandValidator.cs"))
-	repository := string(generatedContent(t, files, "src/ProductService/ProductService.Application/Products/Interfaces/IProductRepository.cs"))
-	controller := string(generatedContent(t, files, "src/ProductService/ProductService.WebApi/Controllers/Products/ProductController.cs"))
-	program := string(generatedContent(t, files, "src/ProductService/ProductService.WebApi/Program.cs"))
+	listQuery := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Queries/List/ListProductQuery.cs"))
+	listHandler := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Queries/List/ListProductQueryHandler.cs"))
+	listValidator := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Queries/List/ListProductQueryValidator.cs"))
+	getQuery := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Queries/GetById/GetProductByIdQuery.cs"))
+	getHandler := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Queries/GetById/GetProductByIdQueryHandler.cs"))
+	updateCommand := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Commands/Update/UpdateProductCommand.cs"))
+	updateHandler := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Commands/Update/UpdateProductCommandHandler.cs"))
+	updateValidator := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Commands/Update/UpdateProductCommandValidator.cs"))
+	deleteCommand := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Commands/Delete/DeleteProductCommand.cs"))
+	deleteHandler := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Commands/Delete/DeleteProductCommandHandler.cs"))
+	deleteValidator := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Commands/Delete/DeleteProductCommandValidator.cs"))
+	repository := string(generatedContent(t, files, "ProductService/src/ProductService.Application/Products/Interfaces/IProductRepository.cs"))
+	controller := string(generatedContent(t, files, "ProductService/src/ProductService.WebApi/Controllers/Products/ProductController.cs"))
+	program := string(generatedContent(t, files, "ProductService/src/ProductService.WebApi/Program.cs"))
 
 	assertContains(t, listQuery, "namespace ProductService.Application.Products.Queries.List")
 	assertContains(t, listQuery, "IRequest<ErrorOr<PagedResult<ProductDto>>>")
@@ -525,18 +525,19 @@ func TestScaffoldPlanUsesTargetFrameworkAndCentralPackagePolicy(t *testing.T) {
 			}
 			commands := scaffoldCommandText(view.ScaffoldPlan)
 
-			assertContains(t, view.SolutionFileName, "CommercePlatform."+tt.solutionFormat)
-			solutionCommand := "dotnet new sln --name 'CommercePlatform'"
+			assertContains(t, view.Services[0].SolutionFileName, "ProductService."+tt.solutionFormat)
+			solutionCommand := "dotnet new sln --name 'ProductService' --output './ProductService'"
 			if tt.solutionFormat == "slnx" {
-				solutionCommand = "dotnet new sln --format 'slnx' --name 'CommercePlatform'"
+				solutionCommand = "dotnet new sln --format 'slnx' --name 'ProductService' --output './ProductService'"
 			}
 			assertContains(t, commands, solutionCommand)
-			assertContains(t, commands, "dotnet new webapi --use-controllers --framework '"+tt.targetFramework+"' --name 'ProductService.WebApi' --output './src/ProductService/ProductService.WebApi' --no-restore")
-			assertContains(t, commands, "dotnet new classlib --framework '"+tt.targetFramework+"' --name 'ProductService.Domain' --output './src/ProductService/ProductService.Domain' --no-restore")
-			assertContains(t, commands, "dotnet new xunit --framework '"+tt.targetFramework+"' --name 'ProductService.WebApi.Tests' --output './tests/ProductService/ProductService.WebApi.Tests' --no-restore")
-			assertContains(t, commands, "dotnet sln './CommercePlatform."+tt.solutionFormat+"' add './src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj'")
-			assertContains(t, commands, "dotnet add './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj' reference './src/ProductService/ProductService.Application/ProductService.Application.csproj'")
-			assertContains(t, commands, "dotnet add './src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj' reference './src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj'")
+			assertContains(t, commands, "dotnet new webapi --use-controllers --framework '"+tt.targetFramework+"' --name 'ProductService.WebApi' --output './ProductService/src/ProductService.WebApi' --no-restore")
+			assertContains(t, commands, "dotnet new classlib --framework '"+tt.targetFramework+"' --name 'ProductService.Domain' --output './ProductService/src/ProductService.Domain' --no-restore")
+			assertContains(t, commands, "dotnet new xunit --framework '"+tt.targetFramework+"' --name 'ProductService.WebApi.Tests' --output './ProductService/tests/ProductService.WebApi.Tests' --no-restore")
+			assertContains(t, commands, "dotnet sln './ProductService/ProductService."+tt.solutionFormat+"' add './ProductService/src/ProductService.WebApi/ProductService.WebApi.csproj'")
+			assertNotContains(t, commands, "dotnet sln './CommercePlatform.")
+			assertContains(t, commands, "dotnet add './ProductService/src/ProductService.Infrastructure/ProductService.Infrastructure.csproj' reference './ProductService/src/ProductService.Application/ProductService.Application.csproj'")
+			assertContains(t, commands, "dotnet add './ProductService/src/ProductService.WebApi/ProductService.WebApi.csproj' reference './ProductService/src/ProductService.Infrastructure/ProductService.Infrastructure.csproj'")
 			assertNotContains(t, commands, "dotnet remove")
 			assertNotContains(t, commands, "--version")
 			assertNotContains(t, commands, "Version=")
@@ -544,24 +545,24 @@ func TestScaffoldPlanUsesTargetFrameworkAndCentralPackagePolicy(t *testing.T) {
 			assertNotContains(t, commands, tt.sqlClient)
 
 			packages := scaffoldPackageText(view.ScaffoldPlan)
-			assertContains(t, packages, "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj -> Microsoft.EntityFrameworkCore.Design")
-			assertContains(t, packages, "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj -> Microsoft.EntityFrameworkCore.Tools")
-			assertContains(t, packages, "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj -> Microsoft.EntityFrameworkCore.SqlServer")
-			assertContains(t, packages, "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj -> Microsoft.Data.SqlClient")
-			assertContains(t, packages, "src/ProductService/ProductService.Application/ProductService.Application.csproj -> MediatR")
-			assertContains(t, packages, "src/ProductService/ProductService.Application/ProductService.Application.csproj -> FluentValidation")
-			assertContains(t, packages, "src/ProductService/ProductService.Application/ProductService.Application.csproj -> FluentValidation.DependencyInjectionExtensions")
-			assertContains(t, packages, "src/ProductService/ProductService.Application/ProductService.Application.csproj -> ErrorOr")
-			assertContains(t, packages, "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj -> MediatR")
+			assertContains(t, packages, "ProductService/src/ProductService.Infrastructure/ProductService.Infrastructure.csproj -> Microsoft.EntityFrameworkCore.Design")
+			assertContains(t, packages, "ProductService/src/ProductService.Infrastructure/ProductService.Infrastructure.csproj -> Microsoft.EntityFrameworkCore.Tools")
+			assertContains(t, packages, "ProductService/src/ProductService.Infrastructure/ProductService.Infrastructure.csproj -> Microsoft.EntityFrameworkCore.SqlServer")
+			assertContains(t, packages, "ProductService/src/ProductService.Infrastructure/ProductService.Infrastructure.csproj -> Microsoft.Data.SqlClient")
+			assertContains(t, packages, "ProductService/src/ProductService.Application/ProductService.Application.csproj -> MediatR")
+			assertContains(t, packages, "ProductService/src/ProductService.Application/ProductService.Application.csproj -> FluentValidation")
+			assertContains(t, packages, "ProductService/src/ProductService.Application/ProductService.Application.csproj -> FluentValidation.DependencyInjectionExtensions")
+			assertContains(t, packages, "ProductService/src/ProductService.Application/ProductService.Application.csproj -> ErrorOr")
+			assertContains(t, packages, "ProductService/src/ProductService.WebApi/ProductService.WebApi.csproj -> MediatR")
 			if tt.targetFramework == "net8.0" {
-				assertNotContains(t, packages, "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj -> Microsoft.AspNetCore.OpenApi")
-				assertNotContains(t, packages, "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj -> Scalar.AspNetCore")
+				assertNotContains(t, packages, "ProductService/src/ProductService.WebApi/ProductService.WebApi.csproj -> Microsoft.AspNetCore.OpenApi")
+				assertNotContains(t, packages, "ProductService/src/ProductService.WebApi/ProductService.WebApi.csproj -> Scalar.AspNetCore")
 			} else {
-				assertContains(t, packages, "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj -> Microsoft.AspNetCore.OpenApi")
-				assertContains(t, packages, "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj -> Scalar.AspNetCore")
+				assertContains(t, packages, "ProductService/src/ProductService.WebApi/ProductService.WebApi.csproj -> Microsoft.AspNetCore.OpenApi")
+				assertContains(t, packages, "ProductService/src/ProductService.WebApi/ProductService.WebApi.csproj -> Scalar.AspNetCore")
 			}
-			assertNotContains(t, packages, "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj -> FluentValidation.DependencyInjectionExtensions")
-			assertContains(t, packages, "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj -> ErrorOr")
+			assertNotContains(t, packages, "ProductService/src/ProductService.WebApi/ProductService.WebApi.csproj -> FluentValidation.DependencyInjectionExtensions")
+			assertContains(t, packages, "ProductService/src/ProductService.WebApi/ProductService.WebApi.csproj -> ErrorOr")
 			assertNotContains(t, packages, tt.entityFramework)
 			assertNotContains(t, packages, tt.sqlClient)
 		})
@@ -631,8 +632,8 @@ func TestGenerateDefaultsSolutionFileFormatFromTargetFramework(t *testing.T) {
 		expectedSolution   string
 		unexpectedSolution string
 	}{
-		{name: "net8 below net10", targetFramework: "net8.0", expectedSolution: "CommercePlatform.sln", unexpectedSolution: "CommercePlatform.slnx"},
-		{name: "net10", targetFramework: "net10.0", expectedSolution: "CommercePlatform.slnx", unexpectedSolution: "CommercePlatform.sln"},
+		{name: "net8 below net10", targetFramework: "net8.0", expectedSolution: "ProductService/ProductService.sln", unexpectedSolution: "ProductService/ProductService.slnx"},
+		{name: "net10", targetFramework: "net10.0", expectedSolution: "ProductService/ProductService.slnx", unexpectedSolution: "ProductService/ProductService.sln"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -653,6 +654,12 @@ func TestGenerateDefaultsSolutionFileFormatFromTargetFramework(t *testing.T) {
 			if _, ok := contentByPath[tt.unexpectedSolution]; ok {
 				t.Fatalf("did not expect %s to be generated", tt.unexpectedSolution)
 			}
+			if _, ok := contentByPath["CommercePlatform.sln"]; ok {
+				t.Fatal("did not expect root aggregate .sln to be generated")
+			}
+			if _, ok := contentByPath["CommercePlatform.slnx"]; ok {
+				t.Fatal("did not expect root aggregate .slnx to be generated")
+			}
 			readme := contentByPath["README.md"]
 			assertContains(t, readme, "dotnet build ./"+tt.expectedSolution)
 			assertContains(t, readme, "dotnet test ./"+tt.expectedSolution)
@@ -672,14 +679,63 @@ func TestGenerateSlnxReferencesAllProjectsDeterministically(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	slnx := string(generatedContent(t, files, "CommercePlatform.slnx"))
+	slnx := string(generatedContent(t, files, "ProductService/ProductService.slnx"))
 	packages := string(generatedContent(t, files, "Directory.Packages.props"))
 
 	assertContains(t, slnx, "<Solution>\n")
-	assertContains(t, slnx, `  <Project Path="src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj" />`)
-	assertContains(t, slnx, `  <Project Path="tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj" />`)
+	assertContains(t, slnx, `  <Project Path="src/ProductService.WebApi/ProductService.WebApi.csproj" />`)
+	assertContains(t, slnx, `  <Project Path="tests/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj" />`)
+	assertNotContains(t, slnx, "OrderService")
 	assertNotContains(t, slnx, "ProjectConfigurationPlatforms")
 	assertContains(t, packages, `System.Security.Cryptography.Xml" Version="10.0.10`)
+}
+
+func TestGenerateCreatesOneSolutionPerMicroservice(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := testConfig()
+	cfg.Services = append(cfg.Services, spec.Service{
+		Name: "OrderService",
+		Entities: []spec.Entity{{
+			Name:   "Order",
+			Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Number", Type: "string"}},
+		}},
+	})
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	contentByPath := map[string]string{}
+	for _, file := range files {
+		contentByPath[file.Path] = string(file.Content)
+	}
+
+	productSolution := contentByPath["ProductService/ProductService.sln"]
+	orderSolution := contentByPath["OrderService/OrderService.sln"]
+	if productSolution == "" || orderSolution == "" {
+		t.Fatalf("expected per-service solutions, got paths: %#v", keys(contentByPath))
+	}
+	if _, ok := contentByPath["CommercePlatform.sln"]; ok {
+		t.Fatal("did not expect root aggregate solution")
+	}
+	assertContains(t, productSolution, `"src/ProductService.WebApi/ProductService.WebApi.csproj"`)
+	assertContains(t, productSolution, `"tests/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj"`)
+	assertNotContains(t, productSolution, "OrderService")
+	assertContains(t, orderSolution, `"src/OrderService.WebApi/OrderService.WebApi.csproj"`)
+	assertContains(t, orderSolution, `"tests/OrderService.Infrastructure.Tests/OrderService.Infrastructure.Tests.csproj"`)
+	assertNotContains(t, orderSolution, "ProductService")
+}
+
+func keys(values map[string]string) []string {
+	result := make([]string, 0, len(values))
+	for key := range values {
+		result = append(result, key)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func TestGenerateExampleSolutionFilesAreRuntimeParseable(t *testing.T) {
@@ -691,9 +747,9 @@ func TestGenerateExampleSolutionFilesAreRuntimeParseable(t *testing.T) {
 		unexpectedSolution string
 		validateWithDotnet bool
 	}{
-		{name: "net8 default", targetFramework: "net8.0", expectedSolution: "CommercePlatform.sln", unexpectedSolution: "CommercePlatform.slnx"},
-		{name: "net8 explicit sln", targetFramework: "net8.0", solutionFormat: "sln", expectedSolution: "CommercePlatform.sln", unexpectedSolution: "CommercePlatform.slnx"},
-		{name: "net10 default", targetFramework: "net10.0", expectedSolution: "CommercePlatform.slnx", unexpectedSolution: "CommercePlatform.sln", validateWithDotnet: true},
+		{name: "net8 default", targetFramework: "net8.0", expectedSolution: "ProductService/ProductService.sln", unexpectedSolution: "ProductService/ProductService.slnx"},
+		{name: "net8 explicit sln", targetFramework: "net8.0", solutionFormat: "sln", expectedSolution: "ProductService/ProductService.sln", unexpectedSolution: "ProductService/ProductService.slnx"},
+		{name: "net10 default", targetFramework: "net10.0", expectedSolution: "ProductService/ProductService.slnx", unexpectedSolution: "ProductService/ProductService.sln", validateWithDotnet: true},
 	}
 
 	for _, tt := range tests {
@@ -733,7 +789,7 @@ func TestGenerateUsesPluralizedEntityNamesForFeatureAndRoute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	controller := string(generatedContent(t, files, "src/ProductService/ProductService.WebApi/Controllers/Categories/CategoryController.cs"))
+	controller := string(generatedContent(t, files, "ProductService/src/ProductService.WebApi/Controllers/Categories/CategoryController.cs"))
 
 	assertContains(t, controller, "[Route(\"categories\")]")
 	assertContains(t, controller, "ListCategories")
@@ -802,7 +858,7 @@ func TestGenerateCreateTestsAssertAllSupportedScalarRequestFields(t *testing.T) 
 	if err != nil {
 		t.Fatalf("generate all-scalar config: %v", err)
 	}
-	content := string(generatedContent(t, files, "tests/ProductService/ProductService.Application.Tests/Features/Products/ProductApplicationTests.cs"))
+	content := string(generatedContent(t, files, "ProductService/tests/ProductService.Application.Tests/Features/Products/ProductApplicationTests.cs"))
 	for _, expected := range []string{
 		"Assert.True(created.IsAvailable);",
 		"Assert.Equal(new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc), created.PublishedAt);",
@@ -838,8 +894,8 @@ func TestGenerateRecordEntityTestsUseDomainAliases(t *testing.T) {
 				t.Fatalf("generate: %v", err)
 			}
 
-			applicationTests := string(generatedContent(t, files, "tests/RecordService/RecordService.Application.Tests/Features/Records/RecordApplicationTests.cs"))
-			infrastructureTests := string(generatedContent(t, files, "tests/RecordService/RecordService.Infrastructure.Tests/RecordServiceInfrastructureTests.cs"))
+			applicationTests := string(generatedContent(t, files, "RecordService/tests/RecordService.Application.Tests/Features/Records/RecordApplicationTests.cs"))
+			infrastructureTests := string(generatedContent(t, files, "RecordService/tests/RecordService.Infrastructure.Tests/RecordServiceInfrastructureTests.cs"))
 
 			for _, content := range []string{applicationTests, infrastructureTests} {
 				assertContains(t, content, "using DomainRecord = RecordService.Domain.Entities.Record;")
@@ -893,7 +949,7 @@ func TestGenerateRecordRepositoryDiagnosticsAvoidsInstanceAnalyzerWarningWithout
 			if err != nil {
 				t.Fatalf("generate: %v", err)
 			}
-			repository := string(generatedContent(t, files, "src/RecordService/RecordService.Infrastructure/Persistence/Features/Records/RecordRepository.cs"))
+			repository := string(generatedContent(t, files, "RecordService/src/RecordService.Infrastructure/Persistence/Features/Records/RecordRepository.cs"))
 
 			assertContains(t, repository, tt.expectedSignature)
 			assertNotContains(t, repository, tt.unexpectedSignature)
@@ -923,7 +979,7 @@ func TestGenerateUsesParameterizedRepositoryDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	repository := string(generatedContent(t, files, "src/ProductService/ProductService.Infrastructure/Persistence/Features/Products/ProductRepository.cs"))
+	repository := string(generatedContent(t, files, "ProductService/src/ProductService.Infrastructure/Persistence/Features/Products/ProductRepository.cs"))
 	assertContains(t, repository, "SqlQueryRaw<Guid>(sql, id.Value)")
 	assertNotContains(t, repository, "$\"SELECT")
 	assertNotContains(t, repository, "'{id.Value}'")
@@ -957,7 +1013,7 @@ func TestGenerateEntityConfigurationQualifiesValueObjectRehydrateWhenNamesCollid
 	if err != nil {
 		t.Fatalf("generate collision config: %v", err)
 	}
-	configuration := string(generatedContent(t, files, "src/OrderService/OrderService.Infrastructure/Persistence/Configurations/OrderConfiguration.cs"))
+	configuration := string(generatedContent(t, files, "OrderService/src/OrderService.Infrastructure/Persistence/Configurations/OrderConfiguration.cs"))
 
 	assertContains(t, configuration, "public sealed class OrderConfiguration : IEntityTypeConfiguration<Order>")
 	assertContains(t, configuration, "value => OrderService.Domain.ValueObjects.OrderConfiguration.Rehydrate(value)")
@@ -1001,13 +1057,13 @@ func TestGenerateRequestContractsUseInitPropertiesForHundredFields(t *testing.T)
 	if err != nil {
 		t.Fatalf("generate hundred-field config: %v", err)
 	}
-	createRequest := string(generatedContent(t, files, "src/HundredFieldService/HundredFieldService.Application/HundredRecords/Dtos/CreateHundredRecordRequest.cs"))
-	updateRequest := string(generatedContent(t, files, "src/HundredFieldService/HundredFieldService.Application/HundredRecords/Dtos/UpdateHundredRecordRequest.cs"))
+	createRequest := string(generatedContent(t, files, "HundredFieldService/src/HundredFieldService.Application/HundredRecords/Dtos/CreateHundredRecordRequest.cs"))
+	updateRequest := string(generatedContent(t, files, "HundredFieldService/src/HundredFieldService.Application/HundredRecords/Dtos/UpdateHundredRecordRequest.cs"))
 	assertContains(t, createRequest, "public sealed record CreateHundredRecordRequest\n{")
 	assertContains(t, createRequest, "public string Field099 { get; init; } = string.Empty;")
 	assertNotContains(t, createRequest, "public sealed record CreateHundredRecordRequest(")
 	assertNotContains(t, updateRequest, "public sealed record UpdateHundredRecordRequest(")
-	tests := string(generatedContent(t, files, "tests/HundredFieldService/HundredFieldService.Application.Tests/Features/HundredRecords/HundredRecordApplicationTests.cs"))
+	tests := string(generatedContent(t, files, "HundredFieldService/tests/HundredFieldService.Application.Tests/Features/HundredRecords/HundredRecordApplicationTests.cs"))
 	assertContains(t, tests, "new CreateHundredRecordCommand")
 	assertContains(t, tests, "ConcurrencyToken = \"token-v1\"")
 	assertNotContains(t, tests, "new UpdateHundredRecordRequest(")
@@ -1028,7 +1084,7 @@ func TestGenerateEscapedStringValueObjectsAndLargeDoubleWitnesses(t *testing.T) 
 	if err != nil {
 		t.Fatalf("generate escaped/double config: %v", err)
 	}
-	domainTests := string(generatedContent(t, files, "tests/ProductService/ProductService.Domain.Tests/ProductServiceDomainTests.cs"))
+	domainTests := string(generatedContent(t, files, "ProductService/tests/ProductService.Domain.Tests/ProductServiceDomainTests.cs"))
 	assertContains(t, domainTests, "\"bad\\u001F\\u00E9\\U0001F600\"")
 	assertContains(t, domainTests, lowerBoundInvalid("double", numberLiteralFor("double", "1e308")))
 	assertNotContains(t, domainTests, "1E+308d - 1d")
@@ -1057,7 +1113,7 @@ func TestGenerateDerivesPatternInvalidSampleAfterEarlierStringRules(t *testing.T
 	if err != nil {
 		t.Fatalf("generate pattern invalid sample config: %v", err)
 	}
-	domainTests := string(generatedContent(t, files, "tests/ProductService/ProductService.Domain.Tests/ProductServiceDomainTests.cs"))
+	domainTests := string(generatedContent(t, files, "ProductService/tests/ProductService.Domain.Tests/ProductServiceDomainTests.cs"))
 
 	assertContains(t, domainTests, `Assert.Equal("ShortPatternName.Pattern", Assert.Single(ShortPatternName.Create("!!!").Errors).Code);`)
 	assertContains(t, domainTests, `var result = ShortPatternName.Create("!!!", "Field");`)
@@ -1069,16 +1125,38 @@ func TestGeneratePreflightDoesNotTreatOptionalStringValueObjectsAsRequired(t *te
 	if err != nil {
 		t.Fatalf("new generator: %v", err)
 	}
-	files, err := gen.Generate(optionalMaxLengthStringConfig())
+	cfg := optionalMaxLengthStringConfig()
+	cfg.Generation.EnableValueObjectPreflight = true
+	files, err := gen.Generate(cfg)
 	if err != nil {
 		t.Fatalf("generate optional string config: %v", err)
 	}
-	preflight := string(generatedContent(t, files, "src/OptionalStringService/OptionalStringService.Infrastructure/Persistence/ValueObjectPreflight.sql"))
+	preflight := string(generatedContent(t, files, "OptionalStringService/src/OptionalStringService.Infrastructure/Persistence/ValueObjectPreflight.sql"))
 	assertContains(t, preflight, "OptionalLabel.MaxLength")
 	assertNotContains(t, preflight, "OptionalLabel.Required")
-	infraTests := string(generatedContent(t, files, "tests/OptionalStringService/OptionalStringService.Infrastructure.Tests/OptionalStringServiceInfrastructureTests.cs"))
+	infraTests := string(generatedContent(t, files, "OptionalStringService/tests/OptionalStringService.Infrastructure.Tests/OptionalStringServiceInfrastructureTests.cs"))
 	assertContains(t, infraTests, "VALUES ({0}, N''")
 	assertContains(t, infraTests, "Assert.Empty(await RunPreflightAsync(context));")
+}
+
+func TestGenerateDisablesValueObjectPreflightByDefault(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	files, err := gen.Generate(testConfig())
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	paths := generatedPathSet(files)
+	if paths["ProductService/src/ProductService.Infrastructure/Persistence/ValueObjectPreflight.sql"] {
+		t.Fatal("expected ValueObjectPreflight.sql to be opt-in")
+	}
+	csproj := string(generatedContent(t, files, "ProductService/src/ProductService.Infrastructure/ProductService.Infrastructure.csproj"))
+	assertNotContains(t, csproj, "ValueObjectPreflight.sql")
+	infraTests := string(generatedContent(t, files, "ProductService/tests/ProductService.Infrastructure.Tests/ProductServiceInfrastructureTests.cs"))
+	assertNotContains(t, infraTests, "RunPreflightAsync")
+	assertNotContains(t, infraTests, "ValueObjectPreflight")
 }
 
 func assertContains(t *testing.T, content, expected string) {
@@ -1143,6 +1221,14 @@ func generatedContent(t *testing.T, files []GeneratedFile, generatedPath string)
 	return nil
 }
 
+func generatedPathSet(files []GeneratedFile) map[string]bool {
+	paths := make(map[string]bool, len(files))
+	for _, file := range files {
+		paths[file.Path] = true
+	}
+	return paths
+}
+
 func exampleConfig(t *testing.T) spec.Config {
 	t.Helper()
 	content, err := os.ReadFile(filepath.Join("..", "..", "examples", "product-service.json"))
@@ -1183,11 +1269,16 @@ func generateWorkspace(t *testing.T, cfg spec.Config) generatedWorkspace {
 	outputDir := t.TempDir()
 	writeGeneratedFiles(t, outputDir, files)
 
-	solutionName := cfg.Solution.Name + "." + cfg.SolutionFormat()
+	services := sortedServices(cfg.Services)
+	if len(services) == 0 {
+		t.Fatal("expected at least one generated service")
+	}
+	serviceName := services[0].Name
+	solutionName := serviceName + "." + cfg.SolutionFormat()
 	return generatedWorkspace{
 		dir:          outputDir,
 		solutionName: solutionName,
-		solutionPath: filepath.Join(outputDir, solutionName),
+		solutionPath: filepath.Join(outputDir, serviceName, solutionName),
 	}
 }
 

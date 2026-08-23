@@ -141,7 +141,7 @@ var fieldSchema = objectSchema{name: "field", allowedKeys: allowed("name", "type
 var entitySchema = objectSchema{name: "entity", allowedKeys: allowed("name", "fields"), arrayTargets: map[string]objectSchema{"fields": fieldSchema}}
 var serviceSchema = objectSchema{name: "service", allowedKeys: allowed("name", "valueObjects", "entities"), arrayTargets: map[string]objectSchema{"valueObjects": valueObjectSchema, "entities": entitySchema}}
 var rootSchema = objectSchema{name: "root", allowedKeys: allowed("schemaVersion", "generation", "solution", "services"), arrayTargets: map[string]objectSchema{"services": serviceSchema}}
-var generationSchema = objectSchema{name: "generation", allowedKeys: allowed("targetFramework", "solutionFormat")}
+var generationSchema = objectSchema{name: "generation", allowedKeys: allowed("targetFramework", "solutionFormat", "enableValueObjectPreflight")}
 var solutionSchema = objectSchema{name: "solution", allowedKeys: allowed("name", "description")}
 
 func allowed(keys ...string) map[string]string {

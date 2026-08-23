@@ -25,37 +25,37 @@ public sealed class ProductServiceArchitectureTests
     public void FeaturesUseMediatRAndDoNotExposeLegacyApplicationServices()
     {
         var root = FindSolutionRoot();
-        AssertSourceContains(root, "src/ProductService/ProductService.Application/Products", [
+        AssertSourceContains(root, "src/ProductService.Application/Products", [
             "CreateProductCommand : IRequest<ErrorOr<ProductDto>>",
             "ListProductQuery(int? Page, int? PageSize) : IRequest<ErrorOr<PagedResult<ProductDto>>>",
             "GetProductByIdQuery(Guid Id) : IRequest<ErrorOr<ProductDto>>",
             "UpdateProductCommand : IRequest<ErrorOr<ProductDto>>",
             "DeleteProductCommand(Guid Id, string ConcurrencyToken) : IRequest<ErrorOr<Deleted>>"
         ]);
-        AssertSourceDoesNotContain(root, "src/ProductService/ProductService.Application/Products", ["IProductUseCases", "ProductUseCases"]);
+        AssertSourceDoesNotContain(root, "src/ProductService.Application/Products", ["IProductUseCases", "ProductUseCases"]);
     }
 
     [Fact]
     public void ProjectFilesDeclareExactReferencesAndAllowedFrameworks()
     {
         var root = FindSolutionRoot();
-        AssertProject(root, "src/ProductService/ProductService.Domain/ProductService.Domain.csproj", [], [], []);
-        AssertProject(root, "src/ProductService/ProductService.Application/ProductService.Application.csproj", ["..\\ProductService.Domain\\ProductService.Domain.csproj"], ["ErrorOr", "FluentValidation", "FluentValidation.DependencyInjectionExtensions", "MediatR"], []);
-        AssertProject(root, "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj", ["..\\ProductService.Application\\ProductService.Application.csproj", "..\\ProductService.Domain\\ProductService.Domain.csproj"], ["Microsoft.Data.SqlClient", "Microsoft.EntityFrameworkCore.Design", "Microsoft.EntityFrameworkCore.SqlServer", "Microsoft.EntityFrameworkCore.Tools"], []);
-        AssertProject(root, "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj", ["..\\ProductService.Application\\ProductService.Application.csproj", "..\\ProductService.Infrastructure\\ProductService.Infrastructure.csproj"], ["ErrorOr", "MediatR", "Microsoft.AspNetCore.Authentication.JwtBearer", "OpenTelemetry.Exporter.OpenTelemetryProtocol", "OpenTelemetry.Extensions.Hosting", "OpenTelemetry.Instrumentation.AspNetCore", "OpenTelemetry.Instrumentation.Http"], []);
+        AssertProject(root, "src/ProductService.Domain/ProductService.Domain.csproj", [], [], []);
+        AssertProject(root, "src/ProductService.Application/ProductService.Application.csproj", ["..\\ProductService.Domain\\ProductService.Domain.csproj"], ["ErrorOr", "FluentValidation", "FluentValidation.DependencyInjectionExtensions", "MediatR"], []);
+        AssertProject(root, "src/ProductService.Infrastructure/ProductService.Infrastructure.csproj", ["..\\ProductService.Application\\ProductService.Application.csproj", "..\\ProductService.Domain\\ProductService.Domain.csproj"], ["Microsoft.Data.SqlClient", "Microsoft.EntityFrameworkCore.Design", "Microsoft.EntityFrameworkCore.SqlServer", "Microsoft.EntityFrameworkCore.Tools"], []);
+        AssertProject(root, "src/ProductService.WebApi/ProductService.WebApi.csproj", ["..\\ProductService.Application\\ProductService.Application.csproj", "..\\ProductService.Infrastructure\\ProductService.Infrastructure.csproj"], ["ErrorOr", "MediatR", "Microsoft.AspNetCore.Authentication.JwtBearer", "OpenTelemetry.Exporter.OpenTelemetryProtocol", "OpenTelemetry.Extensions.Hosting", "OpenTelemetry.Instrumentation.AspNetCore", "OpenTelemetry.Instrumentation.Http"], []);
     }
 
     [Fact]
     public void SourceTextKeepsStrictBoundaryVocabularyOutOfInwardLayers()
     {
         var root = FindSolutionRoot();
-        AssertSourceDoesNotContain(root, "src/ProductService/ProductService.Domain", ["Microsoft.EntityFrameworkCore", "Microsoft.AspNetCore", "IServiceCollection", "MediatR", "FluentValidation", "ErrorOr"]);
+        AssertSourceDoesNotContain(root, "src/ProductService.Domain", ["Microsoft.EntityFrameworkCore", "Microsoft.AspNetCore", "IServiceCollection", "MediatR", "FluentValidation", "ErrorOr"]);
         var applicationTokenRepresentationTerms = new[] { "Convert.FromBase64String", "Convert.ToBase64String", "Base64", "RowVersion", "byte[8]", "new byte[", "byte[]" };
-        AssertSourceDoesNotContain(root, "src/ProductService/ProductService.Application", [.. applicationTokenRepresentationTerms, "Microsoft.EntityFrameworkCore", "Microsoft.AspNetCore", "ProductService.Infrastructure", "PersistenceMutationStatus", "SaveResultStatus"]);
-        AssertSourceDoesNotContain(root, "tests/ProductService/ProductService.Application.Tests", applicationTokenRepresentationTerms);
-        AssertSourceDoesNotContain(root, "src/ProductService/ProductService.WebApi", ["Microsoft.EntityFrameworkCore", "DbContext", "INFORMATION_SCHEMA", "Sql", "IEndpointRouteBuilder", "MapGet"]);
-        AssertSourceDoesNotContain(root, "src/ProductService/ProductService.Infrastructure", ["IEndpointRouteBuilder", "Results.", "StatusCodes", "MapGet", "Microsoft.AspNetCore.Routing", "Microsoft.AspNetCore.Http"]);
-        AssertSourceDoesNotContain(root, "src/ProductService/ProductService.Infrastructure", ["$\"SELECT", "'{id.Value}'", "WHERE [Id] = '"]);
+        AssertSourceDoesNotContain(root, "src/ProductService.Application", [.. applicationTokenRepresentationTerms, "Microsoft.EntityFrameworkCore", "Microsoft.AspNetCore", "ProductService.Infrastructure", "PersistenceMutationStatus", "SaveResultStatus"]);
+        AssertSourceDoesNotContain(root, "tests/ProductService.Application.Tests", applicationTokenRepresentationTerms);
+        AssertSourceDoesNotContain(root, "src/ProductService.WebApi", ["Microsoft.EntityFrameworkCore", "DbContext", "INFORMATION_SCHEMA", "Sql", "IEndpointRouteBuilder", "MapGet"]);
+        AssertSourceDoesNotContain(root, "src/ProductService.Infrastructure", ["IEndpointRouteBuilder", "Results.", "StatusCodes", "MapGet", "Microsoft.AspNetCore.Routing", "Microsoft.AspNetCore.Http"]);
+        AssertSourceDoesNotContain(root, "src/ProductService.Infrastructure", ["$\"SELECT", "'{id.Value}'", "WHERE [Id] = '"]);
     }
 
     private static void AssertReferencesOnly(Assembly assembly, IReadOnlyCollection<string> allowedProjectReferences)

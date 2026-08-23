@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\ProductService\ProductService.Domain\ProductService.Domain.csproj" />
+    <ProjectReference Include="..\..\src\ProductService.Domain\ProductService.Domain.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />

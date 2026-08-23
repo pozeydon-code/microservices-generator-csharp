@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\{{ .Name }}\{{ .ApplicationProject.Directory }}\{{ .ApplicationProject.FileName }}" />
-    <ProjectReference Include="..\..\..\src\{{ .Name }}\{{ .DomainProject.Directory }}\{{ .DomainProject.FileName }}" />
+    <ProjectReference Include="..\..\src\{{ .ApplicationProject.Directory }}\{{ .ApplicationProject.FileName }}" />
+    <ProjectReference Include="..\..\src\{{ .DomainProject.Directory }}\{{ .DomainProject.FileName }}" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />

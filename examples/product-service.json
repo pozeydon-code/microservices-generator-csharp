@@ -2,7 +2,8 @@
   "schemaVersion": 1,
   "generation": {
     "targetFramework": "net8.0",
-    "solutionFormat": "sln"
+    "solutionFormat": "sln",
+    "enableValueObjectPreflight": false
   },
   "solution": {
     "name": "CommercePlatform",

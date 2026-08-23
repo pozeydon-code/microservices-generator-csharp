@@ -15,7 +15,6 @@ type SolutionTemplateData struct {
 	Solution                   spec.Solution
 	TargetFramework            string
 	SolutionFormat             string
-	SolutionFileName           string
 	PackageVersions            []PackageVersion
 	MediatRVersion             string
 	FluentValidationVersion    string
@@ -39,6 +38,7 @@ type PackageVersion struct {
 
 type ServiceView struct {
 	Name                       string
+	SolutionFileName           string
 	MediatRVersion             string
 	FluentValidationVersion    string
 	ErrorOrVersion             string
@@ -52,6 +52,7 @@ type ServiceView struct {
 	ArchitectureTestsProject   ProjectView
 	InfrastructureTestsProject ProjectView
 	DomainTestsProject         ProjectView
+	Projects                   []ProjectView
 	ExpectedSchemaItems        int
 	ValueObjects               []ValueObjectView
 	HasValueObjects            bool
@@ -62,15 +63,17 @@ type ServiceView struct {
 	ReadinessLengthRequired    bool
 	ReadinessSchemaEntity      string
 	ReadinessSchemaField       string
+	EnableValueObjectPreflight bool
 	SupportsOpenApiEndpoints   bool
 }
 
 type ProjectView struct {
-	Name      string
-	Directory string
-	FileName  string
-	Path      string
-	GUID      string
+	Name         string
+	Directory    string
+	FileName     string
+	Path         string
+	SolutionPath string
+	GUID         string
 }
 
 type EntityTemplateData struct {
@@ -160,7 +163,6 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 		Solution:                   cfg.Solution,
 		TargetFramework:            targetFramework,
 		SolutionFormat:             solutionFormat,
-		SolutionFileName:           cfg.Solution.Name + "." + solutionFormat,
 		PackageVersions:            dependencyPackageVersions(dependencyPolicy),
 		MediatRVersion:             dependencyPackageVersion(dependencyPolicy, "MediatR"),
 		FluentValidationVersion:    dependencyPackageVersion(dependencyPolicy, "FluentValidation"),
@@ -175,11 +177,13 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 	}
 	for _, service := range services {
 		serviceView := ServiceView{
-			Name:                     service.Name,
-			MediatRVersion:           dependencyPackageVersion(dependencyPolicy, "MediatR"),
-			FluentValidationVersion:  dependencyPackageVersion(dependencyPolicy, "FluentValidation"),
-			ErrorOrVersion:           dependencyPackageVersion(dependencyPolicy, "ErrorOr"),
-			SupportsOpenApiEndpoints: supportsOpenApiEndpoints,
+			Name:                       service.Name,
+			SolutionFileName:           service.Name + "." + solutionFormat,
+			MediatRVersion:             dependencyPackageVersion(dependencyPolicy, "MediatR"),
+			FluentValidationVersion:    dependencyPackageVersion(dependencyPolicy, "FluentValidation"),
+			ErrorOrVersion:             dependencyPackageVersion(dependencyPolicy, "ErrorOr"),
+			EnableValueObjectPreflight: cfg.Generation.EnableValueObjectPreflight,
+			SupportsOpenApiEndpoints:   supportsOpenApiEndpoints,
 		}
 		serviceView.DomainProject = projectView(service.Name, service.Name+".Domain")
 		serviceView.ApplicationProject = projectView(service.Name, service.Name+".Application")
@@ -190,6 +194,10 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 		serviceView.WebApiTestsProject = testProjectView(service.Name, service.Name+".WebApi.Tests")
 		serviceView.ArchitectureTestsProject = testProjectView(service.Name, service.Name+".Architecture.Tests")
 		serviceView.InfrastructureTestsProject = testProjectView(service.Name, service.Name+".Infrastructure.Tests")
+		serviceView.Projects = []ProjectView{serviceView.DomainProject, serviceView.ApplicationProject, serviceView.InfrastructureProject, serviceView.WebApiProject, serviceView.DomainTestsProject, serviceView.ApplicationTestsProject, serviceView.WebApiTestsProject, serviceView.ArchitectureTestsProject, serviceView.InfrastructureTestsProject}
+		sort.Slice(serviceView.Projects, func(i, j int) bool {
+			return serviceView.Projects[i].SolutionPath < serviceView.Projects[j].SolutionPath
+		})
 		serviceView.ValueObjects = valueObjectViews(service.ValueObjects)
 		serviceView.HasValueObjects = len(serviceView.ValueObjects) > 0
 		valueObjectsByName := map[string]ValueObjectView{}
@@ -222,7 +230,7 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 			serviceView.ExpectedSchemaItems += len(entityView.Fields) + 1
 		}
 		view.Services = append(view.Services, serviceView)
-		view.Projects = append(view.Projects, serviceView.DomainProject, serviceView.ApplicationProject, serviceView.InfrastructureProject, serviceView.WebApiProject, serviceView.DomainTestsProject, serviceView.ApplicationTestsProject, serviceView.WebApiTestsProject, serviceView.ArchitectureTestsProject, serviceView.InfrastructureTestsProject)
+		view.Projects = append(view.Projects, serviceView.Projects...)
 	}
 	sort.Slice(view.Projects, func(i, j int) bool { return view.Projects[i].Path < view.Projects[j].Path })
 	view.ScaffoldPlan = buildScaffoldPlan(view)
@@ -231,14 +239,18 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 
 func projectView(serviceName, projectName string) ProjectView {
 	directory := projectName
-	path := join("src", serviceName, directory, projectName+".csproj")
-	return ProjectView{Name: projectName, Directory: directory, FileName: projectName + ".csproj", Path: path, GUID: deterministicGUID(projectName)}
+	fileName := projectName + ".csproj"
+	solutionPath := join("src", directory, fileName)
+	path := join(serviceName, solutionPath)
+	return ProjectView{Name: projectName, Directory: directory, FileName: fileName, Path: path, SolutionPath: solutionPath, GUID: deterministicGUID(projectName)}
 }
 
 func testProjectView(serviceName, projectName string) ProjectView {
 	directory := projectName
-	path := join("tests", serviceName, directory, projectName+".csproj")
-	return ProjectView{Name: projectName, Directory: directory, FileName: projectName + ".csproj", Path: path, GUID: deterministicGUID(projectName)}
+	fileName := projectName + ".csproj"
+	solutionPath := join("tests", directory, fileName)
+	path := join(serviceName, solutionPath)
+	return ProjectView{Name: projectName, Directory: directory, FileName: fileName, Path: path, SolutionPath: solutionPath, GUID: deterministicGUID(projectName)}
 }
 
 func sortedServices(services []spec.Service) []spec.Service {

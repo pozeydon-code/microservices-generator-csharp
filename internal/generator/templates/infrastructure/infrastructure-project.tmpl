@@ -15,7 +15,7 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
   </ItemGroup>
-  <ItemGroup>
+{{ if .EnableValueObjectPreflight }}  <ItemGroup>
     <Content Include="Persistence\ValueObjectPreflight.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-</Project>
+{{ end }}</Project>

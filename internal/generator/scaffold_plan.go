@@ -17,17 +17,17 @@ type ScaffoldPackageEntry struct {
 }
 
 func buildScaffoldPlan(solution SolutionTemplateData) ScaffoldPlan {
-	solutionCommand := []string{"dotnet", "new", "sln"}
-	if solution.SolutionFormat == "slnx" {
-		solutionCommand = append(solutionCommand, "--format", solution.SolutionFormat)
-	}
-	solutionCommand = append(solutionCommand, "--name", solution.Solution.Name)
-	plan := ScaffoldPlan{
-		Commands: []ScaffoldCommand{{Command: shellCommand(solutionCommand...)}},
-	}
+	plan := ScaffoldPlan{}
 
 	for _, service := range solution.Services {
+		solutionCommand := []string{"dotnet", "new", "sln"}
+		if solution.SolutionFormat == "slnx" {
+			solutionCommand = append(solutionCommand, "--format", solution.SolutionFormat)
+		}
+		solutionCommand = append(solutionCommand, "--name", service.Name, "--output", "./"+service.Name)
+
 		plan.Commands = append(plan.Commands,
+			ScaffoldCommand{Command: shellCommand(solutionCommand...)},
 			newProjectCommand("classlib", solution.TargetFramework, service.DomainProject),
 			newProjectCommand("classlib", solution.TargetFramework, service.ApplicationProject),
 			newProjectCommand("classlib", solution.TargetFramework, service.InfrastructureProject),
@@ -40,7 +40,7 @@ func buildScaffoldPlan(solution SolutionTemplateData) ScaffoldPlan {
 		)
 
 		for _, project := range []ProjectView{service.DomainProject, service.ApplicationProject, service.InfrastructureProject, service.WebApiProject, service.DomainTestsProject, service.ApplicationTestsProject, service.WebApiTestsProject, service.ArchitectureTestsProject, service.InfrastructureTestsProject} {
-			plan.Commands = append(plan.Commands, ScaffoldCommand{Command: shellCommand("dotnet", "sln", "./"+solution.SolutionFileName, "add", "./"+project.Path)})
+			plan.Commands = append(plan.Commands, ScaffoldCommand{Command: shellCommand("dotnet", "sln", "./"+service.Name+"/"+service.SolutionFileName, "add", "./"+project.Path)})
 		}
 
 		plan.Commands = append(plan.Commands,

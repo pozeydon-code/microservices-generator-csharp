@@ -2,23 +2,23 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.Application", "src/ProductService/ProductService.Application/ProductService.Application.csproj", "{9841E6F2-300F-E0D7-FE94-15B3D35B8A4B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.Application", "src/ProductService.Application/ProductService.Application.csproj", "{9841E6F2-300F-E0D7-FE94-15B3D35B8A4B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.Domain", "src/ProductService/ProductService.Domain/ProductService.Domain.csproj", "{204FE316-64B8-55D3-750D-861C420EB700}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.Domain", "src/ProductService.Domain/ProductService.Domain.csproj", "{204FE316-64B8-55D3-750D-861C420EB700}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.Infrastructure", "src/ProductService/ProductService.Infrastructure/ProductService.Infrastructure.csproj", "{9E465EDE-9944-6C41-8D17-93AB968445CF}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.Infrastructure", "src/ProductService.Infrastructure/ProductService.Infrastructure.csproj", "{9E465EDE-9944-6C41-8D17-93AB968445CF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.WebApi", "src/ProductService/ProductService.WebApi/ProductService.WebApi.csproj", "{9D9E41BA-50AB-C9C0-66F4-0B311E8B40F2}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.WebApi", "src/ProductService.WebApi/ProductService.WebApi.csproj", "{9D9E41BA-50AB-C9C0-66F4-0B311E8B40F2}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.Application.Tests", "tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj", "{F6EC2D1A-B463-034C-9B28-0D6FD760D071}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.Application.Tests", "tests/ProductService.Application.Tests/ProductService.Application.Tests.csproj", "{F6EC2D1A-B463-034C-9B28-0D6FD760D071}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.Architecture.Tests", "tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj", "{920807A9-4811-B8C6-F3F8-D0E86AA75762}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.Architecture.Tests", "tests/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj", "{920807A9-4811-B8C6-F3F8-D0E86AA75762}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.Domain.Tests", "tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj", "{B673C0B1-6A52-AA84-755F-E3BCD8D50730}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.Domain.Tests", "tests/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj", "{B673C0B1-6A52-AA84-755F-E3BCD8D50730}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.Infrastructure.Tests", "tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj", "{FAF0B5CC-0FB8-8FA7-A07A-773E2A6BEF5E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.Infrastructure.Tests", "tests/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj", "{FAF0B5CC-0FB8-8FA7-A07A-773E2A6BEF5E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.WebApi.Tests", "tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj", "{CDC6A6B9-EEDE-FE8A-391D-97D28FAF794E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProductService.WebApi.Tests", "tests/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj", "{CDC6A6B9-EEDE-FE8A-391D-97D28FAF794E}"
 EndProject
 Global
     GlobalSection(SolutionConfigurationPlatforms) = preSolution

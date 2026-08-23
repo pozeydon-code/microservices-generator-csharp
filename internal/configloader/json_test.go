@@ -131,7 +131,7 @@ func TestLoadJSONAcceptsExactConfigByteLimit(t *testing.T) {
 func TestLoadJSONAcceptsSchemaVersionAndGenerationOptions(t *testing.T) {
 	cfg, err := LoadJSON(writeConfig(t, `{
   "schemaVersion": 1,
-  "generation": { "targetFramework": "net10.0", "solutionFormat": "slnx" },
+  "generation": { "targetFramework": "net10.0", "solutionFormat": "slnx", "enableValueObjectPreflight": true },
   "solution": { "name": "CommercePlatform", "description": "Product management." },
   "services": [
     {
@@ -159,6 +159,9 @@ func TestLoadJSONAcceptsSchemaVersionAndGenerationOptions(t *testing.T) {
 	}
 	if cfg.SolutionFormat() != "slnx" {
 		t.Fatalf("expected slnx solution format, got %q", cfg.SolutionFormat())
+	}
+	if !cfg.Generation.EnableValueObjectPreflight {
+		t.Fatal("expected value object preflight to be enabled")
 	}
 }
 
@@ -249,7 +252,7 @@ func TestSaveJSONLoadJSONRoundTripPreservesConfigData(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "microgen.json")
 	cfg := spec.Config{
 		SchemaVersion: spec.ConfigSchemaVersion,
-		Generation:    spec.GenerationOptions{TargetFramework: "net10.0", SolutionFormat: "slnx"},
+		Generation:    spec.GenerationOptions{TargetFramework: "net10.0", SolutionFormat: "slnx", EnableValueObjectPreflight: true},
 		Solution:      spec.Solution{Name: "CommercePlatform", Description: "Product management."},
 		Services: []spec.Service{
 			{
@@ -280,8 +283,8 @@ func TestSaveJSONLoadJSONRoundTripPreservesConfigData(t *testing.T) {
 	if !strings.HasPrefix(string(content), "{\n  \"schemaVersion\": 1,") {
 		t.Fatalf("expected deterministic pretty JSON with schemaVersion first, got %q", string(content))
 	}
-	if !strings.Contains(string(content), "\"targetFramework\": \"net10.0\"") || !strings.Contains(string(content), "\"solutionFormat\": \"slnx\"") {
-		t.Fatalf("expected target framework to be saved, got %q", string(content))
+	if !strings.Contains(string(content), "\"targetFramework\": \"net10.0\"") || !strings.Contains(string(content), "\"solutionFormat\": \"slnx\"") || !strings.Contains(string(content), "\"enableValueObjectPreflight\": true") {
+		t.Fatalf("expected generation options to be saved, got %q", string(content))
 	}
 	loaded, err := LoadJSON(path)
 	if err != nil {

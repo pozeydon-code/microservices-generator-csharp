@@ -7,7 +7,7 @@ Generated services use Clean Architecture, CQRS slices, EF Core SQL Server persi
 ## Quick start
 
 1. Configure the values in the table below.
-2. Restore, build, and test the solution.
+2. Restore, build, and test each service solution.
 3. Run the WebApi project for the service you want to start.
 
 | Setting | Purpose |
@@ -36,7 +36,7 @@ flowchart LR
 |---|---|
 | `{Service}.Domain` | `Primitives`, `ValueObjects`, and `Entities`. No EF, WebApi, rowversion, or framework dependency. |
 | `{Service}.Application` | `Features/{Entity}` vertical slices, commands, queries, validators, DTOs, repository ports, pagination, and unit-of-work port. |
-| `{Service}.Infrastructure` | EF Core SQL Server adapter, `Persistence/Configurations`, repositories, UnitOfWork, DbContext factory, readiness probe, and `ValueObjectPreflight.sql`. |
+| `{Service}.Infrastructure` | EF Core SQL Server adapter, `Persistence/Configurations`, repositories, UnitOfWork, DbContext factory, and readiness probe. |
 | `{Service}.WebApi` | Controllers, JWT auth, HTTPS/HSTS, request timeout, OpenTelemetry, ProblemDetails, health endpoints, and startup wiring. |
 
 Architecture tests verify the generated project boundaries.
@@ -44,17 +44,17 @@ Architecture tests verify the generated project boundaries.
 ## Common commands
 
 ```bash
-dotnet restore ./CommercePlatform.sln
-dotnet build ./CommercePlatform.sln --nologo -warnaserror
+dotnet restore ./ProductService/ProductService.sln
+dotnet build ./ProductService/ProductService.sln --nologo -warnaserror
 MICROGEN_TEST_SQLSERVER='Server=localhost,1433;User Id=sa;Password=<password>;Encrypt=True;TrustServerCertificate=True' \
-  dotnet test ./CommercePlatform.sln --nologo -warnaserror --blame-hang --blame-hang-timeout 90s --logger "trx;LogFileName=generated-tests.trx"
+  dotnet test ./ProductService/ProductService.sln --nologo -warnaserror --blame-hang --blame-hang-timeout 90s --logger "trx;LogFileName=ProductService-tests.trx"
 ```
 
 | Task | Command |
 |---|---|
-| Run `ProductService` | `dotnet run --project ./src/ProductService/ProductService.WebApi` |
-| Build all | `dotnet build ./CommercePlatform.sln --nologo -warnaserror` |
-| Test all | `dotnet test ./CommercePlatform.sln --nologo -warnaserror` |
+| Run `ProductService` | `dotnet run --project ./ProductService/src/ProductService.WebApi` |
+| Build `ProductService` | `dotnet build ./ProductService/ProductService.sln --nologo -warnaserror` |
+| Test `ProductService` | `dotnet test ./ProductService/ProductService.sln --nologo -warnaserror` |
 
 Generated workspaces enable nullable reference types, implicit usings, recommended analyzers, code-style checks during build, and warnings as errors.
 
@@ -65,8 +65,8 @@ The generator prepares EF Core migration tooling, but it does not create migrati
 ### ProductService
 
 ```bash
-dotnet ef migrations add InitialCreate --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Infrastructure --output-dir Persistence/Migrations
-dotnet ef database update --project ./src/ProductService/ProductService.Infrastructure --startup-project ./src/ProductService/ProductService.Infrastructure
+dotnet ef migrations add InitialCreate --project ./ProductService/src/ProductService.Infrastructure --startup-project ./ProductService/src/ProductService.Infrastructure --output-dir Persistence/Migrations
+dotnet ef database update --project ./ProductService/src/ProductService.Infrastructure --startup-project ./ProductService/src/ProductService.Infrastructure
 ```
 
 For shared, staging, or production environments, use your team's deployment process.
@@ -93,5 +93,5 @@ The scaffold command plan and package list are represented in the generated proj
 | Build fails on warnings | Generated projects treat warnings as errors; fix the first compiler/analyzer message. |
 | API returns `401` | Confirm `Authentication__Authority`, `Authentication__Audience`, and the bearer token. |
 | `/health/ready` is unavailable | Check SQL connectivity, migrations, mapped columns, and application logs. |
-| Value Object migration is risky | Run `ValueObjectPreflight.sql` and repair invalid rows with business-approved values before creating the migration. |
+| Value Object migration is risky | Enable `generation.enableValueObjectPreflight`, regenerate, run `ValueObjectPreflight.sql`, and repair invalid rows with business-approved values before creating the migration. |
 | Retry outcome is unclear | A connection loss after the database commits but before the acknowledgement leaves the outcome ambiguous; add an operation-identity/idempotency boundary before relying on mutation retries. |

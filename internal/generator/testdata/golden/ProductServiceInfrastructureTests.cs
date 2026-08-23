@@ -46,56 +46,6 @@ public sealed class ProductServiceInfrastructureTests
     }
 
     [Fact]
-    public async Task ValueObjectPreflightFindsStringValueObjectMaxLengthViolations()
-    {
-        if (!SqlTestDatabase.IsConfigured) { return; }
-        var databaseName = $"ProductService_readiness_length_{Guid.NewGuid():N}";
-        await using var database = new SqlTestDatabase(databaseName);
-        await database.InitializeAsync();
-
-        await using var context = database.CreateContext();
-        await context.Database.ExecuteSqlRawAsync("ALTER TABLE Products ALTER COLUMN Name nvarchar(101) NOT NULL");
-        await context.Database.ExecuteSqlRawAsync("INSERT INTO [Products] ([Id], [Name], [IsActive], [Price]) VALUES ({0}, REPLICATE(N'x', 101), 1, 0)", Guid.NewGuid());
-        var violatingRows = await context.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS [Value] FROM [Products] WHERE LEN([Name]) > 100").SingleAsync();
-        Assert.Equal(1, violatingRows);
-    }
-
-    [Fact]
-    public async Task ValueObjectPreflightDetectsRepairsAndClearsSqlSafeViolations()
-    {
-        if (!SqlTestDatabase.IsConfigured) { return; }
-        var databaseName = $"ProductService_preflight_{Guid.NewGuid():N}";
-        await using var database = new SqlTestDatabase(databaseName);
-        await database.InitializeAsync();
-
-        await using var context = database.CreateContext();
-        Assert.Empty(await RunPreflightAsync(context));
-
-
-        var id = Guid.NewGuid();
-        await context.Database.ExecuteSqlRawAsync("ALTER TABLE Products ALTER COLUMN Name nvarchar(101) NOT NULL");
-        await context.Database.ExecuteSqlRawAsync("INSERT INTO [Products] ([Id], [Name], [IsActive], [Price]) VALUES ({0}, REPLICATE(N'x', 101), 1, 0)", id);
-
-        var violations = await RunPreflightAsync(context);
-        var violation = Assert.Single(violations);
-        Assert.Equal("Products", violation.TableName);
-        Assert.Equal("Name", violation.ColumnName);
-        Assert.Equal(id, violation.RecordId);
-
-        await using var transaction = await context.Database.BeginTransactionAsync();
-        await context.Database.ExecuteSqlRawAsync("UPDATE [Products] SET [Name] = {0} WHERE [Id] = {1}", "Repaired Value", id);
-        await transaction.CommitAsync();
-
-        await context.Database.ExecuteSqlRawAsync("ALTER TABLE Products ALTER COLUMN Name nvarchar(100) NOT NULL");
-
-        Assert.Empty(await RunPreflightAsync(context));
-        var healthy = await new SqlReadinessProbe(context, NullLogger<SqlReadinessProbe>.Instance).CheckAsync(CancellationToken.None);
-        Assert.Equal(ReadinessStatus.Ready, healthy.Status);
-    }
-
-
-
-    [Fact]
     public async Task ProductRepositoryPersistsReloadsConcurrencyAndConflicts()
     {
         if (!SqlTestDatabase.IsConfigured) { return; }
@@ -254,33 +204,6 @@ public sealed class ProductServiceInfrastructureTests
     }
 
 
-    private static async Task<IReadOnlyList<PreflightViolation>> RunPreflightAsync(ProductServiceDbContext context)
-    {
-        var infrastructureDirectory = Path.GetDirectoryName(typeof(ProductServiceDbContext).Assembly.Location)!;
-        var scriptPath = Path.Combine(infrastructureDirectory, "ValueObjectPreflight.sql");
-        if (!File.Exists(scriptPath))
-        {
-            scriptPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../../src/ProductService/ProductService.Infrastructure/Persistence/ValueObjectPreflight.sql"));
-        }
-        var script = await File.ReadAllTextAsync(scriptPath);
-        var connection = (SqlConnection)context.Database.GetDbConnection();
-        if (connection.State != System.Data.ConnectionState.Open)
-        {
-            await connection.OpenAsync();
-        }
-        await using var command = connection.CreateCommand();
-        command.CommandText = script;
-        command.CommandTimeout = 5;
-        await using var reader = await command.ExecuteReaderAsync();
-        var violations = new List<PreflightViolation>();
-        while (await reader.ReadAsync())
-        {
-            violations.Add(new PreflightViolation(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetGuid(3)));
-        }
-        return violations;
-    }
-
-    private sealed record PreflightViolation(string TableName, string ColumnName, string RuleCode, Guid RecordId);
 
     private sealed class CaptureLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
     {

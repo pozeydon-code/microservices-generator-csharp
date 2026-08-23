@@ -29,8 +29,9 @@ type Config struct {
 }
 
 type GenerationOptions struct {
-	TargetFramework string `json:"targetFramework,omitempty"`
-	SolutionFormat  string `json:"solutionFormat,omitempty"`
+	TargetFramework            string `json:"targetFramework,omitempty"`
+	SolutionFormat             string `json:"solutionFormat,omitempty"`
+	EnableValueObjectPreflight bool   `json:"enableValueObjectPreflight,omitempty"`
 }
 
 type Solution struct {

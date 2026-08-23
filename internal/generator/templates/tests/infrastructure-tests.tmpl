@@ -45,7 +45,7 @@ public sealed class {{ .Name }}InfrastructureTests
         }
 {{ end }}    }
 
-{{ if .ReadinessLengthField }}    [Fact]
+{{ if and .EnableValueObjectPreflight .ReadinessLengthField -}}    [Fact]
     public async Task ValueObjectPreflightFindsStringValueObjectMaxLengthViolations()
     {
         if (!SqlTestDatabase.IsConfigured) { return; }
@@ -98,7 +98,7 @@ public sealed class {{ .Name }}InfrastructureTests
         Assert.Equal(ReadinessStatus.Ready, healthy.Status);
     }
 
-{{ end }}
+{{ end -}}
 
 {{ range .Entities }}    [Fact]
     public async Task {{ .Name }}RepositoryPersistsReloadsConcurrencyAndConflicts()
@@ -226,13 +226,13 @@ public sealed class {{ .Name }}InfrastructureTests
     }
 
 {{ end }}{{ end }}
-{{ end }}    private static async Task<IReadOnlyList<PreflightViolation>> RunPreflightAsync({{ .Name }}DbContext context)
+{{ end }}{{ if .EnableValueObjectPreflight -}}    private static async Task<IReadOnlyList<PreflightViolation>> RunPreflightAsync({{ .Name }}DbContext context)
     {
         var infrastructureDirectory = Path.GetDirectoryName(typeof({{ .Name }}DbContext).Assembly.Location)!;
         var scriptPath = Path.Combine(infrastructureDirectory, "ValueObjectPreflight.sql");
         if (!File.Exists(scriptPath))
         {
-            scriptPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../../src/{{ .Name }}/{{ .Name }}.Infrastructure/Persistence/ValueObjectPreflight.sql"));
+            scriptPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/{{ .Name }}.Infrastructure/Persistence/ValueObjectPreflight.sql"));
         }
         var script = await File.ReadAllTextAsync(scriptPath);
         var connection = (SqlConnection)context.Database.GetDbConnection();
@@ -254,6 +254,7 @@ public sealed class {{ .Name }}InfrastructureTests
 
     private sealed record PreflightViolation(string TableName, string ColumnName, string RuleCode, Guid RecordId);
 
+{{- end }}
     private sealed class CaptureLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
     {
         public string LastMessage { get; private set; } = string.Empty;
