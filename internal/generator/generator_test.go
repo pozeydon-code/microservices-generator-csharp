@@ -89,6 +89,8 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 	}{
 		{path: "Directory.Build.props", goldenName: "Directory.Build.props"},
 		{path: "Directory.Packages.props", goldenName: "Directory.Packages.props"},
+		{path: "ProductService/Directory.Build.props", goldenName: "Directory.Build.props"},
+		{path: "ProductService/Directory.Packages.props", goldenName: "Directory.Packages.props"},
 		{path: "ProductService/ProductService.sln", goldenName: "ProductService.sln"},
 		{path: "ProductService/src/ProductService.Application/ApplicationAssemblyReference.cs", goldenName: "ApplicationAssemblyReference.cs"},
 		{path: "ProductService/src/ProductService.Application/Common/PaginationPolicy.cs", goldenName: "PaginationPolicy.cs"},
@@ -204,10 +206,15 @@ func TestGenerateGatewayProducesDeterministicGoldenOutput(t *testing.T) {
 		path       string
 		goldenName string
 	}{
+		{path: "Directory.Build.props", goldenName: filepath.Join("gateway-enabled", "Directory.Build.props")},
 		{path: "Directory.Packages.props", goldenName: filepath.Join("gateway-enabled", "Directory.Packages.props")},
 		{path: "README.md", goldenName: filepath.Join("gateway-enabled", "README.md")},
 		{path: "ShopPlatform.sln", goldenName: filepath.Join("gateway-enabled", "ShopPlatform.sln")},
 		{path: "microgen.json", goldenName: filepath.Join("gateway-enabled", "microgen.json")},
+		{path: "ProductService/Directory.Build.props", goldenName: filepath.Join("gateway-enabled", "Directory.Build.props")},
+		{path: "ProductService/Directory.Packages.props", goldenName: filepath.Join("gateway-enabled", "Directory.Packages.props")},
+		{path: "src/ShopPlatform.Gateway/Directory.Build.props", goldenName: filepath.Join("gateway-enabled", "Directory.Build.props")},
+		{path: "src/ShopPlatform.Gateway/Directory.Packages.props", goldenName: filepath.Join("gateway-enabled", "Directory.Packages.props")},
 		{path: "src/ShopPlatform.Gateway/ShopPlatform.Gateway.csproj", goldenName: filepath.Join("gateway-enabled", "ShopPlatform.Gateway.csproj")},
 		{path: "src/ShopPlatform.Gateway/Program.cs", goldenName: filepath.Join("gateway-enabled", "Gateway.Program.cs")},
 		{path: "src/ShopPlatform.Gateway/appsettings.json", goldenName: filepath.Join("gateway-enabled", "Gateway.appsettings.json")},
@@ -215,6 +222,98 @@ func TestGenerateGatewayProducesDeterministicGoldenOutput(t *testing.T) {
 
 	for _, file := range expectedFiles {
 		assertGoldenFile(t, first, file.path, file.goldenName)
+	}
+}
+
+func TestGenerateEmitsPortablePropsForEveryServiceAndKeepsRootProps(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := testConfig()
+	cfg.Services = append(cfg.Services, spec.Service{
+		Name: "OrderingService",
+		Entities: []spec.Entity{{
+			Name:   "Order",
+			Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Number", Type: "string"}},
+		}},
+	})
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate portable service props: %v", err)
+	}
+	rootBuildProps := generatedContent(t, files, "Directory.Build.props")
+	rootPackagesProps := generatedContent(t, files, "Directory.Packages.props")
+
+	for _, serviceName := range []string{"OrderingService", "ProductService"} {
+		serviceBuildProps := generatedContent(t, files, join(serviceName, "Directory.Build.props"))
+		if !bytes.Equal(serviceBuildProps, rootBuildProps) {
+			t.Fatalf("expected %s Directory.Build.props to match root props", serviceName)
+		}
+		assertContains(t, string(serviceBuildProps), "<TargetFramework>net8.0</TargetFramework>")
+		servicePackagesProps := generatedContent(t, files, join(serviceName, "Directory.Packages.props"))
+		if !bytes.Equal(servicePackagesProps, rootPackagesProps) {
+			t.Fatalf("expected %s Directory.Packages.props to match root props", serviceName)
+		}
+		assertContains(t, string(servicePackagesProps), "Microsoft.EntityFrameworkCore.SqlServer\" Version=\"8.0.28")
+	}
+}
+
+func TestGenerateEmitsPortablePropsForGatewayWhenEnabled(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := testConfig()
+	cfg.Solution.Name = "ShopPlatform"
+	cfg.Generation.Gateway.Enabled = true
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate gateway props: %v", err)
+	}
+	rootBuildProps := generatedContent(t, files, "Directory.Build.props")
+	rootPackagesProps := generatedContent(t, files, "Directory.Packages.props")
+	gatewayBuildProps := generatedContent(t, files, "src/ShopPlatform.Gateway/Directory.Build.props")
+	gatewayPackagesProps := generatedContent(t, files, "src/ShopPlatform.Gateway/Directory.Packages.props")
+
+	if !bytes.Equal(gatewayBuildProps, rootBuildProps) {
+		t.Fatal("expected gateway Directory.Build.props to match root props")
+	}
+	if !bytes.Equal(gatewayPackagesProps, rootPackagesProps) {
+		t.Fatal("expected gateway Directory.Packages.props to match root props")
+	}
+}
+
+func TestGenerateOmitsGatewayFolderAndPropsWhenGatewayDisabledOrOmitted(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	for _, tt := range []struct {
+		name string
+		cfg  spec.Config
+	}{
+		{name: "omitted", cfg: testConfig()},
+		{name: "disabled", cfg: func() spec.Config {
+			cfg := testConfig()
+			cfg.Generation.Gateway.Enabled = false
+			return cfg
+		}()},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			files, err := gen.Generate(tt.cfg)
+			if err != nil {
+				t.Fatalf("generate disabled gateway props: %v", err)
+			}
+			for _, file := range files {
+				if strings.HasPrefix(file.Path, "src/CommercePlatform.Gateway/") {
+					t.Fatalf("expected no gateway output when disabled, got %s", file.Path)
+				}
+			}
+		})
 	}
 }
 

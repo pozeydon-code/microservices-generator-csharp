@@ -56,10 +56,7 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 	}
 	var files []GeneratedFile
 
-	if err := g.appendRendered(&files, "Directory.Build.props", templatePath(rootTemplateDir, "directory-build-props.tmpl"), solution); err != nil {
-		return nil, err
-	}
-	if err := g.appendRendered(&files, "Directory.Packages.props", templatePath(rootTemplateDir, "directory-packages-props.tmpl"), solution); err != nil {
+	if err := g.appendPropsFiles(&files, "", solution); err != nil {
 		return nil, err
 	}
 	if err := g.appendRendered(&files, "README.md", templatePath(rootTemplateDir, "solution-readme.tmpl"), solution); err != nil {
@@ -82,8 +79,14 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		if err := g.appendRendered(&files, join("src", solution.Gateway.Project.Directory, "appsettings.json"), templatePath(gatewayTemplateDir, "gateway-appsettings.tmpl"), solution.Gateway); err != nil {
 			return nil, err
 		}
+		if err := g.appendPropsFiles(&files, join("src", solution.Gateway.Project.Directory), solution); err != nil {
+			return nil, err
+		}
 	}
 	for _, service := range solution.Services {
+		if err := g.appendPropsFiles(&files, service.Name, solution); err != nil {
+			return nil, err
+		}
 		solutionTemplate := templatePath(rootTemplateDir, "solution-"+solution.SolutionFormat+".tmpl")
 		if err := g.appendRendered(&files, join(service.Name, service.SolutionFileName), solutionTemplate, service); err != nil {
 			return nil, err
@@ -252,6 +255,26 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return files, nil
+}
+
+func (g *Generator) appendPropsFiles(files *[]GeneratedFile, directory string, data any) error {
+	propsFiles := []struct {
+		name     string
+		template string
+	}{
+		{name: "Directory.Build.props", template: "directory-build-props.tmpl"},
+		{name: "Directory.Packages.props", template: "directory-packages-props.tmpl"},
+	}
+	for _, propsFile := range propsFiles {
+		path := propsFile.name
+		if directory != "" {
+			path = join(directory, propsFile.name)
+		}
+		if err := g.appendRendered(files, path, templatePath(rootTemplateDir, propsFile.template), data); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (g *Generator) appendRendered(files *[]GeneratedFile, path, templateName string, data any) error {
