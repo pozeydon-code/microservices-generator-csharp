@@ -267,7 +267,7 @@ func gatewayView(solutionName string, services []spec.Service) GatewayView {
 		Routes:  make([]GatewayRouteView, 0, len(services)),
 	}
 	for index, service := range services {
-		serviceRouteName := strings.ToLower(service.Name)
+		serviceRouteName := serviceRoutePrefix(service.Name)
 		localPort := defaultGatewayServicePort(index)
 		view.Routes = append(view.Routes, GatewayRouteView{
 			ServiceName:        service.Name,
@@ -279,6 +279,26 @@ func gatewayView(solutionName string, services []spec.Service) GatewayView {
 		})
 	}
 	return view
+}
+
+func serviceRoutePrefix(serviceName string) string {
+	var builder strings.Builder
+	runes := []rune(serviceName)
+	for index, current := range runes {
+		if index > 0 && isUpperASCII(current) && (!isUpperASCII(runes[index-1]) || (index+1 < len(runes) && isLowerASCII(runes[index+1]))) {
+			builder.WriteByte('-')
+		}
+		builder.WriteRune(current)
+	}
+	return strings.ToLower(builder.String())
+}
+
+func isUpperASCII(value rune) bool {
+	return value >= 'A' && value <= 'Z'
+}
+
+func isLowerASCII(value rune) bool {
+	return value >= 'a' && value <= 'z'
 }
 
 func rootProjectView(projectName string) ProjectView {
