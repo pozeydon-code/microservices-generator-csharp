@@ -157,6 +157,7 @@ const (
 	editFieldName editField = iota
 	editFieldDescription
 	editFieldTargetFramework
+	editFieldGatewayEnabled
 	editFieldCount
 )
 
@@ -178,6 +179,7 @@ type editState struct {
 	name            textField
 	description     textField
 	targetFramework textField
+	gatewayEnabled  bool
 	focused         editField
 	returnStatus    modelStatus
 }
@@ -1679,6 +1681,7 @@ func (m *Model) initializeProjectDraft() {
 		name:            newTextField(m.plan.Config.SolutionName),
 		description:     newTextField(m.plan.Config.SolutionDescription),
 		targetFramework: newTextField(m.plan.Config.TargetFramework),
+		gatewayEnabled:  m.plan.Config.GatewayEnabled,
 	}
 	if m.edit.targetFramework.string() == "" {
 		m.edit.targetFramework = newTextField("net8.0")
@@ -2622,13 +2625,23 @@ func (m Model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.edit.focused = (m.edit.focused + editFieldCount - 1) % editFieldCount
 		return m, nil
 	case " ":
+		if m.edit.focused == editFieldGatewayEnabled {
+			m.edit.gatewayEnabled = !m.edit.gatewayEnabled
+			return m, nil
+		}
 		if m.edit.focused == editFieldTargetFramework {
 			return m, nil
 		}
 	case "left":
+		if m.edit.focused == editFieldGatewayEnabled {
+			return m, nil
+		}
 		m.focusedTextField().move(-1)
 		return m, nil
 	case "right":
+		if m.edit.focused == editFieldGatewayEnabled {
+			return m, nil
+		}
 		m.focusedTextField().move(1)
 		return m, nil
 	case "ctrl+n":
@@ -2637,13 +2650,22 @@ func (m Model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "backspace":
+		if m.edit.focused == editFieldGatewayEnabled {
+			return m, nil
+		}
 		m.focusedTextField().backspace()
 		return m, nil
 	case "delete":
+		if m.edit.focused == editFieldGatewayEnabled {
+			return m, nil
+		}
 		m.focusedTextField().delete()
 		return m, nil
 	}
 	if msg.Type == tea.KeyRunes {
+		if m.edit.focused == editFieldGatewayEnabled {
+			return m, nil
+		}
 		m.focusedTextField().insert(msg.Runes)
 		return m, nil
 	}
@@ -2937,10 +2959,12 @@ func (m Model) generateCmd() tea.Cmd {
 }
 
 func (m Model) saveSettingsCmd() tea.Cmd {
+	gatewayEnabled := m.edit.gatewayEnabled
 	settings := application.SolutionSettings{
 		SolutionName:        m.edit.name.string(),
 		SolutionDescription: m.edit.description.string(),
 		TargetFramework:     m.edit.targetFramework.string(),
+		GatewayEnabled:      &gatewayEnabled,
 	}
 	return func() tea.Msg {
 		result, err := m.update(m.request, settings)
@@ -3963,6 +3987,13 @@ func boolAsInt(value bool) int {
 	return 0
 }
 
+func enabledDisabled(value bool) string {
+	if value {
+		return "enabled"
+	}
+	return "disabled"
+}
+
 func (m Model) sourceStepCard() string {
 	var builder strings.Builder
 	fmt.Fprintln(&builder, sectionTitleStyle.Render("Overview"))
@@ -3995,6 +4026,7 @@ func (m Model) projectStepCard() string {
 		fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Description"), m.plan.Config.SolutionDescription)
 	}
 	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Target"), m.plan.Config.TargetFramework)
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Gateway"), enabledDisabled(m.plan.Config.GatewayEnabled))
 	if m.plan.Config.SolutionFormat != "" {
 		fmt.Fprintf(&builder, "%s .%s\n", labelStyle.Render("Format"), m.plan.Config.SolutionFormat)
 	}
@@ -4900,11 +4932,12 @@ func (m Model) renderSettingsEditor(builder *strings.Builder) {
 	fmt.Fprintf(builder, "%s Solution name: %s\n", editCursor(m.edit.focused == editFieldName), m.edit.name.string())
 	fmt.Fprintf(builder, "%s Description: %s\n", editCursor(m.edit.focused == editFieldDescription), m.edit.description.string())
 	fmt.Fprintf(builder, "%s Target framework: %s\n", editCursor(m.edit.focused == editFieldTargetFramework), m.edit.targetFramework.string())
+	fmt.Fprintf(builder, "%s Gateway generation: %s\n", editCursor(m.edit.focused == editFieldGatewayEnabled), enabledDisabled(m.edit.gatewayEnabled))
 	if len(m.targetFrameworkSuggestions) > 0 {
 		fmt.Fprintf(builder, "  Suggestions (newest first): %s\n", strings.Join(m.targetFrameworkSuggestions, ", "))
 	}
 	fmt.Fprintln(builder)
-	fmt.Fprintln(builder, "Type a major or TFM such as 6, 7, 10, or net10.0. Ctrl+n cycles suggestions. Enter saves. Esc cancels.")
+	fmt.Fprintln(builder, "Type a major or TFM such as 6, 7, 10, or net10.0. Ctrl+n cycles suggestions. Space toggles gateway. Enter saves. Esc cancels.")
 	fmt.Fprintln(builder, "Tab/down and shift+tab/up move fields.")
 }
 

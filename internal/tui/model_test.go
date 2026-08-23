@@ -372,6 +372,104 @@ func TestWizardProjectViewShowsTargetFrameworkAndSuggestions(t *testing.T) {
 	assertContains(t, view, "Continue to services")
 }
 
+func TestProjectSettingsEditorShowsGatewayState(t *testing.T) {
+	tests := []struct {
+		name           string
+		gatewayEnabled bool
+		want           string
+	}{
+		{name: "default disabled", gatewayEnabled: false, want: "Gateway generation: disabled"},
+		{name: "initialized enabled", gatewayEnabled: true, want: "Gateway generation: enabled"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan := wizardPlan()
+			plan.Config.GatewayEnabled = tt.gatewayEnabled
+			model := workspaceModel(plan, application.GenerateRequest{}, nil, nil, nil)
+			model.startEditing()
+
+			view := stripANSI(model.View())
+			assertContains(t, view, tt.want)
+			if model.edit.gatewayEnabled != tt.gatewayEnabled {
+				t.Fatalf("expected gateway draft %v, got %v", tt.gatewayEnabled, model.edit.gatewayEnabled)
+			}
+		})
+	}
+}
+
+func TestProjectSettingsEditorTogglesAndSavesGatewayState(t *testing.T) {
+	plan := wizardPlan()
+	plan.Config.GatewayEnabled = false
+	refreshedPlan := plan
+	refreshedPlan.Config.GatewayEnabled = true
+	var captured application.SolutionSettings
+	model := workspaceModel(plan, application.GenerateRequest{}, nil, nil, func(_ application.GenerateRequest, settings application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+		captured = settings
+		return application.UpdateSolutionSettingsResult{Saved: true, Plan: refreshedPlan}, nil
+	})
+	model.startEditing()
+	model.edit.focused = editFieldGatewayEnabled
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeySpace})
+	model = updated.(Model)
+	if cmd != nil || !model.edit.gatewayEnabled {
+		t.Fatalf("expected space to toggle gateway without command, gateway=%v cmd=%v", model.edit.gatewayEnabled, cmd)
+	}
+	assertContains(t, model.View(), "Gateway generation: enabled")
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd == nil || model.status != statusSaving {
+		t.Fatalf("expected enter to save without toggling, gateway=%v status=%v cmd=%v", model.edit.gatewayEnabled, model.status, cmd)
+	}
+	updated, cmd = model.Update(cmd())
+	model = updated.(Model)
+	if cmd != nil || model.status != statusReady || !model.plan.Config.GatewayEnabled {
+		t.Fatalf("expected saved refresh to preserve enabled gateway, status=%v gateway=%v cmd=%v", model.status, model.plan.Config.GatewayEnabled, cmd)
+	}
+	if captured.GatewayEnabled == nil || *captured.GatewayEnabled != true {
+		t.Fatalf("expected explicit enabled gateway setting, got %#v", captured.GatewayEnabled)
+	}
+	model.startEditing()
+	if !model.edit.gatewayEnabled {
+		t.Fatalf("expected refreshed gateway state to initialize the next edit draft as enabled")
+	}
+}
+
+func TestProjectSettingsEditorSavesDisabledGatewayState(t *testing.T) {
+	plan := wizardPlan()
+	plan.Config.GatewayEnabled = true
+	refreshedPlan := plan
+	refreshedPlan.Config.GatewayEnabled = false
+	var captured application.SolutionSettings
+	model := workspaceModel(plan, application.GenerateRequest{}, nil, nil, func(_ application.GenerateRequest, settings application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+		captured = settings
+		return application.UpdateSolutionSettingsResult{Saved: true, Plan: refreshedPlan}, nil
+	})
+	model.startEditing()
+	model.edit.focused = editFieldGatewayEnabled
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeySpace})
+	model = updated.(Model)
+	if cmd != nil || model.edit.gatewayEnabled {
+		t.Fatalf("expected space to disable gateway without command, gateway=%v cmd=%v", model.edit.gatewayEnabled, cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd == nil || model.edit.gatewayEnabled {
+		t.Fatalf("expected enter to save without re-toggling gateway, gateway=%v cmd=%v", model.edit.gatewayEnabled, cmd)
+	}
+	updated, cmd = model.Update(cmd())
+	model = updated.(Model)
+	if cmd != nil || model.status != statusReady || model.plan.Config.GatewayEnabled {
+		t.Fatalf("expected saved refresh to preserve disabled gateway, status=%v gateway=%v cmd=%v", model.status, model.plan.Config.GatewayEnabled, cmd)
+	}
+	if captured.GatewayEnabled == nil || *captured.GatewayEnabled != false {
+		t.Fatalf("expected explicit disabled gateway setting, got %#v", captured.GatewayEnabled)
+	}
+}
+
 func TestWizardProjectSuggestionChangesDraftWithoutSaving(t *testing.T) {
 	called := false
 	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, func(_ application.GenerateRequest, _ application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
@@ -2215,9 +2313,11 @@ func TestModelUpdateEditsSolutionSettingsAndSaves(t *testing.T) {
 	if finished.err != nil || finished.result.Plan.FileCount != 3 {
 		t.Fatalf("expected successful settings message, got %#v", finished)
 	}
-	expectedSettings := application.SolutionSettings{SolutionName: "CatalogPlatform", SolutionDescription: "New description", TargetFramework: "9"}
-	if capturedSettings != expectedSettings {
-		t.Fatalf("expected settings %#v, got %#v", expectedSettings, capturedSettings)
+	if capturedSettings.SolutionName != "CatalogPlatform" || capturedSettings.SolutionDescription != "New description" || capturedSettings.TargetFramework != "9" {
+		t.Fatalf("expected edited text settings, got %#v", capturedSettings)
+	}
+	if capturedSettings.GatewayEnabled == nil || *capturedSettings.GatewayEnabled {
+		t.Fatalf("expected explicit disabled gateway setting, got %#v", capturedSettings.GatewayEnabled)
 	}
 	updated, cmd = model.Update(finished)
 	model = updated.(Model)
