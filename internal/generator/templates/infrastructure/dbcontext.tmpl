@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-{{ range .Entities }}using {{ $.Name }}.Domain.Entities;
-{{ end }}
+using {{ .Name }}.Domain.Entities;
 
 namespace {{ .Name }}.Infrastructure.Persistence;
 

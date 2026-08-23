@@ -73,22 +73,22 @@ jobs:
 
       - name: Build generated single-entity projects
         run: |
-          test -f ./generated-example/CommercePlatform.sln
-          dotnet build ./generated-example/CommercePlatform.sln --nologo -warnaserror
+          test -f ./generated-example/ProductService/ProductService.sln
+          dotnet build ./generated-example/ProductService/ProductService.sln --nologo -warnaserror
 
       - name: Build generated two-entity projects
         run: |
-          test -f ./generated-catalog-example/CatalogPlatform.sln
-          dotnet build ./generated-catalog-example/CatalogPlatform.sln --nologo -warnaserror
+          test -f ./generated-catalog-example/CatalogService/CatalogService.sln
+          dotnet build ./generated-catalog-example/CatalogService/CatalogService.sln --nologo -warnaserror
 
       - name: Build generated Record collision projects
         run: |
-          test -f ./generated-record-zero-vo-example/RecordZeroVoPlatform.sln
-          dotnet build ./generated-record-zero-vo-example/RecordZeroVoPlatform.sln --nologo -warnaserror
-          test -f ./generated-record-vo-example/RecordVoPlatform.sln
-          dotnet build ./generated-record-vo-example/RecordVoPlatform.sln --nologo -warnaserror
-          test -f ./generated-hundred-field-example/HundredFieldPlatform.sln
-          dotnet build ./generated-hundred-field-example/HundredFieldPlatform.sln --nologo -warnaserror
+          test -f ./generated-record-zero-vo-example/RecordService/RecordService.sln
+          dotnet build ./generated-record-zero-vo-example/RecordService/RecordService.sln --nologo -warnaserror
+          test -f ./generated-record-vo-example/RecordService/RecordService.sln
+          dotnet build ./generated-record-vo-example/RecordService/RecordService.sln --nologo -warnaserror
+          test -f ./generated-hundred-field-example/HundredFieldService/HundredFieldService.sln
+          dotnet build ./generated-hundred-field-example/HundredFieldService/HundredFieldService.sln --nologo -warnaserror
 
       - name: Test generated projects with TRX evidence
         shell: bash
@@ -111,28 +111,28 @@ jobs:
             test -f "$trx_path"
             grep -Eq "total=\"$expected\"" "$trx_path"
           }
-          test_project ./generated-example/tests/ProductService/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj ProductService.Domain.Tests.trx 16
-          test_project ./generated-example/tests/ProductService/ProductService.Application.Tests/ProductService.Application.Tests.csproj ProductService.Application.Tests.trx 9
-          test_project ./generated-example/tests/ProductService/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj ProductService.WebApi.Tests.trx 22
-          test_project ./generated-example/tests/ProductService/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj ProductService.Architecture.Tests.trx 4
-          test_project ./generated-example/tests/ProductService/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj ProductService.Infrastructure.Tests.trx 7
-          test_project ./generated-catalog-example/tests/CatalogService/CatalogService.Domain.Tests/CatalogService.Domain.Tests.csproj CatalogService.Domain.Tests.trx 22
-          test_project ./generated-catalog-example/tests/CatalogService/CatalogService.Application.Tests/CatalogService.Application.Tests.csproj CatalogService.Application.Tests.trx 18
-          test_project ./generated-catalog-example/tests/CatalogService/CatalogService.WebApi.Tests/CatalogService.WebApi.Tests.csproj CatalogService.WebApi.Tests.trx 31
-          test_project ./generated-catalog-example/tests/CatalogService/CatalogService.Architecture.Tests/CatalogService.Architecture.Tests.csproj CatalogService.Architecture.Tests.trx 4
-          test_project ./generated-catalog-example/tests/CatalogService/CatalogService.Infrastructure.Tests/CatalogService.Infrastructure.Tests.csproj CatalogService.Infrastructure.Tests.trx 12
-          test_project ./generated-record-zero-vo-example/tests/RecordService/RecordService.Domain.Tests/RecordService.Domain.Tests.csproj RecordService.Domain.Tests.trx 1
-          test_project ./generated-record-zero-vo-example/tests/RecordService/RecordService.Application.Tests/RecordService.Application.Tests.csproj RecordService.Application.Tests.trx 8
-          test_project ./generated-record-zero-vo-example/tests/RecordService/RecordService.WebApi.Tests/RecordService.WebApi.Tests.csproj RecordService.WebApi.Tests.trx 21
-          test_project ./generated-record-zero-vo-example/tests/RecordService/RecordService.Architecture.Tests/RecordService.Architecture.Tests.csproj RecordService.Architecture.Tests.trx 4
-          test_project ./generated-record-zero-vo-example/tests/RecordService/RecordService.Infrastructure.Tests/RecordService.Infrastructure.Tests.csproj RecordService.Infrastructure.Tests.trx 3
-          test_project ./generated-record-vo-example/tests/RecordService/RecordService.Domain.Tests/RecordService.Domain.Tests.csproj RecordService.Domain.Tests.trx 8
-          test_project ./generated-record-vo-example/tests/RecordService/RecordService.Application.Tests/RecordService.Application.Tests.csproj RecordService.Application.Tests.trx 9
-          test_project ./generated-record-vo-example/tests/RecordService/RecordService.WebApi.Tests/RecordService.WebApi.Tests.csproj RecordService.WebApi.Tests.trx 22
-          test_project ./generated-record-vo-example/tests/RecordService/RecordService.Architecture.Tests/RecordService.Architecture.Tests.csproj RecordService.Architecture.Tests.trx 4
-          test_project ./generated-record-vo-example/tests/RecordService/RecordService.Infrastructure.Tests/RecordService.Infrastructure.Tests.csproj RecordService.Infrastructure.Tests.trx 6
-          test_project ./generated-hundred-field-example/tests/HundredFieldService/HundredFieldService.Domain.Tests/HundredFieldService.Domain.Tests.csproj HundredFieldService.Domain.Tests.trx 1
-          test_project ./generated-hundred-field-example/tests/HundredFieldService/HundredFieldService.Application.Tests/HundredFieldService.Application.Tests.csproj HundredFieldService.Application.Tests.trx 8
-          test_project ./generated-hundred-field-example/tests/HundredFieldService/HundredFieldService.WebApi.Tests/HundredFieldService.WebApi.Tests.csproj HundredFieldService.WebApi.Tests.trx 21
-          test_project ./generated-hundred-field-example/tests/HundredFieldService/HundredFieldService.Architecture.Tests/HundredFieldService.Architecture.Tests.csproj HundredFieldService.Architecture.Tests.trx 4
-          test_project ./generated-hundred-field-example/tests/HundredFieldService/HundredFieldService.Infrastructure.Tests/HundredFieldService.Infrastructure.Tests.csproj HundredFieldService.Infrastructure.Tests.trx 3
+          test_project ./generated-example/ProductService/tests/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj ProductService.Domain.Tests.trx 16
+          test_project ./generated-example/ProductService/tests/ProductService.Application.Tests/ProductService.Application.Tests.csproj ProductService.Application.Tests.trx 11
+          test_project ./generated-example/ProductService/tests/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj ProductService.WebApi.Tests.trx 22
+          test_project ./generated-example/ProductService/tests/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj ProductService.Architecture.Tests.trx 4
+          test_project ./generated-example/ProductService/tests/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj ProductService.Infrastructure.Tests.trx 5
+          test_project ./generated-catalog-example/CatalogService/tests/CatalogService.Domain.Tests/CatalogService.Domain.Tests.csproj CatalogService.Domain.Tests.trx 22
+          test_project ./generated-catalog-example/CatalogService/tests/CatalogService.Application.Tests/CatalogService.Application.Tests.csproj CatalogService.Application.Tests.trx 22
+          test_project ./generated-catalog-example/CatalogService/tests/CatalogService.WebApi.Tests/CatalogService.WebApi.Tests.csproj CatalogService.WebApi.Tests.trx 31
+          test_project ./generated-catalog-example/CatalogService/tests/CatalogService.Architecture.Tests/CatalogService.Architecture.Tests.csproj CatalogService.Architecture.Tests.trx 4
+          test_project ./generated-catalog-example/CatalogService/tests/CatalogService.Infrastructure.Tests/CatalogService.Infrastructure.Tests.csproj CatalogService.Infrastructure.Tests.trx 10
+          test_project ./generated-record-zero-vo-example/RecordService/tests/RecordService.Domain.Tests/RecordService.Domain.Tests.csproj RecordService.Domain.Tests.trx 1
+          test_project ./generated-record-zero-vo-example/RecordService/tests/RecordService.Application.Tests/RecordService.Application.Tests.csproj RecordService.Application.Tests.trx 9
+          test_project ./generated-record-zero-vo-example/RecordService/tests/RecordService.WebApi.Tests/RecordService.WebApi.Tests.csproj RecordService.WebApi.Tests.trx 21
+          test_project ./generated-record-zero-vo-example/RecordService/tests/RecordService.Architecture.Tests/RecordService.Architecture.Tests.csproj RecordService.Architecture.Tests.trx 4
+          test_project ./generated-record-zero-vo-example/RecordService/tests/RecordService.Infrastructure.Tests/RecordService.Infrastructure.Tests.csproj RecordService.Infrastructure.Tests.trx 3
+          test_project ./generated-record-vo-example/RecordService/tests/RecordService.Domain.Tests/RecordService.Domain.Tests.csproj RecordService.Domain.Tests.trx 8
+          test_project ./generated-record-vo-example/RecordService/tests/RecordService.Application.Tests/RecordService.Application.Tests.csproj RecordService.Application.Tests.trx 11
+          test_project ./generated-record-vo-example/RecordService/tests/RecordService.WebApi.Tests/RecordService.WebApi.Tests.csproj RecordService.WebApi.Tests.trx 22
+          test_project ./generated-record-vo-example/RecordService/tests/RecordService.Architecture.Tests/RecordService.Architecture.Tests.csproj RecordService.Architecture.Tests.trx 4
+          test_project ./generated-record-vo-example/RecordService/tests/RecordService.Infrastructure.Tests/RecordService.Infrastructure.Tests.csproj RecordService.Infrastructure.Tests.trx 4
+          test_project ./generated-hundred-field-example/HundredFieldService/tests/HundredFieldService.Domain.Tests/HundredFieldService.Domain.Tests.csproj HundredFieldService.Domain.Tests.trx 1
+          test_project ./generated-hundred-field-example/HundredFieldService/tests/HundredFieldService.Application.Tests/HundredFieldService.Application.Tests.csproj HundredFieldService.Application.Tests.trx 9
+          test_project ./generated-hundred-field-example/HundredFieldService/tests/HundredFieldService.WebApi.Tests/HundredFieldService.WebApi.Tests.csproj HundredFieldService.WebApi.Tests.trx 21
+          test_project ./generated-hundred-field-example/HundredFieldService/tests/HundredFieldService.Architecture.Tests/HundredFieldService.Architecture.Tests.csproj HundredFieldService.Architecture.Tests.trx 4
+          test_project ./generated-hundred-field-example/HundredFieldService/tests/HundredFieldService.Infrastructure.Tests/HundredFieldService.Infrastructure.Tests.csproj HundredFieldService.Infrastructure.Tests.trx 3
