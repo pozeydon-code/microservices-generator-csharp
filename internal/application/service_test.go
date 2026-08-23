@@ -345,6 +345,99 @@ func TestServiceUpdateSolutionSettingsSavesValidSettingsAndReturnsPlan(t *testin
 	}
 }
 
+func TestServiceUpdateSolutionSettingsSavesGatewayEnabledState(t *testing.T) {
+	boolPtr := func(value bool) *bool { return &value }
+	tests := []struct {
+		name            string
+		initialGateway  bool
+		settingsGateway *bool
+		wantGateway     bool
+	}{
+		{name: "explicit true persists true", initialGateway: false, settingsGateway: boolPtr(true), wantGateway: true},
+		{name: "explicit false persists false", initialGateway: true, settingsGateway: boolPtr(false), wantGateway: false},
+		{name: "omitted gateway preserves existing true", initialGateway: true, wantGateway: true},
+		{name: "omitted gateway preserves existing false", initialGateway: false, wantGateway: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validPersistableConfig()
+			cfg.Generation.Gateway.Enabled = tt.initialGateway
+			saver := &fakeConfigSaver{}
+			service := NewService(Ports{
+				ConfigLoader:    &fakeConfigLoader{cfg: cfg},
+				ConfigSaver:     saver,
+				ConfigValidator: specValidator{},
+				Generator:       &fakeGenerator{files: []GeneratedFile{{Path: "README.md", Content: []byte("readme")}}},
+				OutputPlanner:   fakeOutputPlanner{plan: OutputPlan{OutputDir: "/planned/generated", Action: "create", Files: []OutputPlannedFile{{Path: "README.md", Action: "create"}}}},
+			})
+			settings := SolutionSettings{
+				SolutionName:        cfg.Solution.Name,
+				SolutionDescription: cfg.Solution.Description,
+				TargetFramework:     cfg.Generation.TargetFramework,
+				GatewayEnabled:      tt.settingsGateway,
+			}
+
+			result, err := service.UpdateSolutionSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, settings)
+
+			if err != nil {
+				t.Fatalf("expected update success, got %v", err)
+			}
+			if saver.cfg.Generation.Gateway.Enabled != tt.wantGateway {
+				t.Fatalf("expected gateway enabled %v to be saved, got %#v", tt.wantGateway, saver.cfg.Generation.Gateway)
+			}
+			if result.Config.GatewayEnabled != tt.wantGateway || result.Plan.Config.GatewayEnabled != tt.wantGateway {
+				t.Fatalf("expected gateway enabled %v in summaries, got config=%#v plan=%#v", tt.wantGateway, result.Config, result.Plan.Config)
+			}
+		})
+	}
+}
+
+func TestServiceUpdateSolutionSettingsPreservesUnrelatedSettingsDuringGatewayOnlyChange(t *testing.T) {
+	cfg := validPersistableConfig()
+	cfg.Generation = spec.GenerationOptions{
+		TargetFramework:            "net10.0",
+		SolutionFormat:             "slnx",
+		EnableValueObjectPreflight: true,
+		Gateway:                    spec.GatewayOptions{Enabled: false},
+	}
+	cfg.Solution = spec.Solution{Name: "CommercePlatform", Description: "Product management."}
+	originalServices := append([]spec.Service(nil), cfg.Services...)
+	gatewayEnabled := true
+	saver := &fakeConfigSaver{}
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: cfg},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       &fakeGenerator{files: []GeneratedFile{{Path: "README.md", Content: []byte("readme")}}},
+		OutputPlanner:   fakeOutputPlanner{plan: OutputPlan{OutputDir: "/planned/generated", Action: "create", Files: []OutputPlannedFile{{Path: "README.md", Action: "create"}}}},
+	})
+	settings := SolutionSettings{
+		SolutionName:        cfg.Solution.Name,
+		SolutionDescription: cfg.Solution.Description,
+		TargetFramework:     cfg.Generation.TargetFramework,
+		GatewayEnabled:      &gatewayEnabled,
+	}
+
+	_, err := service.UpdateSolutionSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, settings)
+
+	if err != nil {
+		t.Fatalf("expected update success, got %v", err)
+	}
+	if saver.cfg.Solution != cfg.Solution {
+		t.Fatalf("expected solution metadata to be preserved, got %#v", saver.cfg.Solution)
+	}
+	if saver.cfg.Generation.TargetFramework != "net10.0" || saver.cfg.Generation.SolutionFormat != "slnx" || !saver.cfg.Generation.EnableValueObjectPreflight {
+		t.Fatalf("expected unrelated generation settings to be preserved, got %#v", saver.cfg.Generation)
+	}
+	if !reflect.DeepEqual(saver.cfg.Services, originalServices) {
+		t.Fatalf("expected services to be preserved, got %#v", saver.cfg.Services)
+	}
+	if !saver.cfg.Generation.Gateway.Enabled {
+		t.Fatalf("expected only gateway enabled state to change, got %#v", saver.cfg.Generation.Gateway)
+	}
+}
+
 func TestServiceUpdateSolutionSettingsNormalizesManualTargetFrameworkAndDefaultsSolutionFormat(t *testing.T) {
 	saver := &fakeConfigSaver{}
 	service := NewService(Ports{

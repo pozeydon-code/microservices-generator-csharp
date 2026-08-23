@@ -69,6 +69,7 @@ type SolutionSettings struct {
 	SolutionName        string
 	SolutionDescription string
 	TargetFramework     string
+	GatewayEnabled      *bool
 }
 
 type ServiceSettings struct {
@@ -183,6 +184,7 @@ type ConfigSummary struct {
 	SolutionDescription string
 	TargetFramework     string
 	SolutionFormat      string
+	GatewayEnabled      bool
 	ServiceCount        int
 	EntityCount         int
 	ValueObjectCount    int
@@ -351,6 +353,9 @@ func (s Service) UpdateSolutionSettings(request GenerateRequest, settings Soluti
 	}
 	cfg.Generation.TargetFramework = targetFramework
 	cfg.Generation.SolutionFormat = spec.DefaultSolutionFormat(targetFramework)
+	if settings.GatewayEnabled != nil {
+		cfg.Generation.Gateway.Enabled = *settings.GatewayEnabled
+	}
 	if cfg.SchemaVersion == 0 {
 		cfg.SchemaVersion = spec.ConfigSchemaVersion
 	}
@@ -887,6 +892,7 @@ func summarizeConfig(cfg spec.Config) ConfigSummary {
 		SolutionDescription: cfg.Solution.Description,
 		TargetFramework:     cfg.TargetFramework(),
 		SolutionFormat:      cfg.SolutionFormat(),
+		GatewayEnabled:      cfg.Generation.Gateway.Enabled,
 		ServiceCount:        len(cfg.Services),
 		ServiceNames:        make([]string, len(cfg.Services)),
 		Services:            make([]ServiceSummary, len(cfg.Services)),
