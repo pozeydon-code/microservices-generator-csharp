@@ -9,7 +9,9 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/gdamore/tcell/v2"
 	"github.com/pozeydon-code/microservices-generator-csharp/internal/application"
+	"github.com/rivo/tview"
 )
 
 var ansiRegexp = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -1701,20 +1703,89 @@ func TestWizardValueObjectsAndReviewViewsStaySingleColumn(t *testing.T) {
 	assertNotContains(t, view, "Navigation")
 }
 
-func TestRunUsesFullscreenProgramOption(t *testing.T) {
-	original := runTeaProgram
-	t.Cleanup(func() { runTeaProgram = original })
-	optionCount := 0
-	runTeaProgram = func(model tea.Model, options ...tea.ProgramOption) (tea.Model, error) {
-		optionCount = len(options)
-		return model, nil
+func TestRunUsesTViewApplication(t *testing.T) {
+	original := runTViewApplication
+	t.Cleanup(func() { runTViewApplication = original })
+	called := false
+	runTViewApplication = func(app *tview.Application, root tview.Primitive) error {
+		called = app != nil && root != nil
+		return nil
 	}
 
 	if err := Run(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil, nil, nil, nil, nil, nil); err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-	if optionCount != 1 {
-		t.Fatalf("expected one fullscreen program option, got %d", optionCount)
+	if !called {
+		t.Fatalf("expected Run to start a tview application")
+	}
+}
+
+func TestTViewGenerateHonorsForceLock(t *testing.T) {
+	ui := newTViewUI(application.GenerationPlan{ForceRequired: true}, application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
+		t.Fatalf("generate should not run while force is required")
+		return application.GenerateResult{}, nil
+	})
+
+	ui.generateFiles()
+
+	if ui.screen != tviewScreenGenerate {
+		t.Fatalf("expected generate screen, got %d", ui.screen)
+	}
+	if !strings.Contains(ui.message, "Generation is locked") {
+		t.Fatalf("expected force lock message, got %q", ui.message)
+	}
+}
+
+func TestTViewGenerateKeyRoutesBeforeGenerating(t *testing.T) {
+	generated := 0
+	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
+		generated++
+		return application.GenerateResult{Plan: application.GenerationPlan{FileCount: 1}, OutputDir: "out"}, nil
+	})
+
+	ui.open(tviewScreenProject)
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'g', tcell.ModNone))
+	if generated != 0 || ui.screen != tviewScreenGenerate {
+		t.Fatalf("expected first g to route to Generate without generating, generated=%d screen=%d", generated, ui.screen)
+	}
+
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'g', tcell.ModNone))
+	if generated != 1 || ui.screen != tviewScreenResult {
+		t.Fatalf("expected second g to generate and show Result, generated=%d screen=%d", generated, ui.screen)
+	}
+}
+
+func TestTViewEditKeyRequestsLegacyWorkspace(t *testing.T) {
+	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil)
+
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
+
+	if !ui.editRequested {
+		t.Fatalf("expected edit key to request legacy workspace")
+	}
+}
+
+func TestNewLegacyModelPreservesEditableCallbacks(t *testing.T) {
+	updateServices := func(application.GenerateRequest, application.ServiceSettings) (application.UpdateServiceSettingsResult, error) {
+		return application.UpdateServiceSettingsResult{}, nil
+	}
+	updateEntities := func(application.GenerateRequest, application.EntitySettings) (application.UpdateEntitySettingsResult, error) {
+		return application.UpdateEntitySettingsResult{}, nil
+	}
+	updateFields := func(application.GenerateRequest, application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+		return application.UpdateFieldSettingsResult{}, nil
+	}
+	updateValueObjects := func(application.GenerateRequest, application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
+		return application.UpdateValueObjectSettingsResult{}, nil
+	}
+
+	model := newLegacyModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil, updateServices, updateEntities, updateFields, updateValueObjects, []string{"net10.0"})
+
+	if model.updateServices == nil || model.updateEntities == nil || model.updateFields == nil || model.updateValueObjects == nil {
+		t.Fatalf("expected legacy workspace callbacks to be preserved")
+	}
+	if got := model.targetFrameworkSuggestions; len(got) != 1 || got[0] != "net10.0" {
+		t.Fatalf("expected target framework suggestions to be preserved, got %v", got)
 	}
 }
 

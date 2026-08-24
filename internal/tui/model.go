@@ -330,13 +330,24 @@ func NewModel(plan application.GenerationPlan, request application.GenerateReque
 	return Model{plan: plan, request: request, planFunc: planFunc, generate: generate, update: update, status: statusReady, targetFrameworkSuggestions: suggestions, windowRows: defaultFileWindowRows, layout: layoutModeForWidth(0), currentStep: stepSource, screen: screenOverview, selectedScreen: screenOverview, mode: modeWorkspace, wizardScreen: wizardMenu}
 }
 
-func Run(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, updateServices UpdateServicesFunc, updateEntities UpdateEntitiesFunc, updateFields UpdateFieldsFunc, updateValueObjects UpdateValueObjectsFunc, targetFrameworkSuggestions []string) error {
+func newLegacyModel(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, updateServices UpdateServicesFunc, updateEntities UpdateEntitiesFunc, updateFields UpdateFieldsFunc, updateValueObjects UpdateValueObjectsFunc, targetFrameworkSuggestions []string) Model {
 	model := NewModel(plan, request, planFunc, generate, update, targetFrameworkSuggestions)
 	model.updateServices = updateServices
 	model.updateEntities = updateEntities
 	model.updateFields = updateFields
 	model.updateValueObjects = updateValueObjects
-	_, err := runTeaProgram(model, tea.WithAltScreen())
+	return model
+}
+
+func Run(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, updateServices UpdateServicesFunc, updateEntities UpdateEntitiesFunc, updateFields UpdateFieldsFunc, updateValueObjects UpdateValueObjectsFunc, targetFrameworkSuggestions []string) error {
+	ui := newTViewUI(plan, request, planFunc, generate)
+	if err := runTViewApplication(ui.app, ui.root); err != nil {
+		return err
+	}
+	if !ui.editRequested {
+		return nil
+	}
+	_, err := runTeaProgram(newLegacyModel(ui.plan, request, planFunc, generate, update, updateServices, updateEntities, updateFields, updateValueObjects, targetFrameworkSuggestions), tea.WithAltScreen())
 	return err
 }
 
