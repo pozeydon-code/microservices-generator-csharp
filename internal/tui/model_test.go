@@ -59,25 +59,26 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	model := workspaceModel(plan, application.GenerateRequest{ConfigPath: "microgen.json"}, nil, nil, nil)
 	view := model.View()
 
-	assertContains(t, view, "Microgen - READY")
+	assertContains(t, view, "Microgen Workspace")
+	assertContains(t, view, "Status READY")
 	assertContains(t, view, "Workspace")
-	assertContains(t, view, "Primary: g Generate")
-	assertContains(t, view, "Navigation")
-	assertContains(t, view, "1:Overview")
-	assertContains(t, view, "2:Project")
-	assertContains(t, view, "3:Services")
-	assertContains(t, view, "4:Entities")
-	assertContains(t, view, "5:Value Objects")
-	assertContains(t, view, "6:Preview")
-	assertContains(t, view, "7:Generate")
-	assertContains(t, view, "8:Result")
+	assertContains(t, view, "Primary action g Generate")
+	assertContains(t, view, "Route map")
+	assertContains(t, view, "1 Overview")
+	assertContains(t, view, "2 Project")
+	assertContains(t, view, "3 Services")
+	assertContains(t, view, "4 Entities")
+	assertContains(t, view, "5 Value Objects")
+	assertContains(t, view, "6 Preview")
+	assertContains(t, view, "7 Generate")
+	assertContains(t, view, "8 Result")
 	assertNotContains(t, view, "Wizard")
 	assertNotContains(t, view, "Progress 1/5")
 	assertContains(t, view, "Source")
 	assertContains(t, view, "Source microgen.json (existing JSON)")
 	assertContains(t, view, "Output /tmp/generated")
 	assertContains(t, view, "Mode replace")
-	assertContains(t, view, "Navigate: up/down select route, enter open, h/l switch, ? help.")
+	assertContains(t, view, "Keys: ↑/↓ route | enter open | ? help")
 
 	model.currentStep = stepProject
 	view = model.View()
@@ -114,8 +115,8 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	assertContains(t, view, "Selected: 1/6 [REPLACE] README.md")
 	assertContains(t, view, "> [1/6] [REPLACE] README.md")
 	assertContains(t, view, "  [5/6] [CREATE] tests/ProductService/ProductService.WebApi.Tests/Features/Products/ProductControllerTests.cs")
-	assertContains(t, view, readyHelp)
-	assertContains(t, view, "Back: esc | Exit: q/ctrl+c")
+	assertContains(t, view, "Preview: files ↑/↓/pg/home/end | a filter | r refresh | g generate")
+	assertContains(t, view, "Back esc | Quit q/ctrl+c")
 
 	model.currentStep = stepGenerate
 	view = model.View()
@@ -202,8 +203,105 @@ func TestModelGenerateStepShowsPostGenerateImpactSummary(t *testing.T) {
 func TestModelViewShowsPrimaryActionOnce(t *testing.T) {
 	view := stripANSI(workspaceModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil).View())
 
-	if count := strings.Count(view, "Primary:"); count != 1 {
+	if count := strings.Count(view, "Primary action"); count != 1 {
 		t.Fatalf("expected one primary action, got %d in %q", count, view)
+	}
+}
+
+func TestModelViewRendersProfessionalWorkspaceHeader(t *testing.T) {
+	plan := plannedFilesPlan(2)
+	plan.Config.SolutionName = "CommercePlatform"
+	model := workspaceModel(plan, application.GenerateRequest{}, nil, nil, nil)
+
+	view := stripANSI(model.View())
+
+	assertContains(t, view, "Microgen Workspace")
+	assertContains(t, view, "Status READY")
+	assertContains(t, view, "Project CommercePlatform")
+	assertContains(t, view, "Primary action g Generate")
+	assertNotContains(t, view, "Current project:")
+}
+
+func TestModelViewRendersModernRouteNavigation(t *testing.T) {
+	model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	model.openScreen(screenPreview)
+	updated, cmd := model.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	if cmd != nil {
+		t.Fatal("expected no command from window size")
+	}
+	model = updated.(Model)
+
+	view := stripANSI(model.View())
+
+	assertContains(t, view, "Route map")
+	for _, route := range []string{"1 Overview", "2 Project", "3 Services", "4 Entities", "5 Value Objects", "6 Preview", "7 Generate", "8 Result"} {
+		assertContains(t, view, route)
+	}
+	assertContains(t, view, "● 6 Preview")
+	assertContains(t, view, "Enter opens selected")
+	assertContains(t, view, "route")
+}
+
+func TestModelViewFooterKeepsEssentialContextShortcuts(t *testing.T) {
+	tests := []struct {
+		name string
+		set  func(*Model)
+		want []string
+	}{
+		{
+			name: "overview keeps compact global help",
+			want: []string{"Keys: ↑/↓ route | enter open | ? help", "Back esc | Quit q/ctrl+c", "Overview: r refresh | g generate"},
+		},
+		{
+			name: "project keeps edit safety action",
+			set:  func(model *Model) { model.openScreen(screenProject) },
+			want: []string{"Keys: ↑/↓ route | enter open | ? help", "Project: e edit | r refresh"},
+		},
+		{
+			name: "failed generation keeps retry cue",
+			set: func(model *Model) {
+				model.openScreen(screenResult)
+				model.status = statusFailed
+				model.err = errors.New("boom")
+			},
+			want: []string{"Result: g retry generation | esc Generate | r refresh", "Back esc | Quit q/ctrl+c"},
+		},
+		{
+			name: "stale refresh lock keeps only safe actions",
+			set: func(model *Model) {
+				model.status = statusFailed
+				model.errContext = "Refresh after save"
+			},
+			want: []string{"Locked: r retry refresh | q/esc/ctrl+c quit"},
+		},
+		{
+			name: "force preview keeps file navigation and force cue",
+			set: func(model *Model) {
+				model.openScreen(screenPreview)
+				model.plan.ForceRequired = true
+				model.plan.Readiness.OutputForceRequired = true
+			},
+			want: []string{"Preview: files ↑/↓/pg/home/end | a filter | r refresh | g generate", "Force required: review output safety before generating"},
+		},
+		{
+			name: "busy refresh keeps wait message",
+			set:  func(model *Model) { model.status = statusRefreshing },
+			want: []string{"Refreshing plan. Please wait; editing, filtering, and generation are paused."},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := workspaceModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil)
+			if tt.set != nil {
+				tt.set(&model)
+			}
+			view := stripANSI(model.View())
+			for _, want := range tt.want {
+				assertContains(t, view, want)
+			}
+			assertNotContains(t, view, "Navigate: up/down select route, enter open, h/l switch, ? help.")
+		})
 	}
 }
 
@@ -890,7 +988,7 @@ func TestWizardAdvancedWorkspaceHasBackPath(t *testing.T) {
 	}
 	view := stripANSI(model.View())
 	assertContains(t, view, "Advanced workspace")
-	assertContains(t, view, "Navigation")
+	assertContains(t, view, "Route map")
 	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	model = updated.(Model)
 	if cmd != nil || model.mode != modeWizard {
@@ -1434,9 +1532,9 @@ func TestModelViewUsesResponsiveWorkspaceShell(t *testing.T) {
 		want     string
 		unwanted string
 	}{
-		{name: "wide rail", width: 120, want: "Enter open", unwanted: "Navigation ["},
-		{name: "medium top navigation", width: 90, want: "Navigation [1:Overview]", unwanted: "Enter open"},
-		{name: "narrow focused content", width: 60, want: "Overview", unwanted: "Enter open"},
+		{name: "wide rail", width: 120, want: "Enter opens selected", unwanted: "Navigation ["},
+		{name: "medium top navigation", width: 90, want: "Route map ● 1 Overview", unwanted: "Enter opens selected route"},
+		{name: "narrow focused content", width: 60, want: "Overview", unwanted: "Enter opens selected route"},
 	}
 
 	for _, tt := range tests {
@@ -2022,8 +2120,8 @@ func TestModelViewShowsRefreshWaitHelpOnly(t *testing.T) {
 
 	view := model.View()
 
-	assertContains(t, view, "Microgen - REFRESHING")
-	assertContains(t, view, "Primary: Refreshing plan")
+	assertContains(t, view, "Status REFRESHING")
+	assertContains(t, view, "Primary action Refreshing plan")
 	assertContains(t, view, "Refreshing plan. Please wait; editing, filtering, and generation are paused.")
 	assertNotContains(t, view, readyHelp)
 	assertNotContains(t, view, generatedHelp)
@@ -2098,8 +2196,8 @@ func TestModelUpdateStartsGenerationOnConfirmedKey(t *testing.T) {
 	}
 
 	view := updatedModel.View()
-	assertContains(t, view, "Microgen - GENERATING")
-	assertContains(t, view, "Primary: Generating files")
+	assertContains(t, view, "Status GENERATING")
+	assertContains(t, view, "Primary action Generating files")
 	assertContains(t, view, "Generating files. Please wait; exit is available after generation finishes.")
 	assertNotContains(t, view, readyHelp)
 	assertNotContains(t, view, "Exit: q/esc/ctrl+c")
@@ -2132,8 +2230,8 @@ func TestModelUpdateStartsRefreshOnRefreshKey(t *testing.T) {
 		t.Fatalf("expected successful refresh message, got %#v", finished)
 	}
 	view := updatedModel.View()
-	assertContains(t, view, "Microgen - REFRESHING")
-	assertContains(t, view, "Primary: Refreshing plan")
+	assertContains(t, view, "Status REFRESHING")
+	assertContains(t, view, "Primary action Refreshing plan")
 	assertContains(t, view, "Refreshing plan. Please wait; editing, filtering, and generation are paused.")
 	assertNotContains(t, view, readyHelp)
 	assertNotContains(t, view, "g to generate")
@@ -2186,8 +2284,8 @@ func TestModelUpdateRecordsRefreshFailureAndAllowsRetry(t *testing.T) {
 		t.Fatalf("expected refresh failed state, got %#v", failedModel)
 	}
 	view := failedModel.View()
-	assertContains(t, view, "Microgen - FAILED")
-	assertContains(t, view, "Primary: g Retry generation")
+	assertContains(t, view, "Status FAILED")
+	assertContains(t, view, "Primary action g Retry generation")
 	assertContains(t, view, "FAILED Refresh failed: plan failed")
 	assertContains(t, view, "g Retry generation, or r refresh the plan first.")
 
@@ -2301,8 +2399,8 @@ func TestModelUpdateEditsSolutionSettingsAndSaves(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected save command")
 	}
-	assertContains(t, model.View(), "Microgen - SAVING")
-	assertContains(t, model.View(), "Primary: Saving settings")
+	assertContains(t, model.View(), "Status SAVING")
+	assertContains(t, model.View(), "Primary action Saving settings")
 	assertContains(t, model.View(), "Saving settings...")
 	assertNotContains(t, model.View(), readyHelp)
 	msg := cmd()
@@ -2479,8 +2577,8 @@ func TestModelUpdateSaveSuccessWithRefreshFailureAllowsRetry(t *testing.T) {
 		t.Fatalf("expected refresh-after-save failure state, got %#v", model)
 	}
 	view := model.View()
-	assertContains(t, view, "Microgen - FAILED")
-	assertContains(t, view, "Primary: r Retry refresh")
+	assertContains(t, view, "Status FAILED")
+	assertContains(t, view, "Primary action r Retry refresh")
 	assertContains(t, view, "Solution CatalogPlatform")
 	assertContains(t, view, "Description New description")
 	assertContains(t, view, "Target net9.0")
@@ -3634,12 +3732,12 @@ func TestModelUpdateRecordsGenerationSuccess(t *testing.T) {
 		t.Fatalf("expected generated state, got %#v", updatedModel)
 	}
 	view := updatedModel.View()
-	assertContains(t, view, "Microgen - GENERATED")
-	assertContains(t, view, "Primary: r Refresh")
+	assertContains(t, view, "Status GENERATED")
+	assertContains(t, view, "Primary action r Refresh")
 	assertContains(t, view, "Generated 3 files written to /tmp/generated.")
 	assertContains(t, view, "Next cd /tmp/generated && dotnet build")
 	assertContains(t, view, "WARNING existing warning")
-	assertContains(t, view, generatedHelp)
+	assertContains(t, view, "Result: r refresh | esc Generate")
 	assertNotContains(t, view, readyHelp)
 	assertNotContains(t, view, "g to generate")
 }
@@ -3662,11 +3760,11 @@ func TestModelUpdateRecordsGenerationFailureAndAllowsRetry(t *testing.T) {
 		t.Fatalf("expected failed state, got %#v", failedModel)
 	}
 	view := failedModel.View()
-	assertContains(t, view, "Microgen - FAILED")
-	assertContains(t, view, "Primary: g Retry generation")
+	assertContains(t, view, "Status FAILED")
+	assertContains(t, view, "Primary action g Retry generation")
 	assertContains(t, view, "FAILED Generation failed: write failed")
 	assertContains(t, view, "g Retry generation, or r refresh the plan first.")
-	assertContains(t, view, "Generate: g generate, r refresh.")
+	assertContains(t, view, "Result: g retry generation | esc Generate | r refresh")
 
 	retrying, retryCmd := failedModel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	if retrying.(Model).status != statusGenerating {
