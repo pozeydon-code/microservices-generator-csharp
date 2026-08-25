@@ -1999,8 +1999,8 @@ func TestTViewManagerRowsUseReadableSelectedStyles(t *testing.T) {
 
 	for _, cell := range []*tview.TableCell{manager.GetCell(1, 0), manager.GetCell(1, 1)} {
 		selectedForeground, selectedBackground, _ := cell.SelectedStyle.Decompose()
-		if selectedForeground != tcell.ColorBlack || selectedBackground != tcell.ColorTeal {
-			t.Fatalf("expected selected row cell to be readable black on teal, got fg=%v bg=%v", selectedForeground, selectedBackground)
+		if selectedForeground != tcell.ColorWhite || selectedBackground != tcell.ColorTeal {
+			t.Fatalf("expected selected row cell to be readable white on teal, got fg=%v bg=%v", selectedForeground, selectedBackground)
 		}
 	}
 
@@ -2344,6 +2344,10 @@ func TestTViewEditKeyOpensNativeNestedForms(t *testing.T) {
 	if len(entitySettings.Entities) != 2 || entitySettings.Entities[1].Name != "NewEntity2" {
 		t.Fatalf("expected entity save to include added row, got %+v", entitySettings)
 	}
+	if !ui.editOpen {
+		t.Fatalf("expected entities modal to stay open after ctrl+s save")
+	}
+	ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
 
 	ui.open(tviewScreenValueObjects)
 	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
@@ -2364,6 +2368,9 @@ func TestTViewEditKeyOpensNativeNestedForms(t *testing.T) {
 	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyCtrlS, 0, tcell.ModNone))
 	if len(valueObjectSettings.ValueObjects) != 2 || valueObjectSettings.ValueObjects[1].Name != "NewValueObject2" {
 		t.Fatalf("expected value-object save to include added row, got %+v", valueObjectSettings)
+	}
+	if !ui.editOpen {
+		t.Fatalf("expected value objects modal to stay open after ctrl+s save")
 	}
 }
 

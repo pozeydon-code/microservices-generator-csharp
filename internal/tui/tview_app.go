@@ -467,7 +467,7 @@ func (ui *tviewUI) openEntitiesEditForServiceAndEntity(serviceName string, selec
 
 func (ui *tviewUI) saveEntitiesEdit(state *tviewEntitiesEditState) {
 	if ui.updateEntities == nil {
-		ui.closeEditWithMessage("Entity editing is not available.")
+		ui.message = "Entity editing is not available."
 		return
 	}
 	settings := application.EntitySettings{ServiceName: state.serviceName, Entities: make([]application.EntityNameSetting, 0, len(state.rows))}
@@ -479,15 +479,21 @@ func (ui *tviewUI) saveEntitiesEdit(state *tviewEntitiesEditState) {
 	}
 	result, err := ui.updateEntities(ui.request, settings)
 	ui.applyEntitiesSaveResult(result, err)
+	if err == nil {
+		state.rows = updateRowsAfterSave(state.rows)
+	}
 }
 
 func (ui *tviewUI) saveFieldsEdit(state *tviewFieldsEditState) {
 	if ui.updateFields == nil {
-		ui.closeEditWithMessage("Field editing is not available.")
+		ui.message = "Field editing is not available."
 		return
 	}
 	result, err := ui.saveFieldsState(state)
 	ui.applyFieldsSaveResult(result, err)
+	if err == nil {
+		state.rows = updateRowsAfterSave(state.rows)
+	}
 }
 
 func (ui *tviewUI) saveFieldsState(state *tviewFieldsEditState) (application.UpdateFieldSettingsResult, error) {
@@ -503,39 +509,41 @@ func (ui *tviewUI) saveFieldsState(state *tviewFieldsEditState) (application.Upd
 
 func (ui *tviewUI) applyEntitiesSaveResult(result application.UpdateEntitySettingsResult, err error) {
 	if err != nil {
-		ui.closeEditWithError("Entities save failed.", err)
+		ui.message = "Entities save failed: " + err.Error()
+		ui.err = err
 		return
 	}
 	if result.PlanError != nil {
 		ui.plan.Config = result.Config
-		ui.markPlanStale("Entities saved, but plan refresh failed.", result.PlanError)
-		ui.closeEdit()
+		ui.planStale = true
+		ui.message = "Entities saved, but plan refresh failed."
+		ui.err = result.PlanError
 		return
 	}
 	if result.Plan.Config.SolutionName != "" || result.Plan.FileCount > 0 || len(result.Plan.Files) > 0 {
 		ui.plan = result.Plan
 	}
-	ui.closeEdit()
-	ui.refreshPlanAfterSave("Entities saved.")
+	ui.refreshPlanKeepOpen("Entities saved.")
 }
 
 func (ui *tviewUI) applyFieldsSaveResult(result application.UpdateFieldSettingsResult, err error) {
 	if err != nil {
-		ui.markPlanStale("Entities saved, but fields save failed.", err)
-		ui.closeEdit()
+		ui.planStale = true
+		ui.message = "Fields save failed: " + err.Error()
+		ui.err = err
 		return
 	}
 	if result.PlanError != nil {
 		ui.plan.Config = result.Config
-		ui.markPlanStale("Fields saved, but plan refresh failed.", result.PlanError)
-		ui.closeEdit()
+		ui.planStale = true
+		ui.message = "Fields saved, but plan refresh failed."
+		ui.err = result.PlanError
 		return
 	}
 	if result.Plan.Config.SolutionName != "" || result.Plan.FileCount > 0 || len(result.Plan.Files) > 0 {
 		ui.plan = result.Plan
 	}
-	ui.closeEdit()
-	ui.refreshPlanAfterSave("Entities and fields saved.")
+	ui.refreshPlanKeepOpen("Fields saved.")
 }
 
 func (ui *tviewUI) openValueObjectsEdit() {
@@ -561,11 +569,14 @@ func (ui *tviewUI) openValueObjectsEditForService(serviceName string) {
 
 func (ui *tviewUI) saveValueObjectsEdit(state *tviewValueObjectsEditState) {
 	if ui.updateValueObjects == nil {
-		ui.closeEditWithMessage("Value object editing is not available.")
+		ui.message = "Value object editing is not available."
 		return
 	}
 	result, err := ui.updateValueObjects(ui.request, tviewValueObjectSettingsFromState(state))
 	ui.applyValueObjectsSaveResult(result, err)
+	if err == nil {
+		state.rows = updateRowsAfterSave(state.rows)
+	}
 }
 
 func tviewValueObjectSettingsFromState(state *tviewValueObjectsEditState) application.ValueObjectSettings {
@@ -581,20 +592,21 @@ func tviewValueObjectSettingsFromState(state *tviewValueObjectsEditState) applic
 
 func (ui *tviewUI) applyValueObjectsSaveResult(result application.UpdateValueObjectSettingsResult, err error) {
 	if err != nil {
-		ui.closeEditWithError("Value objects save failed.", err)
+		ui.message = "Value objects save failed: " + err.Error()
+		ui.err = err
 		return
 	}
 	if result.PlanError != nil {
 		ui.plan.Config = result.Config
-		ui.markPlanStale("Value objects saved, but plan refresh failed.", result.PlanError)
-		ui.closeEdit()
+		ui.planStale = true
+		ui.message = "Value objects saved, but plan refresh failed."
+		ui.err = result.PlanError
 		return
 	}
 	if result.Plan.Config.SolutionName != "" || result.Plan.FileCount > 0 || len(result.Plan.Files) > 0 {
 		ui.plan = result.Plan
 	}
-	ui.closeEdit()
-	ui.refreshPlanAfterSave("Value objects saved.")
+	ui.refreshPlanKeepOpen("Value objects saved.")
 }
 
 func (ui *tviewUI) openProjectEdit() {
@@ -649,7 +661,7 @@ func (ui *tviewUI) openServicesEdit() {
 
 func (ui *tviewUI) saveServicesEdit(state *tviewServicesEditState) {
 	if ui.updateServices == nil {
-		ui.closeEditWithMessage("Service editing is not available.")
+		ui.message = "Service editing is not available."
 		return
 	}
 	settings := application.ServiceSettings{Services: make([]application.ServiceNameSetting, 0, len(state.rows))}
@@ -661,24 +673,28 @@ func (ui *tviewUI) saveServicesEdit(state *tviewServicesEditState) {
 	}
 	result, err := ui.updateServices(ui.request, settings)
 	ui.applyServicesSaveResult(result, err)
+	if err == nil {
+		state.rows = updateRowsAfterSave(state.rows)
+	}
 }
 
 func (ui *tviewUI) applyServicesSaveResult(result application.UpdateServiceSettingsResult, err error) {
 	if err != nil {
-		ui.closeEditWithError("Services save failed.", err)
+		ui.message = "Services save failed: " + err.Error()
+		ui.err = err
 		return
 	}
 	if result.PlanError != nil {
 		ui.plan.Config = result.Config
-		ui.markPlanStale("Services saved, but plan refresh failed.", result.PlanError)
-		ui.closeEdit()
+		ui.planStale = true
+		ui.message = "Services saved, but plan refresh failed."
+		ui.err = result.PlanError
 		return
 	}
 	if result.Plan.Config.SolutionName != "" || result.Plan.FileCount > 0 || len(result.Plan.Files) > 0 {
 		ui.plan = result.Plan
 	}
-	ui.closeEdit()
-	ui.refreshPlanAfterSave("Services saved.")
+	ui.refreshPlanKeepOpen("Services saved.")
 }
 
 func (ui *tviewUI) showServicesManager(state *tviewServicesEditState) {
@@ -705,6 +721,7 @@ func (ui *tviewUI) showServicesManager(state *tviewServicesEditState) {
 		switch event.Key() {
 		case tcell.KeyCtrlS:
 			ui.saveServicesEdit(state)
+			render()
 			return nil
 		}
 		if moveManagerSelection(manager, len(state.rows), event) {
@@ -727,7 +744,10 @@ func (ui *tviewUI) showServicesManager(state *tviewServicesEditState) {
 		state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewService", len(state.rows)+1)})
 		render()
 		manager.Select(len(state.rows), 0)
-	}}, {"Save", func() { ui.saveServicesEdit(state) }}, {"Cancel", ui.closeEdit}}))
+	}}, {"Save", func() {
+		ui.saveServicesEdit(state)
+		render()
+	}}, {"Cancel", ui.closeEdit}}))
 }
 
 func (ui *tviewUI) showEntitiesManager(state *tviewEntitiesEditState) {
@@ -756,6 +776,7 @@ func (ui *tviewUI) showEntitiesManager(state *tviewEntitiesEditState) {
 		switch event.Key() {
 		case tcell.KeyCtrlS:
 			ui.saveEntitiesEdit(state)
+			render()
 			return nil
 		}
 		if moveManagerSelection(manager, len(state.rows), event) {
@@ -790,7 +811,10 @@ func (ui *tviewUI) showEntitiesManager(state *tviewEntitiesEditState) {
 	}}, {"Fields", func() {
 		row, _ := manager.GetSelection()
 		ui.openFieldsFromEntityState(state, row-1)
-	}}, {"Save", func() { ui.saveEntitiesEdit(state) }}, {"Cancel", ui.closeEdit}}))
+	}}, {"Save", func() {
+		ui.saveEntitiesEdit(state)
+		render()
+	}}, {"Cancel", ui.closeEdit}}))
 }
 
 func (ui *tviewUI) openFieldsFromEntityState(state *tviewEntitiesEditState, index int) {
@@ -835,6 +859,7 @@ func (ui *tviewUI) showFieldsManager(state *tviewFieldsEditState) {
 		switch event.Key() {
 		case tcell.KeyCtrlS:
 			ui.saveFieldsEdit(state)
+			render()
 			return nil
 		}
 		if moveManagerSelection(manager, len(state.rows), event) {
@@ -857,7 +882,10 @@ func (ui *tviewUI) showFieldsManager(state *tviewFieldsEditState) {
 		state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewField", len(state.rows)+1), typeName: "string"})
 		render()
 		manager.Select(len(state.rows), 0)
-	}}, {"Save", func() { ui.saveFieldsEdit(state) }}, {"Cancel", ui.closeEdit}}))
+	}}, {"Save", func() {
+		ui.saveFieldsEdit(state)
+		render()
+	}}, {"Cancel", ui.closeEdit}}))
 }
 
 func (ui *tviewUI) showValueObjectsManager(state *tviewValueObjectsEditState) {
@@ -885,6 +913,7 @@ func (ui *tviewUI) showValueObjectsManager(state *tviewValueObjectsEditState) {
 		switch event.Key() {
 		case tcell.KeyCtrlS:
 			ui.saveValueObjectsEdit(state)
+			render()
 			return nil
 		}
 		if moveManagerSelection(manager, len(state.rows), event) {
@@ -919,7 +948,10 @@ func (ui *tviewUI) showValueObjectsManager(state *tviewValueObjectsEditState) {
 	}}, {"Rules", func() {
 		row, _ := manager.GetSelection()
 		ui.openRulesFromValueObjectState(state, row-1)
-	}}, {"Save", func() { ui.saveValueObjectsEdit(state) }}, {"Cancel", ui.closeEdit}}))
+	}}, {"Save", func() {
+		ui.saveValueObjectsEdit(state)
+		render()
+	}}, {"Cancel", ui.closeEdit}}))
 }
 
 func (ui *tviewUI) openRulesFromValueObjectState(state *tviewValueObjectsEditState, index int) {
@@ -936,6 +968,8 @@ func (ui *tviewUI) openRulesFromValueObjectState(state *tviewValueObjectsEditSta
 }
 
 func (ui *tviewUI) showValueObjectRulesManager(state *tviewValueObjectRulesEditState) {
+	context := tview.NewTextView().SetDynamicColors(true)
+	context.SetText(fmt.Sprintf("[aqua]%s[white] / [yellow]%s[white] ([gray]%s[white])", state.serviceName, state.valueObject.Name, state.valueObject.Type))
 	form := tview.NewForm()
 	form.SetBorder(false)
 	form.SetFieldTextColor(tcell.ColorWhite).SetLabelColor(tcell.ColorLightCyan).SetButtonTextColor(tcell.ColorBlack).SetButtonBackgroundColor(tcell.ColorTeal)
@@ -943,20 +977,33 @@ func (ui *tviewUI) showValueObjectRulesManager(state *tviewValueObjectRulesEditS
 	notEmpty := boolValue(state.validations.NotEmpty)
 	notDefault := boolValue(state.validations.NotDefault)
 	form.AddCheckbox("Required", required, func(checked bool) { state.validations.Required = &checked })
+	form.AddTextView("", "[darkcyan]── Length Constraints ──", 0, 1, true, false)
 	form.AddInputField("Min length", intString(state.validations.MinLength), tviewEditModalInputWidth, nil, func(value string) { state.validations.MinLength = intPointerFromText(value) })
 	form.AddInputField("Max length", intString(state.validations.MaxLength), tviewEditModalInputWidth, nil, func(value string) { state.validations.MaxLength = intPointerFromText(value) })
+	form.AddTextView("", "[darkcyan]── Pattern Matching ──", 0, 1, true, false)
 	form.AddInputField("Pattern", stringValue(state.validations.Pattern), tviewEditModalInputWidth, nil, func(value string) { state.validations.Pattern = stringPointerFromText(value) })
 	form.AddInputField("Valid example", stringValue(state.validations.ValidExample), tviewEditModalInputWidth, nil, func(value string) { state.validations.ValidExample = stringPointerFromText(value) })
 	form.AddInputField("Invalid example", stringValue(state.validations.InvalidExample), tviewEditModalInputWidth, nil, func(value string) { state.validations.InvalidExample = stringPointerFromText(value) })
+	form.AddTextView("", "[darkcyan]── Value Range ──", 0, 1, true, false)
 	form.AddInputField("Minimum", stringValue(state.validations.Minimum), tviewEditModalInputWidth, nil, func(value string) { state.validations.Minimum = stringPointerFromText(value) })
 	form.AddInputField("Maximum", stringValue(state.validations.Maximum), tviewEditModalInputWidth, nil, func(value string) { state.validations.Maximum = stringPointerFromText(value) })
+	form.AddTextView("", "[darkcyan]── State Checks ──", 0, 1, true, false)
 	form.AddCheckbox("Not empty", notEmpty, func(checked bool) { state.validations.NotEmpty = &checked })
 	form.AddCheckbox("Not default", notDefault, func(checked bool) { state.validations.NotDefault = &checked })
-	form.AddButton("Save", func() { ui.saveValueObjectRulesEdit(state, form) })
+	statusText := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
+	saveAndShowStatus := func() {
+		ui.saveValueObjectRulesEdit(state, form)
+		if ui.err == nil {
+			statusText.SetText("[green]Rules saved successfully.[white]")
+		} else {
+			statusText.SetText("[red]" + ui.message + "[white]")
+		}
+	}
+	form.AddButton("Save", saveAndShowStatus)
 	form.AddButton("Cancel", ui.closeEdit)
 	form.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyCtrlS {
-			ui.saveValueObjectRulesEdit(state, form)
+			saveAndShowStatus()
 			return nil
 		}
 		return event
@@ -964,12 +1011,14 @@ func (ui *tviewUI) showValueObjectRulesManager(state *tviewValueObjectRulesEditS
 	footer := tview.NewTextView().SetDynamicColors(true).SetTextColor(tcell.ColorGray)
 	footer.SetText("Tab focus  Space toggle  ctrl+s/Save apply  esc cancel")
 	body := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(context, 1, 0, false).
 		AddItem(form, 0, 1, true).
-		AddItem(footer, 2, 0, false)
+		AddItem(statusText, 1, 0, false).
+		AddItem(footer, 1, 0, false)
 	panel := tview.NewFrame(body).SetBorders(1, 1, 0, 1, 1, 1)
 	panel.SetBorder(true).SetTitle(fmt.Sprintf(" Rules: %s/%s ", state.serviceName, state.valueObject.Name)).SetTitleAlign(tview.AlignLeft)
 	panel.SetBorderColor(tcell.ColorTeal).SetTitleColor(tcell.ColorLightCyan)
-	modal := centerPrimitive(panel, 76, 20)
+	modal := centerPrimitive(panel, 76, 28)
 	ui.editOpen = true
 	ui.modalFocus = []tview.Primitive{form}
 	ui.modalFocusIndex = 0
@@ -980,20 +1029,20 @@ func (ui *tviewUI) showValueObjectRulesManager(state *tviewValueObjectRulesEditS
 
 func (ui *tviewUI) saveValueObjectRulesEdit(state *tviewValueObjectRulesEditState, form *tview.Form) {
 	if ui.updateValueObjects == nil {
-		ui.closeEditWithMessage("Value object editing is not available.")
+		ui.message = "Value object editing is not available."
 		return
 	}
 	validations := application.ValidationRuleSettings{
-		Required:       boolPointerFromCheckbox(form, 0),
-		MinLength:      intPointerFromForm(form, 1),
-		MaxLength:      intPointerFromForm(form, 2),
-		Pattern:        stringPointerFromForm(form, 3),
-		ValidExample:   stringPointerFromForm(form, 4),
-		InvalidExample: stringPointerFromForm(form, 5),
-		Minimum:        stringPointerFromForm(form, 6),
-		Maximum:        stringPointerFromForm(form, 7),
-		NotEmpty:       boolPointerFromCheckbox(form, 8),
-		NotDefault:     boolPointerFromCheckbox(form, 9),
+		Required:       boolPointerFromFormLabel(form, "Required"),
+		MinLength:      intPointerFromFormLabel(form, "Min length"),
+		MaxLength:      intPointerFromFormLabel(form, "Max length"),
+		Pattern:        stringPointerFromFormLabel(form, "Pattern"),
+		ValidExample:   stringPointerFromFormLabel(form, "Valid example"),
+		InvalidExample: stringPointerFromFormLabel(form, "Invalid example"),
+		Minimum:        stringPointerFromFormLabel(form, "Minimum"),
+		Maximum:        stringPointerFromFormLabel(form, "Maximum"),
+		NotEmpty:       boolPointerFromFormLabel(form, "Not empty"),
+		NotDefault:     boolPointerFromFormLabel(form, "Not default"),
 	}
 	valueObjectName := strings.TrimSpace(state.valueObject.Name)
 	for index := range state.rows {
@@ -1035,7 +1084,7 @@ type managerButton struct {
 func (ui *tviewUI) newManagerTable(headers []string) *tview.Table {
 	table := tview.NewTable().SetSelectable(true, true).SetFixed(1, 0)
 	table.SetBorder(false)
-	table.SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorTeal).Bold(true))
+	table.SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorTeal).Bold(true))
 	for column, header := range headers {
 		table.SetCell(0, column, tview.NewTableCell(header).SetTextColor(tcell.ColorLightCyan).SetSelectable(false).SetExpansion(1))
 	}
@@ -1104,7 +1153,7 @@ func (ui *tviewUI) closeServicePicker() {
 func (ui *tviewUI) newServiceSelector(serviceNames []string, selected string, choose func(string)) *tview.Table {
 	selector := tview.NewTable().SetSelectable(true, false)
 	selector.SetBorder(false)
-	selector.SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorTeal).Bold(true))
+	selector.SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorTeal).Bold(true))
 	render := func() {
 		selector.Clear()
 		selector.SetCell(0, 0, tview.NewTableCell(fmt.Sprintf("Service: %s", emptyDash(selected))).SetTextColor(tcell.ColorLightCyan).SetExpansion(1))
@@ -1206,7 +1255,7 @@ func renderManagerRows(table *tview.Table, rows []tviewManagerRow, withType bool
 func managerCell(text string, style tcell.Style) *tview.TableCell {
 	return tview.NewTableCell(text).
 		SetStyle(style).
-		SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorTeal).Bold(true))
+		SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorTeal).Bold(true))
 }
 
 type tviewManagerFooter struct {
@@ -1377,6 +1426,41 @@ func boolPointerFromCheckbox(form *tview.Form, index int) *bool {
 	return &checked
 }
 
+func formInputTextByLabel(form *tview.Form, label string) string {
+	item := form.GetFormItemByLabel(label)
+	if item == nil {
+		return ""
+	}
+	if input, ok := item.(*tview.InputField); ok {
+		return strings.TrimSpace(input.GetText())
+	}
+	return ""
+}
+
+func formCheckboxCheckedByLabel(form *tview.Form, label string) bool {
+	item := form.GetFormItemByLabel(label)
+	if item == nil {
+		return false
+	}
+	if checkbox, ok := item.(*tview.Checkbox); ok {
+		return checkbox.IsChecked()
+	}
+	return false
+}
+
+func stringPointerFromFormLabel(form *tview.Form, label string) *string {
+	return stringPointerFromText(formInputTextByLabel(form, label))
+}
+
+func intPointerFromFormLabel(form *tview.Form, label string) *int {
+	return intPointerFromText(formInputTextByLabel(form, label))
+}
+
+func boolPointerFromFormLabel(form *tview.Form, label string) *bool {
+	checked := formCheckboxCheckedByLabel(form, label)
+	return &checked
+}
+
 func (ui *tviewUI) closeEdit() {
 	ui.editOpen = false
 	ui.modalFocus = nil
@@ -1408,6 +1492,38 @@ func (ui *tviewUI) closeEditWithError(message string, err error) {
 	ui.message = message
 	ui.err = err
 	ui.closeEdit()
+}
+
+func (ui *tviewUI) refreshPlanKeepOpen(message string) {
+	if ui.planFunc == nil {
+		ui.message = message
+		ui.err = nil
+		ui.planStale = false
+		return
+	}
+	plan, err := ui.planFunc(ui.request)
+	if err != nil {
+		ui.message = message + " Plan refresh failed."
+		ui.err = err
+		ui.planStale = true
+		return
+	}
+	ui.plan = plan
+	ui.err = nil
+	ui.planStale = false
+	ui.message = message
+}
+
+func updateRowsAfterSave(rows []tviewManagerRow) []tviewManagerRow {
+	remaining := make([]tviewManagerRow, 0, len(rows))
+	for _, row := range rows {
+		if row.deleted {
+			continue
+		}
+		row.original = strings.TrimSpace(row.name)
+		remaining = append(remaining, row)
+	}
+	return remaining
 }
 
 func (ui *tviewUI) refreshPlanAfterSave(message string) {
