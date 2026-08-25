@@ -75,10 +75,12 @@ type tviewUI struct {
 	modalFocus                 []tview.Primitive
 	modalFocusIndex            int
 	planStale                  bool
+	servicePickerReturnFocus   tview.Primitive
 }
 
 const (
 	tviewEditModalPage       = "edit-modal"
+	tviewServicePickerPage   = "service-picker"
 	tviewEditModalInputWidth = 32
 )
 
@@ -258,6 +260,13 @@ func (ui *tviewUI) handleKey(event *tcell.EventKey) *tcell.EventKey {
 		if event.Key() == tcell.KeyCtrlC {
 			ui.app.Stop()
 			return nil
+		}
+		if ui.servicePickerReturnFocus != nil {
+			if event.Key() == tcell.KeyEscape {
+				ui.closeServicePicker()
+				return nil
+			}
+			return event
 		}
 		if event.Key() == tcell.KeyTAB && len(ui.modalFocus) > 0 {
 			ui.cycleModalFocus(1)
@@ -723,7 +732,7 @@ func (ui *tviewUI) showServicesManager(state *tviewServicesEditState) {
 
 func (ui *tviewUI) showEntitiesManager(state *tviewEntitiesEditState) {
 	serviceNames := serviceSummaryNames(ui.plan.Config.Services)
-	serviceSelector := ui.newServiceSelector(serviceNames, state.serviceName, ui.openEntitiesEditForService)
+	header := serviceManagerHeader(state.serviceName, "s service")
 	manager := ui.newManagerTable([]string{"Name", "Actions"})
 	render := func() { renderManagerRows(manager, state.rows, false, "") }
 	render()
@@ -758,6 +767,9 @@ func (ui *tviewUI) showEntitiesManager(state *tviewEntitiesEditState) {
 			render()
 			manager.Select(len(state.rows), 0)
 			return nil
+		case "s":
+			ui.openServicePicker(serviceNames, state.serviceName, manager, ui.openEntitiesEditForService)
+			return nil
 		case "d":
 			toggleSelectedManagerRow(manager, state.rows)
 			render()
@@ -769,10 +781,12 @@ func (ui *tviewUI) showEntitiesManager(state *tviewEntitiesEditState) {
 		}
 		return event
 	})
-	ui.showManagerModal(" Entities ", serviceSelector, serviceSelector, manager, managerFooter("Tab focus  Up/Down/j/k move rows  n/p service  a add  d delete  enter edit/select  f fields  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
+	ui.showManagerModal(" Entities ", header, nil, manager, managerFooter("Tab focus  Up/Down/j/k move rows  s service  a add  d delete  enter edit/select  f fields  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
 		state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewEntity", len(state.rows)+1)})
 		render()
 		manager.Select(len(state.rows), 0)
+	}}, {"Service", func() {
+		ui.openServicePicker(serviceNames, state.serviceName, manager, ui.openEntitiesEditForService)
 	}}, {"Fields", func() {
 		row, _ := manager.GetSelection()
 		ui.openFieldsFromEntityState(state, row-1)
@@ -848,7 +862,7 @@ func (ui *tviewUI) showFieldsManager(state *tviewFieldsEditState) {
 
 func (ui *tviewUI) showValueObjectsManager(state *tviewValueObjectsEditState) {
 	serviceNames := serviceSummaryNames(ui.plan.Config.Services)
-	serviceSelector := ui.newServiceSelector(serviceNames, state.serviceName, ui.openValueObjectsEditForService)
+	header := serviceManagerHeader(state.serviceName, "s service")
 	manager := ui.newManagerTable([]string{"Name", "Type", "Actions"})
 	render := func() { renderManagerRows(manager, state.rows, true, "") }
 	render()
@@ -882,6 +896,9 @@ func (ui *tviewUI) showValueObjectsManager(state *tviewValueObjectsEditState) {
 			render()
 			manager.Select(len(state.rows), 0)
 			return nil
+		case "s":
+			ui.openServicePicker(serviceNames, state.serviceName, manager, ui.openValueObjectsEditForService)
+			return nil
 		case "d":
 			toggleSelectedManagerRow(manager, state.rows)
 			render()
@@ -893,10 +910,12 @@ func (ui *tviewUI) showValueObjectsManager(state *tviewValueObjectsEditState) {
 		}
 		return event
 	})
-	ui.showManagerModal(" Value Objects ", serviceSelector, serviceSelector, manager, managerFooter("Tab focus  Up/Down/j/k move rows  n/p service  a add  d delete  enter edit/select  r rules  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
+	ui.showManagerModal(" Value Objects ", header, nil, manager, managerFooter("Tab focus  Up/Down/j/k move rows  s service  a add  d delete  enter edit/select  r rules  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
 		state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewValueObject", len(state.rows)+1), typeName: "string"})
 		render()
 		manager.Select(len(state.rows), 0)
+	}}, {"Service", func() {
+		ui.openServicePicker(serviceNames, state.serviceName, manager, ui.openValueObjectsEditForService)
 	}}, {"Rules", func() {
 		row, _ := manager.GetSelection()
 		ui.openRulesFromValueObjectState(state, row-1)
@@ -935,7 +954,28 @@ func (ui *tviewUI) showValueObjectRulesManager(state *tviewValueObjectRulesEditS
 	form.AddCheckbox("Not default", notDefault, func(checked bool) { state.validations.NotDefault = &checked })
 	form.AddButton("Save", func() { ui.saveValueObjectRulesEdit(state, form) })
 	form.AddButton("Cancel", ui.closeEdit)
-	ui.showEditForm(form, fmt.Sprintf(" Rules: %s/%s ", state.serviceName, state.valueObject.Name))
+	form.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		if event.Key() == tcell.KeyCtrlS {
+			ui.saveValueObjectRulesEdit(state, form)
+			return nil
+		}
+		return event
+	})
+	footer := tview.NewTextView().SetDynamicColors(true).SetTextColor(tcell.ColorGray)
+	footer.SetText("Tab focus  Space toggle  ctrl+s/Save apply  esc cancel")
+	body := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(form, 0, 1, true).
+		AddItem(footer, 2, 0, false)
+	panel := tview.NewFrame(body).SetBorders(1, 1, 0, 1, 1, 1)
+	panel.SetBorder(true).SetTitle(fmt.Sprintf(" Rules: %s/%s ", state.serviceName, state.valueObject.Name)).SetTitleAlign(tview.AlignLeft)
+	panel.SetBorderColor(tcell.ColorTeal).SetTitleColor(tcell.ColorLightCyan)
+	modal := centerPrimitive(panel, 76, 20)
+	ui.editOpen = true
+	ui.modalFocus = []tview.Primitive{form}
+	ui.modalFocusIndex = 0
+	ui.root.RemovePage(tviewEditModalPage)
+	ui.root.AddPage(tviewEditModalPage, modal, true, true)
+	ui.app.SetFocus(form)
 }
 
 func (ui *tviewUI) saveValueObjectRulesEdit(state *tviewValueObjectRulesEditState, form *tview.Form) {
@@ -1001,6 +1041,64 @@ func (ui *tviewUI) newManagerTable(headers []string) *tview.Table {
 	}
 	table.Select(1, 0)
 	return table
+}
+
+func serviceManagerHeader(serviceName, shortcut string) *tview.TextView {
+	header := tview.NewTextView().SetDynamicColors(true).SetTextColor(tcell.ColorLightCyan)
+	header.SetText(fmt.Sprintf("Service: [white]%s[-]  [gray]%s[-]", emptyDash(serviceName), shortcut))
+	return header
+}
+
+func (ui *tviewUI) openServicePicker(serviceNames []string, selected string, returnFocus tview.Primitive, choose func(string)) {
+	if len(serviceNames) == 0 {
+		return
+	}
+	list := tview.NewList().ShowSecondaryText(false)
+	list.SetBorder(true).SetTitle(" Select Service ").SetTitleAlign(tview.AlignLeft)
+	list.SetBorderColor(tcell.ColorTeal).SetTitleColor(tcell.ColorLightCyan)
+	list.SetMainTextColor(tcell.ColorWhite).
+		SetSelectedTextColor(tcell.ColorBlack).
+		SetSelectedBackgroundColor(tcell.ColorTeal)
+	for _, serviceName := range serviceNames {
+		name := serviceName
+		list.AddItem(name, "", 0, func() {
+			ui.closeServicePicker()
+			choose(name)
+		})
+	}
+	index := selectedIndex(serviceNames, selected)
+	if index < 0 {
+		index = 0
+	}
+	list.SetCurrentItem(index)
+	list.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch strings.ToLower(string(event.Rune())) {
+		case "j":
+			list.SetCurrentItem((list.GetCurrentItem() + 1) % len(serviceNames))
+			return nil
+		case "k":
+			next := list.GetCurrentItem() - 1
+			if next < 0 {
+				next = len(serviceNames) - 1
+			}
+			list.SetCurrentItem(next)
+			return nil
+		}
+		return event
+	})
+	ui.servicePickerReturnFocus = returnFocus
+	ui.root.RemovePage(tviewServicePickerPage)
+	ui.root.AddPage(tviewServicePickerPage, centerPrimitive(list, 44, 12), true, true)
+	ui.app.SetFocus(list)
+}
+
+func (ui *tviewUI) closeServicePicker() {
+	returnFocus := ui.servicePickerReturnFocus
+	ui.servicePickerReturnFocus = nil
+	ui.root.RemovePage(tviewServicePickerPage)
+	if returnFocus != nil {
+		ui.app.SetFocus(returnFocus)
+	}
 }
 
 func (ui *tviewUI) newServiceSelector(serviceNames []string, selected string, choose func(string)) *tview.Table {
@@ -1086,23 +1184,29 @@ func renderManagerRows(table *tview.Table, rows []tviewManagerRow, withType bool
 		return
 	}
 	for index, row := range rows {
-		textColor := tcell.ColorWhite
+		textStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite)
 		action := "Delete"
 		if row.deleted {
-			textColor = tcell.ColorGray
+			textStyle = tcell.StyleDefault.Foreground(tcell.ColorGray)
 			action = "Restore"
 		}
-		table.SetCell(index+1, 0, tview.NewTableCell(emptyDash(strings.TrimSpace(row.name))).SetTextColor(textColor).SetExpansion(2))
+		table.SetCell(index+1, 0, managerCell(emptyDash(strings.TrimSpace(row.name)), textStyle).SetExpansion(2))
 		if withType {
-			table.SetCell(index+1, 1, tview.NewTableCell(trimmedDefault(row.typeName, "string")).SetTextColor(textColor).SetExpansion(1))
+			table.SetCell(index+1, 1, managerCell(trimmedDefault(row.typeName, "string"), textStyle).SetExpansion(1))
 			if actionLabel != "" && !row.deleted {
 				action += " | " + actionLabel
 			}
-			table.SetCell(index+1, 2, tview.NewTableCell(action).SetTextColor(tcell.ColorYellow).SetAlign(tview.AlignRight).SetExpansion(1))
+			table.SetCell(index+1, 2, managerCell(action, tcell.StyleDefault.Foreground(tcell.ColorYellow)).SetAlign(tview.AlignRight).SetExpansion(1))
 		} else {
-			table.SetCell(index+1, 1, tview.NewTableCell(action).SetTextColor(tcell.ColorYellow).SetAlign(tview.AlignRight).SetExpansion(1))
+			table.SetCell(index+1, 1, managerCell(action, tcell.StyleDefault.Foreground(tcell.ColorYellow)).SetAlign(tview.AlignRight).SetExpansion(1))
 		}
 	}
+}
+
+func managerCell(text string, style tcell.Style) *tview.TableCell {
+	return tview.NewTableCell(text).
+		SetStyle(style).
+		SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorTeal).Bold(true))
 }
 
 type tviewManagerFooter struct {
@@ -1277,6 +1381,8 @@ func (ui *tviewUI) closeEdit() {
 	ui.editOpen = false
 	ui.modalFocus = nil
 	ui.modalFocusIndex = 0
+	ui.servicePickerReturnFocus = nil
+	ui.root.RemovePage(tviewServicePickerPage)
 	ui.root.RemovePage(tviewEditModalPage)
 	ui.setFocusedPanel(ui.focus)
 	ui.refresh()

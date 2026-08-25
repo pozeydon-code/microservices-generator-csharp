@@ -1991,6 +1991,25 @@ func TestTViewServicesManagerKeepsActionsInTableAndFooterSticky(t *testing.T) {
 	}
 }
 
+func TestTViewManagerRowsUseReadableSelectedStyles(t *testing.T) {
+	manager := tview.NewTable().SetSelectable(true, true).SetFixed(1, 0)
+	manager.SetCell(0, 0, tview.NewTableCell("Name"))
+	manager.SetCell(0, 1, tview.NewTableCell("Actions"))
+	renderManagerRows(manager, []tviewManagerRow{{name: "Product"}}, false, "")
+
+	for _, cell := range []*tview.TableCell{manager.GetCell(1, 0), manager.GetCell(1, 1)} {
+		selectedForeground, selectedBackground, _ := cell.SelectedStyle.Decompose()
+		if selectedForeground != tcell.ColorBlack || selectedBackground != tcell.ColorTeal {
+			t.Fatalf("expected selected row cell to be readable black on teal, got fg=%v bg=%v", selectedForeground, selectedBackground)
+		}
+	}
+
+	foreground, _, _ := manager.GetCell(1, 1).Style.Decompose()
+	if foreground != tcell.ColorYellow {
+		t.Fatalf("expected non-selected action text to stay yellow, got %v", foreground)
+	}
+}
+
 func sendKeyToTViewFocus(ui *tviewUI, event *tcell.EventKey) {
 	focus := ui.app.GetFocus()
 	if focus == nil || focus.InputHandler() == nil {
@@ -2233,6 +2252,57 @@ func TestTViewValueObjectRulesSavePreservesRowsAndAppliesRules(t *testing.T) {
 	}
 }
 
+func TestTViewValueObjectRulesSavePreservesNewValueObjectWithUpdatedRules(t *testing.T) {
+	var updated application.ValueObjectSettings
+	ui := newTViewUI(
+		application.GenerationPlan{},
+		application.GenerateRequest{},
+		func(application.GenerateRequest) (application.GenerationPlan, error) {
+			return application.GenerationPlan{}, nil
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		func(_ application.GenerateRequest, settings application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
+			updated = settings
+			return application.UpdateValueObjectSettingsResult{}, nil
+		},
+	)
+	form := tview.NewForm()
+	form.AddCheckbox("Required", true, nil)
+	form.AddInputField("Min length", "2", 32, nil, nil)
+	form.AddInputField("Max length", "", 32, nil, nil)
+	form.AddInputField("Pattern", "", 32, nil, nil)
+	form.AddInputField("Valid example", "OK", 32, nil, nil)
+	form.AddInputField("Invalid example", "", 32, nil, nil)
+	form.AddInputField("Minimum", "", 32, nil, nil)
+	form.AddInputField("Maximum", "", 32, nil, nil)
+	form.AddCheckbox("Not empty", true, nil)
+	form.AddCheckbox("Not default", false, nil)
+
+	ui.saveValueObjectRulesEdit(&tviewValueObjectRulesEditState{
+		serviceName: "OrderService",
+		valueObject: application.ValueObjectSummary{Name: "NewValueObject2", Type: "Guid"},
+		rows: []tviewManagerRow{
+			{original: "OrderNumber", name: "OrderNumber", typeName: "string"},
+			{name: "NewValueObject2", typeName: "Guid"},
+		},
+	}, form)
+
+	if updated.ServiceName != "OrderService" || len(updated.ValueObjects) != 2 {
+		t.Fatalf("unexpected value object payload: %+v", updated)
+	}
+	if updated.ValueObjects[1].OriginalName != "" || updated.ValueObjects[1].Name != "NewValueObject2" || updated.ValueObjects[1].Type != "Guid" {
+		t.Fatalf("expected newly added value object to be preserved completely, got %+v", updated.ValueObjects[1])
+	}
+	rules := updated.ValueObjects[1].Validations
+	if rules.Required == nil || !*rules.Required || rules.MinLength == nil || *rules.MinLength != 2 || rules.ValidExample == nil || *rules.ValidExample != "OK" || rules.NotEmpty == nil || !*rules.NotEmpty {
+		t.Fatalf("expected rules to be applied to new value object, got %+v", rules)
+	}
+}
+
 func TestTViewEditKeyOpensNativeNestedForms(t *testing.T) {
 	var entitySettings application.EntitySettings
 	var valueObjectSettings application.ValueObjectSettings
@@ -2262,13 +2332,9 @@ func TestTViewEditKeyOpensNativeNestedForms(t *testing.T) {
 	if !ui.root.HasPage(tviewEditModalPage) {
 		t.Fatalf("expected entities edit to open as a modal page")
 	}
-	if _, ok := ui.app.GetFocus().(*tview.Table); !ok {
-		t.Fatalf("expected entities edit focus to start on the service selector table, got %T", ui.app.GetFocus())
-	}
-	ui.handleKey(tcell.NewEventKey(tcell.KeyTAB, 0, tcell.ModNone))
 	manager, ok := ui.app.GetFocus().(*tview.Table)
 	if !ok || manager.GetCell(0, 0).Text != "Name" {
-		t.Fatalf("expected tab to leave selector for entities manager table, got %T", ui.app.GetFocus())
+		t.Fatalf("expected entities edit focus to start on manager table, got %T", ui.app.GetFocus())
 	}
 	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 'a', tcell.ModNone))
 	if manager.GetRowCount() != 3 {
@@ -2287,13 +2353,9 @@ func TestTViewEditKeyOpensNativeNestedForms(t *testing.T) {
 	if !ui.root.HasPage(tviewEditModalPage) {
 		t.Fatalf("expected value objects edit to open as a modal page")
 	}
-	if _, ok := ui.app.GetFocus().(*tview.Table); !ok {
-		t.Fatalf("expected value objects edit focus to start on the service selector table, got %T", ui.app.GetFocus())
-	}
-	ui.handleKey(tcell.NewEventKey(tcell.KeyTAB, 0, tcell.ModNone))
 	manager, ok = ui.app.GetFocus().(*tview.Table)
 	if !ok || manager.GetCell(0, 0).Text != "Name" {
-		t.Fatalf("expected tab to leave selector for value objects manager table, got %T", ui.app.GetFocus())
+		t.Fatalf("expected value objects edit focus to start on manager table, got %T", ui.app.GetFocus())
 	}
 	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 'a', tcell.ModNone))
 	if manager.GetRowCount() != 3 {
@@ -2302,6 +2364,74 @@ func TestTViewEditKeyOpensNativeNestedForms(t *testing.T) {
 	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyCtrlS, 0, tcell.ModNone))
 	if len(valueObjectSettings.ValueObjects) != 2 || valueObjectSettings.ValueObjects[1].Name != "NewValueObject2" {
 		t.Fatalf("expected value-object save to include added row, got %+v", valueObjectSettings)
+	}
+}
+
+func TestTViewEntityServicePickerSelectsAndCancelsWithoutFocusTrap(t *testing.T) {
+	ui := newTViewUI(application.GenerationPlan{Config: application.ConfigSummary{Services: []application.ServiceSummary{
+		{Name: "ProductService", Entities: []application.EntitySummary{{Name: "Product"}}},
+		{Name: "OrderService", Entities: []application.EntitySummary{{Name: "Order"}}},
+	}}}, application.GenerateRequest{}, nil, nil)
+
+	ui.openEntitiesEditForService("ProductService")
+	manager, ok := ui.app.GetFocus().(*tview.Table)
+	if !ok {
+		t.Fatalf("expected entities manager focus, got %T", ui.app.GetFocus())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 's', tcell.ModNone))
+	if _, ok := ui.app.GetFocus().(*tview.List); !ok {
+		t.Fatalf("expected service picker list focus, got %T", ui.app.GetFocus())
+	}
+	ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	if ui.app.GetFocus() != manager || ui.root.HasPage(tviewServicePickerPage) {
+		t.Fatalf("expected service picker escape to restore manager focus without closing edit")
+	}
+	if !ui.editOpen {
+		t.Fatalf("expected canceling picker to keep entity manager open")
+	}
+
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 's', tcell.ModNone))
+	list, ok := ui.app.GetFocus().(*tview.List)
+	if !ok {
+		t.Fatalf("expected service picker list focus, got %T", ui.app.GetFocus())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 'j', tcell.ModNone))
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if ui.root.HasPage(tviewServicePickerPage) || ui.app.GetFocus() == list {
+		t.Fatalf("expected selecting a service to close picker and leave list focus")
+	}
+	manager, ok = ui.app.GetFocus().(*tview.Table)
+	if !ok || manager.GetCell(1, 0).Text != "Order" {
+		t.Fatalf("expected service selection to open OrderService entities, got focus=%T first row=%q", ui.app.GetFocus(), manager.GetCell(1, 0).Text)
+	}
+}
+
+func TestTViewValueObjectServicePickerSelectsAndCancelsWithoutFocusTrap(t *testing.T) {
+	ui := newTViewUI(application.GenerationPlan{Config: application.ConfigSummary{Services: []application.ServiceSummary{
+		{Name: "ProductService", ValueObjects: []application.ValueObjectSummary{{Name: "ProductName", Type: "string"}}},
+		{Name: "OrderService", ValueObjects: []application.ValueObjectSummary{{Name: "OrderNumber", Type: "string"}}},
+	}}}, application.GenerateRequest{}, nil, nil)
+
+	ui.openValueObjectsEditForService("ProductService")
+	manager, ok := ui.app.GetFocus().(*tview.Table)
+	if !ok {
+		t.Fatalf("expected value objects manager focus, got %T", ui.app.GetFocus())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 's', tcell.ModNone))
+	if _, ok := ui.app.GetFocus().(*tview.List); !ok {
+		t.Fatalf("expected service picker list focus, got %T", ui.app.GetFocus())
+	}
+	ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	if ui.app.GetFocus() != manager || ui.root.HasPage(tviewServicePickerPage) {
+		t.Fatalf("expected service picker escape to restore manager focus without closing edit")
+	}
+
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 's', tcell.ModNone))
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone))
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	manager, ok = ui.app.GetFocus().(*tview.Table)
+	if !ok || manager.GetCell(1, 0).Text != "OrderNumber" {
+		t.Fatalf("expected service selection to open OrderService value objects, got focus=%T first row=%q", ui.app.GetFocus(), manager.GetCell(1, 0).Text)
 	}
 }
 
