@@ -72,6 +72,8 @@ type tviewUI struct {
 	screen                     tviewScreen
 	focus                      tviewFocusPanel
 	editOpen                   bool
+	modalFocus                 []tview.Primitive
+	modalFocusIndex            int
 	planStale                  bool
 }
 
@@ -257,6 +259,14 @@ func (ui *tviewUI) handleKey(event *tcell.EventKey) *tcell.EventKey {
 			ui.app.Stop()
 			return nil
 		}
+		if event.Key() == tcell.KeyTAB && len(ui.modalFocus) > 0 {
+			ui.cycleModalFocus(1)
+			return nil
+		}
+		if event.Key() == tcell.KeyBacktab && len(ui.modalFocus) > 0 {
+			ui.cycleModalFocus(-1)
+			return nil
+		}
 		if event.Key() == tcell.KeyEscape {
 			ui.closeEdit()
 			return nil
@@ -309,6 +319,20 @@ func (ui *tviewUI) handleKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	}
 	return event
+}
+
+func (ui *tviewUI) cycleModalFocus(delta int) {
+	if len(ui.modalFocus) == 0 {
+		return
+	}
+	ui.modalFocusIndex += delta
+	if ui.modalFocusIndex < 0 {
+		ui.modalFocusIndex = len(ui.modalFocus) - 1
+	}
+	if ui.modalFocusIndex >= len(ui.modalFocus) {
+		ui.modalFocusIndex = 0
+	}
+	ui.app.SetFocus(ui.modalFocus[ui.modalFocusIndex])
 }
 
 func (ui *tviewUI) cycleFocus(delta int) {
@@ -674,6 +698,9 @@ func (ui *tviewUI) showServicesManager(state *tviewServicesEditState) {
 			ui.saveServicesEdit(state)
 			return nil
 		}
+		if moveManagerSelection(manager, len(state.rows), event) {
+			return nil
+		}
 		switch strings.ToLower(string(event.Rune())) {
 		case "a":
 			state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewService", len(state.rows)+1)})
@@ -687,7 +714,7 @@ func (ui *tviewUI) showServicesManager(state *tviewServicesEditState) {
 		}
 		return event
 	})
-	ui.showManagerModal(" Services ", nil, manager, managerFooter("Tab focus  Up/Down move  a add  d delete  enter edit  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
+	ui.showManagerModal(" Services ", nil, nil, manager, managerFooter("Tab focus  Up/Down/j/k move rows  a add  d delete  enter edit  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
 		state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewService", len(state.rows)+1)})
 		render()
 		manager.Select(len(state.rows), 0)
@@ -696,12 +723,7 @@ func (ui *tviewUI) showServicesManager(state *tviewServicesEditState) {
 
 func (ui *tviewUI) showEntitiesManager(state *tviewEntitiesEditState) {
 	serviceNames := serviceSummaryNames(ui.plan.Config.Services)
-	serviceSelector := tview.NewDropDown().SetLabel("Service ").SetOptions(serviceNames, func(_ string, index int) {
-		if index >= 0 && index < len(serviceNames) && serviceNames[index] != state.serviceName {
-			ui.openEntitiesEditForService(serviceNames[index])
-		}
-	})
-	serviceSelector.SetCurrentOption(selectedIndex(serviceNames, state.serviceName))
+	serviceSelector := ui.newServiceSelector(serviceNames, state.serviceName, ui.openEntitiesEditForService)
 	manager := ui.newManagerTable([]string{"Name", "Actions"})
 	render := func() { renderManagerRows(manager, state.rows, false, "") }
 	render()
@@ -727,6 +749,9 @@ func (ui *tviewUI) showEntitiesManager(state *tviewEntitiesEditState) {
 			ui.saveEntitiesEdit(state)
 			return nil
 		}
+		if moveManagerSelection(manager, len(state.rows), event) {
+			return nil
+		}
 		switch strings.ToLower(string(event.Rune())) {
 		case "a":
 			state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewEntity", len(state.rows)+1)})
@@ -744,7 +769,7 @@ func (ui *tviewUI) showEntitiesManager(state *tviewEntitiesEditState) {
 		}
 		return event
 	})
-	ui.showManagerModal(" Entities ", serviceSelector, manager, managerFooter("Tab focus  Up/Down move  a add  d delete  enter edit/select  f fields  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
+	ui.showManagerModal(" Entities ", serviceSelector, serviceSelector, manager, managerFooter("Tab focus  Up/Down/j/k move rows  n/p service  a add  d delete  enter edit/select  f fields  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
 		state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewEntity", len(state.rows)+1)})
 		render()
 		manager.Select(len(state.rows), 0)
@@ -798,6 +823,9 @@ func (ui *tviewUI) showFieldsManager(state *tviewFieldsEditState) {
 			ui.saveFieldsEdit(state)
 			return nil
 		}
+		if moveManagerSelection(manager, len(state.rows), event) {
+			return nil
+		}
 		switch strings.ToLower(string(event.Rune())) {
 		case "a":
 			state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewField", len(state.rows)+1), typeName: "string"})
@@ -811,7 +839,7 @@ func (ui *tviewUI) showFieldsManager(state *tviewFieldsEditState) {
 		}
 		return event
 	})
-	ui.showManagerModal(" Fields ", context, manager, managerFooter("Tab focus  Up/Down move  a add  d delete  enter edit  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
+	ui.showManagerModal(" Fields ", context, nil, manager, managerFooter("Tab focus  Up/Down/j/k move rows  a add  d delete  enter edit  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
 		state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewField", len(state.rows)+1), typeName: "string"})
 		render()
 		manager.Select(len(state.rows), 0)
@@ -820,12 +848,7 @@ func (ui *tviewUI) showFieldsManager(state *tviewFieldsEditState) {
 
 func (ui *tviewUI) showValueObjectsManager(state *tviewValueObjectsEditState) {
 	serviceNames := serviceSummaryNames(ui.plan.Config.Services)
-	serviceSelector := tview.NewDropDown().SetLabel("Service ").SetOptions(serviceNames, func(_ string, index int) {
-		if index >= 0 && index < len(serviceNames) && serviceNames[index] != state.serviceName {
-			ui.openValueObjectsEditForService(serviceNames[index])
-		}
-	})
-	serviceSelector.SetCurrentOption(selectedIndex(serviceNames, state.serviceName))
+	serviceSelector := ui.newServiceSelector(serviceNames, state.serviceName, ui.openValueObjectsEditForService)
 	manager := ui.newManagerTable([]string{"Name", "Type", "Actions"})
 	render := func() { renderManagerRows(manager, state.rows, true, "") }
 	render()
@@ -850,6 +873,9 @@ func (ui *tviewUI) showValueObjectsManager(state *tviewValueObjectsEditState) {
 			ui.saveValueObjectsEdit(state)
 			return nil
 		}
+		if moveManagerSelection(manager, len(state.rows), event) {
+			return nil
+		}
 		switch strings.ToLower(string(event.Rune())) {
 		case "a":
 			state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewValueObject", len(state.rows)+1), typeName: "string"})
@@ -867,7 +893,7 @@ func (ui *tviewUI) showValueObjectsManager(state *tviewValueObjectsEditState) {
 		}
 		return event
 	})
-	ui.showManagerModal(" Value Objects ", serviceSelector, manager, managerFooter("Tab focus  Up/Down move  a add  d delete  enter edit/select  r rules  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
+	ui.showManagerModal(" Value Objects ", serviceSelector, serviceSelector, manager, managerFooter("Tab focus  Up/Down/j/k move rows  n/p service  a add  d delete  enter edit/select  r rules  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
 		state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewValueObject", len(state.rows)+1), typeName: "string"})
 		render()
 		manager.Select(len(state.rows), 0)
@@ -941,6 +967,8 @@ func (ui *tviewUI) saveValueObjectRulesEdit(state *tviewValueObjectRulesEditStat
 }
 
 func (ui *tviewUI) showEditForm(form *tview.Form, title string) {
+	ui.modalFocus = nil
+	ui.modalFocusIndex = 0
 	form.SetBorder(false)
 	form.SetFieldTextColor(tcell.ColorWhite).
 		SetLabelColor(tcell.ColorLightCyan).
@@ -975,6 +1003,80 @@ func (ui *tviewUI) newManagerTable(headers []string) *tview.Table {
 	return table
 }
 
+func (ui *tviewUI) newServiceSelector(serviceNames []string, selected string, choose func(string)) *tview.Table {
+	selector := tview.NewTable().SetSelectable(true, false)
+	selector.SetBorder(false)
+	selector.SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorTeal).Bold(true))
+	render := func() {
+		selector.Clear()
+		selector.SetCell(0, 0, tview.NewTableCell(fmt.Sprintf("Service: %s", emptyDash(selected))).SetTextColor(tcell.ColorLightCyan).SetExpansion(1))
+		selector.SetCell(0, 1, tview.NewTableCell("n/p or [/] switch").SetTextColor(tcell.ColorGray).SetAlign(tview.AlignRight).SetExpansion(1))
+		selector.Select(0, 0)
+	}
+	cycle := func(delta int) {
+		if len(serviceNames) == 0 {
+			return
+		}
+		index := selectedIndex(serviceNames, selected)
+		if index < 0 {
+			index = 0
+		}
+		index += delta
+		if index < 0 {
+			index = len(serviceNames) - 1
+		}
+		if index >= len(serviceNames) {
+			index = 0
+		}
+		if serviceNames[index] != selected {
+			choose(serviceNames[index])
+		}
+	}
+	render()
+	selector.SetSelectedFunc(func(_, _ int) { ui.cycleModalFocus(1) })
+	selector.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch strings.ToLower(string(event.Rune())) {
+		case "n", "]":
+			cycle(1)
+			return nil
+		case "p", "[":
+			cycle(-1)
+			return nil
+		}
+		return event
+	})
+	return selector
+}
+
+func moveManagerSelection(table *tview.Table, rowCount int, event *tcell.EventKey) bool {
+	delta := 0
+	switch event.Key() {
+	case tcell.KeyUp:
+		delta = -1
+	case tcell.KeyDown:
+		delta = 1
+	}
+	switch strings.ToLower(string(event.Rune())) {
+	case "k":
+		delta = -1
+	case "j":
+		delta = 1
+	}
+	if delta == 0 || rowCount == 0 {
+		return false
+	}
+	row, column := table.GetSelection()
+	row += delta
+	if row < 1 {
+		row = rowCount
+	}
+	if row > rowCount {
+		row = 1
+	}
+	table.Select(row, column)
+	return true
+}
+
 func renderManagerRows(table *tview.Table, rows []tviewManagerRow, withType bool, actionLabel string) {
 	for table.GetRowCount() > 1 {
 		table.RemoveRow(1)
@@ -1003,36 +1105,44 @@ func renderManagerRows(table *tview.Table, rows []tviewManagerRow, withType bool
 	}
 }
 
-func managerFooter(shortcuts string, buttons []managerButton) *tview.Flex {
+type tviewManagerFooter struct {
+	view *tview.Flex
+	form *tview.Form
+}
+
+func managerFooter(shortcuts string, buttons []managerButton) *tviewManagerFooter {
 	form := tview.NewForm()
 	form.SetBorder(false)
 	form.SetButtonTextColor(tcell.ColorBlack).SetButtonBackgroundColor(tcell.ColorTeal)
 	for _, button := range buttons {
 		form.AddButton(button.label, button.run)
 	}
-	return tview.NewFlex().SetDirection(tview.FlexRow).
+	view := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(tview.NewTextView().SetDynamicColors(true).SetText("[gray]"+shortcuts), 1, 0, false).
 		AddItem(form, 1, 0, false)
+	return &tviewManagerFooter{view: view, form: form}
 }
 
-func (ui *tviewUI) showManagerModal(title string, header tview.Primitive, manager *tview.Table, footer *tview.Flex) {
+func (ui *tviewUI) showManagerModal(title string, header tview.Primitive, headerFocus tview.Primitive, manager *tview.Table, footer *tviewManagerFooter) {
 	body := tview.NewFlex().SetDirection(tview.FlexRow)
 	if header != nil {
 		body.AddItem(header, 2, 0, false)
 	}
-	body.AddItem(manager, 0, 1, true).AddItem(footer, 3, 0, false)
+	body.AddItem(manager, 0, 1, true).AddItem(footer.view, 3, 0, false)
 	panel := tview.NewFrame(body).SetBorders(1, 1, 0, 1, 1, 1)
 	panel.SetBorder(true).SetTitle(title).SetTitleAlign(tview.AlignLeft)
 	panel.SetBorderColor(tcell.ColorTeal).SetTitleColor(tcell.ColorLightCyan)
 	modal := centerPrimitive(panel, 86, 22)
 	ui.editOpen = true
+	ui.modalFocus = ui.modalFocus[:0]
+	if headerFocus != nil {
+		ui.modalFocus = append(ui.modalFocus, headerFocus)
+	}
+	ui.modalFocus = append(ui.modalFocus, manager, footer.form)
+	ui.modalFocusIndex = 0
 	ui.root.RemovePage(tviewEditModalPage)
 	ui.root.AddPage(tviewEditModalPage, modal, true, true)
-	if header != nil {
-		ui.app.SetFocus(header)
-		return
-	}
-	ui.app.SetFocus(manager)
+	ui.app.SetFocus(ui.modalFocus[ui.modalFocusIndex])
 }
 
 func (ui *tviewUI) openNameEdit(title, value string, save func(string)) {
@@ -1165,6 +1275,8 @@ func boolPointerFromCheckbox(form *tview.Form, index int) *bool {
 
 func (ui *tviewUI) closeEdit() {
 	ui.editOpen = false
+	ui.modalFocus = nil
+	ui.modalFocusIndex = 0
 	ui.root.RemovePage(tviewEditModalPage)
 	ui.setFocusedPanel(ui.focus)
 	ui.refresh()

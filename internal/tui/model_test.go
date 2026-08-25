@@ -1991,6 +1991,14 @@ func TestTViewServicesManagerKeepsActionsInTableAndFooterSticky(t *testing.T) {
 	}
 }
 
+func sendKeyToTViewFocus(ui *tviewUI, event *tcell.EventKey) {
+	focus := ui.app.GetFocus()
+	if focus == nil || focus.InputHandler() == nil {
+		return
+	}
+	focus.InputHandler()(event, func(primitive tview.Primitive) { ui.app.SetFocus(primitive) })
+}
+
 func TestTViewEntityEditSavesSelectedServiceEntitiesAndFieldsNatively(t *testing.T) {
 	var entitySettings application.EntitySettings
 	var fieldSettings application.FieldSettings
@@ -2226,7 +2234,25 @@ func TestTViewValueObjectRulesSavePreservesRowsAndAppliesRules(t *testing.T) {
 }
 
 func TestTViewEditKeyOpensNativeNestedForms(t *testing.T) {
-	ui := newTViewUI(application.GenerationPlan{Config: application.ConfigSummary{Services: []application.ServiceSummary{{Name: "ProductService", Entities: []application.EntitySummary{{Name: "Product"}}, ValueObjects: []application.ValueObjectSummary{{Name: "ProductName", Type: "string"}}}}}}, application.GenerateRequest{}, nil, nil)
+	var entitySettings application.EntitySettings
+	var valueObjectSettings application.ValueObjectSettings
+	ui := newTViewUI(
+		application.GenerationPlan{Config: application.ConfigSummary{Services: []application.ServiceSummary{{Name: "ProductService", Entities: []application.EntitySummary{{Name: "Product"}}, ValueObjects: []application.ValueObjectSummary{{Name: "ProductName", Type: "string"}}}}}},
+		application.GenerateRequest{},
+		nil,
+		nil,
+		nil,
+		nil,
+		func(_ application.GenerateRequest, settings application.EntitySettings) (application.UpdateEntitySettingsResult, error) {
+			entitySettings = settings
+			return application.UpdateEntitySettingsResult{}, nil
+		},
+		nil,
+		func(_ application.GenerateRequest, settings application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
+			valueObjectSettings = settings
+			return application.UpdateValueObjectSettingsResult{}, nil
+		},
+	)
 
 	ui.open(tviewScreenEntities)
 	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
@@ -2236,10 +2262,22 @@ func TestTViewEditKeyOpensNativeNestedForms(t *testing.T) {
 	if !ui.root.HasPage(tviewEditModalPage) {
 		t.Fatalf("expected entities edit to open as a modal page")
 	}
-	if _, ok := ui.app.GetFocus().(*tview.DropDown); !ok {
-		t.Fatalf("expected entities edit focus to start on the service dropdown, got %T", ui.app.GetFocus())
+	if _, ok := ui.app.GetFocus().(*tview.Table); !ok {
+		t.Fatalf("expected entities edit focus to start on the service selector table, got %T", ui.app.GetFocus())
 	}
-	ui.closeEdit()
+	ui.handleKey(tcell.NewEventKey(tcell.KeyTAB, 0, tcell.ModNone))
+	manager, ok := ui.app.GetFocus().(*tview.Table)
+	if !ok || manager.GetCell(0, 0).Text != "Name" {
+		t.Fatalf("expected tab to leave selector for entities manager table, got %T", ui.app.GetFocus())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 'a', tcell.ModNone))
+	if manager.GetRowCount() != 3 {
+		t.Fatalf("expected add key to append an entity row, got %d rows", manager.GetRowCount())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyCtrlS, 0, tcell.ModNone))
+	if len(entitySettings.Entities) != 2 || entitySettings.Entities[1].Name != "NewEntity2" {
+		t.Fatalf("expected entity save to include added row, got %+v", entitySettings)
+	}
 
 	ui.open(tviewScreenValueObjects)
 	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
@@ -2249,8 +2287,57 @@ func TestTViewEditKeyOpensNativeNestedForms(t *testing.T) {
 	if !ui.root.HasPage(tviewEditModalPage) {
 		t.Fatalf("expected value objects edit to open as a modal page")
 	}
-	if _, ok := ui.app.GetFocus().(*tview.DropDown); !ok {
-		t.Fatalf("expected value objects edit focus to start on the service dropdown, got %T", ui.app.GetFocus())
+	if _, ok := ui.app.GetFocus().(*tview.Table); !ok {
+		t.Fatalf("expected value objects edit focus to start on the service selector table, got %T", ui.app.GetFocus())
+	}
+	ui.handleKey(tcell.NewEventKey(tcell.KeyTAB, 0, tcell.ModNone))
+	manager, ok = ui.app.GetFocus().(*tview.Table)
+	if !ok || manager.GetCell(0, 0).Text != "Name" {
+		t.Fatalf("expected tab to leave selector for value objects manager table, got %T", ui.app.GetFocus())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 'a', tcell.ModNone))
+	if manager.GetRowCount() != 3 {
+		t.Fatalf("expected add key to append a value-object row, got %d rows", manager.GetRowCount())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyCtrlS, 0, tcell.ModNone))
+	if len(valueObjectSettings.ValueObjects) != 2 || valueObjectSettings.ValueObjects[1].Name != "NewValueObject2" {
+		t.Fatalf("expected value-object save to include added row, got %+v", valueObjectSettings)
+	}
+}
+
+func TestTViewFieldsManagerStartsOnOperableTableAndSavesAddedField(t *testing.T) {
+	var fieldSettings application.FieldSettings
+	ui := newTViewUI(
+		application.GenerationPlan{},
+		application.GenerateRequest{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		func(_ application.GenerateRequest, settings application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+			fieldSettings = settings
+			return application.UpdateFieldSettingsResult{}, nil
+		},
+	)
+
+	ui.showFieldsManager(&tviewFieldsEditState{serviceName: "ProductService", entityName: "Product", rows: []tviewManagerRow{{original: "Name", name: "Name", typeName: "string"}}})
+
+	manager, ok := ui.app.GetFocus().(*tview.Table)
+	if !ok {
+		t.Fatalf("expected fields modal to focus an operable table, got %T", ui.app.GetFocus())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 'a', tcell.ModNone))
+	if manager.GetRowCount() != 3 {
+		t.Fatalf("expected add key to append a field row, got %d rows", manager.GetRowCount())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyCtrlS, 0, tcell.ModNone))
+
+	if fieldSettings.ServiceName != "ProductService" || fieldSettings.EntityName != "Product" {
+		t.Fatalf("unexpected field context: %+v", fieldSettings)
+	}
+	if len(fieldSettings.Fields) != 2 || fieldSettings.Fields[1].Name != "NewField2" || fieldSettings.Fields[1].Type != "string" {
+		t.Fatalf("expected saved fields to include added row, got %+v", fieldSettings.Fields)
 	}
 }
 
