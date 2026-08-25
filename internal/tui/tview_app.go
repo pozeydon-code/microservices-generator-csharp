@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -78,6 +79,41 @@ const (
 	tviewEditModalPage       = "edit-modal"
 	tviewEditModalInputWidth = 32
 )
+
+type tviewManagerRow struct {
+	original    string
+	name        string
+	typeName    string
+	deleted     bool
+	validations application.ValidationRuleSettings
+}
+
+type tviewServicesEditState struct {
+	rows []tviewManagerRow
+}
+
+type tviewEntitiesEditState struct {
+	serviceName string
+	rows        []tviewManagerRow
+}
+
+type tviewFieldsEditState struct {
+	serviceName string
+	entityName  string
+	rows        []tviewManagerRow
+}
+
+type tviewValueObjectsEditState struct {
+	serviceName string
+	rows        []tviewManagerRow
+}
+
+type tviewValueObjectRulesEditState struct {
+	serviceName string
+	valueObject application.ValueObjectSummary
+	rows        []tviewManagerRow
+	validations application.ValidationRuleSettings
+}
 
 var runTViewApplication = func(app *tview.Application, root tview.Primitive) error {
 	return app.SetRoot(root, true).EnableMouse(true).Run()
@@ -379,24 +415,7 @@ func (ui *tviewUI) openEntitiesEditForService(serviceName string) {
 			return
 		}
 	}
-	form := tview.NewForm()
-	serviceNames := serviceSummaryNames(ui.plan.Config.Services)
-	form.AddDropDown("Service", serviceNames, selectedIndex(serviceNames, service.Name), func(_ string, index int) {
-		if index >= 0 && index < len(serviceNames) && serviceNames[index] != service.Name {
-			ui.openEntitiesEditForService(serviceNames[index])
-		}
-	})
-	entityNames := entitySummaryNames(service.Entities)
-	selectedEntityIndex := 0
-	form.AddDropDown("Fields for", entityNames, selectedEntityIndex, func(_ string, index int) {
-		if index >= 0 && index < len(entityNames) && index != selectedEntityIndex {
-			ui.openEntitiesEditForServiceAndEntity(service.Name, index)
-		}
-	})
-	ui.addEntityInputs(form, service, selectedEntityIndex)
-	form.AddButton("Save", func() { ui.saveEntitiesEdit(form, service, selectedEntityIndex) })
-	form.AddButton("Cancel", ui.closeEdit)
-	ui.showEditForm(form, " Edit Entities ")
+	ui.showEntitiesManager(tviewEntitiesStateFromService(service))
 }
 
 func (ui *tviewUI) openEntitiesEditForServiceAndEntity(serviceName string, selectedEntityIndex int) {
@@ -405,106 +424,48 @@ func (ui *tviewUI) openEntitiesEditForServiceAndEntity(serviceName string, selec
 		ui.openEntitiesEditForService(serviceName)
 		return
 	}
-	form := tview.NewForm()
-	serviceNames := serviceSummaryNames(ui.plan.Config.Services)
-	form.AddDropDown("Service", serviceNames, selectedIndex(serviceNames, service.Name), func(_ string, index int) {
-		if index >= 0 && index < len(serviceNames) && serviceNames[index] != service.Name {
-			ui.openEntitiesEditForService(serviceNames[index])
-		}
-	})
-	entityNames := entitySummaryNames(service.Entities)
-	if selectedEntityIndex < 0 || selectedEntityIndex >= len(entityNames) {
-		selectedEntityIndex = 0
+	state := tviewEntitiesStateFromService(service)
+	if selectedEntityIndex >= 0 && selectedEntityIndex < len(state.rows) {
+		ui.showFieldsManager(tviewFieldsStateFromEntity(service.Name, service.Entities[selectedEntityIndex]))
+		return
 	}
-	form.AddDropDown("Fields for", entityNames, selectedEntityIndex, func(_ string, index int) {
-		if index >= 0 && index < len(entityNames) && index != selectedEntityIndex {
-			ui.openEntitiesEditForServiceAndEntity(service.Name, index)
-		}
-	})
-	ui.addEntityInputs(form, service, selectedEntityIndex)
-	form.AddButton("Save", func() { ui.saveEntitiesEdit(form, service, selectedEntityIndex) })
-	form.AddButton("Cancel", ui.closeEdit)
-	ui.showEditForm(form, " Edit Entities ")
+	ui.showEntitiesManager(state)
 }
 
-func (ui *tviewUI) addEntityInputs(form *tview.Form, service application.ServiceSummary, selectedEntityIndex int) {
-	for index, entity := range service.Entities {
-		addEditInputField(form, fmt.Sprintf("Entity %d", index+1), entity.Name)
-		form.AddCheckbox("Delete", false, nil)
-	}
-	addEditInputField(form, "New entity", "")
-	if len(service.Entities) > 0 && selectedEntityIndex >= 0 && selectedEntityIndex < len(service.Entities) {
-		for index, field := range service.Entities[selectedEntityIndex].Fields {
-			addEditInputField(form, fmt.Sprintf("Field %d name", index+1), field.Name)
-			addEditInputField(form, fmt.Sprintf("Field %d type", index+1), field.Type)
-			form.AddCheckbox("Delete field", false, nil)
-		}
-	}
-	addEditInputField(form, "New field name", "")
-	addEditInputField(form, "New field type", "string")
-}
-
-func (ui *tviewUI) saveEntitiesEdit(form *tview.Form, service application.ServiceSummary, selectedEntityIndex int) {
+func (ui *tviewUI) saveEntitiesEdit(state *tviewEntitiesEditState) {
 	if ui.updateEntities == nil {
 		ui.closeEditWithMessage("Entity editing is not available.")
 		return
 	}
-	settings := application.EntitySettings{ServiceName: service.Name, Entities: make([]application.EntityNameSetting, 0, len(service.Entities))}
-	indexOffset := 2
-	for index, entity := range service.Entities {
-		name := formInputText(form, indexOffset+(index*2))
-		deleted := formCheckboxChecked(form, indexOffset+(index*2)+1)
-		if name == "" || deleted {
+	settings := application.EntitySettings{ServiceName: state.serviceName, Entities: make([]application.EntityNameSetting, 0, len(state.rows))}
+	for _, row := range state.rows {
+		if strings.TrimSpace(row.name) == "" || row.deleted {
 			continue
 		}
-		settings.Entities = append(settings.Entities, application.EntityNameSetting{OriginalName: entity.Name, Name: name})
-	}
-	newEntityName := formInputText(form, indexOffset+(len(service.Entities)*2))
-	if newEntityName != "" {
-		settings.Entities = append(settings.Entities, application.EntityNameSetting{Name: newEntityName})
+		settings.Entities = append(settings.Entities, application.EntityNameSetting{OriginalName: row.original, Name: strings.TrimSpace(row.name)})
 	}
 	result, err := ui.updateEntities(ui.request, settings)
-	if err != nil || result.PlanError != nil {
-		ui.applyEntitiesSaveResult(result, err)
-		return
-	}
-	selectedEntityName, selectedEntityKept := entityNameAfterEdit(form, service, selectedEntityIndex, indexOffset)
-	if selectedEntityKept && ui.updateFields != nil {
-		fieldResult, fieldErr := ui.saveFieldsFromEntitiesEdit(form, service, selectedEntityIndex, selectedEntityName, indexOffset+(len(service.Entities)*2)+1)
-		ui.applyFieldsSaveResult(fieldResult, fieldErr)
-		return
-	}
-	ui.applyEntitiesSaveResult(result, nil)
+	ui.applyEntitiesSaveResult(result, err)
 }
 
-func (ui *tviewUI) saveFieldsFromEntitiesEdit(form *tview.Form, service application.ServiceSummary, selectedEntityIndex int, entityName string, offset int) (application.UpdateFieldSettingsResult, error) {
-	entity := service.Entities[selectedEntityIndex]
-	settings := application.FieldSettings{ServiceName: service.Name, EntityName: entityName, Fields: make([]application.FieldSetting, 0, len(entity.Fields))}
-	for index, field := range entity.Fields {
-		name := formInputText(form, offset+(index*3))
-		typeName := formInputText(form, offset+(index*3)+1)
-		deleted := formCheckboxChecked(form, offset+(index*3)+2)
-		if name == "" || deleted {
+func (ui *tviewUI) saveFieldsEdit(state *tviewFieldsEditState) {
+	if ui.updateFields == nil {
+		ui.closeEditWithMessage("Field editing is not available.")
+		return
+	}
+	result, err := ui.saveFieldsState(state)
+	ui.applyFieldsSaveResult(result, err)
+}
+
+func (ui *tviewUI) saveFieldsState(state *tviewFieldsEditState) (application.UpdateFieldSettingsResult, error) {
+	settings := application.FieldSettings{ServiceName: state.serviceName, EntityName: state.entityName, Fields: make([]application.FieldSetting, 0, len(state.rows))}
+	for _, row := range state.rows {
+		if strings.TrimSpace(row.name) == "" || row.deleted {
 			continue
 		}
-		settings.Fields = append(settings.Fields, application.FieldSetting{OriginalName: field.Name, Name: name, Type: typeName})
-	}
-	newFieldOffset := offset + (len(entity.Fields) * 3)
-	newFieldName := formInputText(form, newFieldOffset)
-	newFieldType := formInputText(form, newFieldOffset+1)
-	if newFieldName != "" {
-		settings.Fields = append(settings.Fields, application.FieldSetting{Name: newFieldName, Type: newFieldType})
+		settings.Fields = append(settings.Fields, application.FieldSetting{OriginalName: row.original, Name: strings.TrimSpace(row.name), Type: trimmedDefault(row.typeName, "string")})
 	}
 	return ui.updateFields(ui.request, settings)
-}
-
-func entityNameAfterEdit(form *tview.Form, service application.ServiceSummary, selectedEntityIndex, offset int) (string, bool) {
-	if selectedEntityIndex < 0 || selectedEntityIndex >= len(service.Entities) {
-		return "", false
-	}
-	name := formInputText(form, offset+(selectedEntityIndex*2))
-	deleted := formCheckboxChecked(form, offset+(selectedEntityIndex*2)+1)
-	return name, name != "" && !deleted
 }
 
 func (ui *tviewUI) applyEntitiesSaveResult(result application.UpdateEntitySettingsResult, err error) {
@@ -562,48 +523,27 @@ func (ui *tviewUI) openValueObjectsEditForService(serviceName string) {
 			return
 		}
 	}
-	form := tview.NewForm()
-	serviceNames := serviceSummaryNames(ui.plan.Config.Services)
-	form.AddDropDown("Service", serviceNames, selectedIndex(serviceNames, service.Name), func(_ string, index int) {
-		if index >= 0 && index < len(serviceNames) && serviceNames[index] != service.Name {
-			ui.openValueObjectsEditForService(serviceNames[index])
-		}
-	})
-	for index, valueObject := range service.ValueObjects {
-		addEditInputField(form, fmt.Sprintf("Value object %d name", index+1), valueObject.Name)
-		addEditInputField(form, fmt.Sprintf("Value object %d type", index+1), valueObject.Type)
-		form.AddCheckbox("Delete", false, nil)
-	}
-	addEditInputField(form, "New value object name", "")
-	addEditInputField(form, "New value object type", "string")
-	form.AddButton("Save", func() { ui.saveValueObjectsEdit(form, service) })
-	form.AddButton("Cancel", ui.closeEdit)
-	ui.showEditForm(form, " Edit Value Objects ")
+	ui.showValueObjectsManager(tviewValueObjectsStateFromService(service))
 }
 
-func (ui *tviewUI) saveValueObjectsEdit(form *tview.Form, service application.ServiceSummary) {
+func (ui *tviewUI) saveValueObjectsEdit(state *tviewValueObjectsEditState) {
 	if ui.updateValueObjects == nil {
 		ui.closeEditWithMessage("Value object editing is not available.")
 		return
 	}
-	settings := application.ValueObjectSettings{ServiceName: service.Name, ValueObjects: make([]application.ValueObjectNameSetting, 0, len(service.ValueObjects))}
-	for index, valueObject := range service.ValueObjects {
-		name := formInputText(form, 1+(index*3))
-		typeName := formInputText(form, 1+(index*3)+1)
-		deleted := formCheckboxChecked(form, 1+(index*3)+2)
-		if name == "" || deleted {
+	result, err := ui.updateValueObjects(ui.request, tviewValueObjectSettingsFromState(state))
+	ui.applyValueObjectsSaveResult(result, err)
+}
+
+func tviewValueObjectSettingsFromState(state *tviewValueObjectsEditState) application.ValueObjectSettings {
+	settings := application.ValueObjectSettings{ServiceName: state.serviceName, ValueObjects: make([]application.ValueObjectNameSetting, 0, len(state.rows))}
+	for _, row := range state.rows {
+		if strings.TrimSpace(row.name) == "" || row.deleted {
 			continue
 		}
-		settings.ValueObjects = append(settings.ValueObjects, application.ValueObjectNameSetting{OriginalName: valueObject.Name, Name: name, Type: typeName, Validations: validationRuleSettingsFromSummary(valueObject.Validations)})
+		settings.ValueObjects = append(settings.ValueObjects, application.ValueObjectNameSetting{OriginalName: row.original, Name: strings.TrimSpace(row.name), Type: trimmedDefault(row.typeName, "string"), Validations: row.validations})
 	}
-	newValueObjectOffset := 1 + (len(service.ValueObjects) * 3)
-	newValueObjectName := formInputText(form, newValueObjectOffset)
-	newValueObjectType := formInputText(form, newValueObjectOffset+1)
-	if newValueObjectName != "" {
-		settings.ValueObjects = append(settings.ValueObjects, application.ValueObjectNameSetting{Name: newValueObjectName, Type: newValueObjectType})
-	}
-	result, err := ui.updateValueObjects(ui.request, settings)
-	ui.applyValueObjectsSaveResult(result, err)
+	return settings
 }
 
 func (ui *tviewUI) applyValueObjectsSaveResult(result application.UpdateValueObjectSettingsResult, err error) {
@@ -671,35 +611,20 @@ func (ui *tviewUI) applyProjectSaveResult(result application.UpdateSolutionSetti
 }
 
 func (ui *tviewUI) openServicesEdit() {
-	form := tview.NewForm()
-	services := append([]string(nil), ui.plan.Config.ServiceNames...)
-	for index, name := range services {
-		addEditInputField(form, fmt.Sprintf("Service %d", index+1), name)
-		form.AddCheckbox("Delete", false, nil)
-	}
-	addEditInputField(form, "New service", "")
-	form.AddButton("Save", func() { ui.saveServicesEdit(form, services) })
-	form.AddButton("Cancel", ui.closeEdit)
-	ui.showEditForm(form, " Edit Services ")
+	ui.showServicesManager(tviewServicesStateFromPlan(ui.plan))
 }
 
-func (ui *tviewUI) saveServicesEdit(form *tview.Form, original []string) {
+func (ui *tviewUI) saveServicesEdit(state *tviewServicesEditState) {
 	if ui.updateServices == nil {
 		ui.closeEditWithMessage("Service editing is not available.")
 		return
 	}
-	settings := application.ServiceSettings{Services: make([]application.ServiceNameSetting, 0, len(original))}
-	for index, current := range original {
-		name := formInputText(form, index*2)
-		deleted := formCheckboxChecked(form, index*2+1)
-		if name == "" || deleted {
+	settings := application.ServiceSettings{Services: make([]application.ServiceNameSetting, 0, len(state.rows))}
+	for _, row := range state.rows {
+		if strings.TrimSpace(row.name) == "" || row.deleted {
 			continue
 		}
-		settings.Services = append(settings.Services, application.ServiceNameSetting{OriginalName: current, Name: name})
-	}
-	newServiceName := formInputText(form, len(original)*2)
-	if newServiceName != "" {
-		settings.Services = append(settings.Services, application.ServiceNameSetting{Name: newServiceName})
+		settings.Services = append(settings.Services, application.ServiceNameSetting{OriginalName: row.original, Name: strings.TrimSpace(row.name)})
 	}
 	result, err := ui.updateServices(ui.request, settings)
 	ui.applyServicesSaveResult(result, err)
@@ -723,6 +648,298 @@ func (ui *tviewUI) applyServicesSaveResult(result application.UpdateServiceSetti
 	ui.refreshPlanAfterSave("Services saved.")
 }
 
+func (ui *tviewUI) showServicesManager(state *tviewServicesEditState) {
+	manager := ui.newManagerTable([]string{"Name", "Actions"})
+	render := func() { renderManagerRows(manager, state.rows, false, "") }
+	render()
+	manager.SetSelectedFunc(func(row, column int) {
+		if row <= 0 || row > len(state.rows) {
+			return
+		}
+		if column == 1 {
+			state.rows[row-1].deleted = !state.rows[row-1].deleted
+			render()
+			return
+		}
+		if column == 0 {
+			ui.openNameEdit(" Edit Service ", state.rows[row-1].name, func(name string) {
+				state.rows[row-1].name = name
+				ui.showServicesManager(state)
+			})
+		}
+	})
+	manager.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Key() {
+		case tcell.KeyCtrlS:
+			ui.saveServicesEdit(state)
+			return nil
+		}
+		switch strings.ToLower(string(event.Rune())) {
+		case "a":
+			state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewService", len(state.rows)+1)})
+			render()
+			manager.Select(len(state.rows), 0)
+			return nil
+		case "d":
+			toggleSelectedManagerRow(manager, state.rows)
+			render()
+			return nil
+		}
+		return event
+	})
+	ui.showManagerModal(" Services ", nil, manager, managerFooter("Tab focus  Up/Down move  a add  d delete  enter edit  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
+		state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewService", len(state.rows)+1)})
+		render()
+		manager.Select(len(state.rows), 0)
+	}}, {"Save", func() { ui.saveServicesEdit(state) }}, {"Cancel", ui.closeEdit}}))
+}
+
+func (ui *tviewUI) showEntitiesManager(state *tviewEntitiesEditState) {
+	serviceNames := serviceSummaryNames(ui.plan.Config.Services)
+	serviceSelector := tview.NewDropDown().SetLabel("Service ").SetOptions(serviceNames, func(_ string, index int) {
+		if index >= 0 && index < len(serviceNames) && serviceNames[index] != state.serviceName {
+			ui.openEntitiesEditForService(serviceNames[index])
+		}
+	})
+	serviceSelector.SetCurrentOption(selectedIndex(serviceNames, state.serviceName))
+	manager := ui.newManagerTable([]string{"Name", "Actions"})
+	render := func() { renderManagerRows(manager, state.rows, false, "") }
+	render()
+	manager.SetSelectedFunc(func(row, column int) {
+		if row <= 0 || row > len(state.rows) {
+			return
+		}
+		if column == 1 {
+			state.rows[row-1].deleted = !state.rows[row-1].deleted
+			render()
+			return
+		}
+		if column == 0 {
+			ui.openNameEdit(" Edit Entity ", state.rows[row-1].name, func(name string) {
+				state.rows[row-1].name = name
+				ui.showEntitiesManager(state)
+			})
+		}
+	})
+	manager.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Key() {
+		case tcell.KeyCtrlS:
+			ui.saveEntitiesEdit(state)
+			return nil
+		}
+		switch strings.ToLower(string(event.Rune())) {
+		case "a":
+			state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewEntity", len(state.rows)+1)})
+			render()
+			manager.Select(len(state.rows), 0)
+			return nil
+		case "d":
+			toggleSelectedManagerRow(manager, state.rows)
+			render()
+			return nil
+		case "f":
+			row, _ := manager.GetSelection()
+			ui.openFieldsFromEntityState(state, row-1)
+			return nil
+		}
+		return event
+	})
+	ui.showManagerModal(" Entities ", serviceSelector, manager, managerFooter("Tab focus  Up/Down move  a add  d delete  enter edit/select  f fields  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
+		state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewEntity", len(state.rows)+1)})
+		render()
+		manager.Select(len(state.rows), 0)
+	}}, {"Fields", func() {
+		row, _ := manager.GetSelection()
+		ui.openFieldsFromEntityState(state, row-1)
+	}}, {"Save", func() { ui.saveEntitiesEdit(state) }}, {"Cancel", ui.closeEdit}}))
+}
+
+func (ui *tviewUI) openFieldsFromEntityState(state *tviewEntitiesEditState, index int) {
+	if index < 0 || index >= len(state.rows) || state.rows[index].original == "" || state.rows[index].deleted {
+		ui.message = "Save the entity before editing fields."
+		ui.refresh()
+		return
+	}
+	service, ok := serviceSummaryByName(ui.plan.Config.Services, state.serviceName)
+	if !ok {
+		return
+	}
+	for _, entity := range service.Entities {
+		if entity.Name == state.rows[index].original {
+			ui.showFieldsManager(tviewFieldsStateFromEntity(state.serviceName, entity))
+			return
+		}
+	}
+}
+
+func (ui *tviewUI) showFieldsManager(state *tviewFieldsEditState) {
+	context := tview.NewTextView().SetDynamicColors(true).SetText(fmt.Sprintf("[aqua]%s[white] / [yellow]%s[white]", state.serviceName, state.entityName))
+	manager := ui.newManagerTable([]string{"Name", "Type", "Actions"})
+	render := func() { renderManagerRows(manager, state.rows, true, "") }
+	render()
+	manager.SetSelectedFunc(func(row, column int) {
+		if row <= 0 || row > len(state.rows) {
+			return
+		}
+		if column == 2 {
+			state.rows[row-1].deleted = !state.rows[row-1].deleted
+			render()
+			return
+		}
+		ui.openFieldEdit(" Edit Field ", state.rows[row-1], func(updated tviewManagerRow) {
+			state.rows[row-1].name = updated.name
+			state.rows[row-1].typeName = updated.typeName
+			ui.showFieldsManager(state)
+		})
+	})
+	manager.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Key() {
+		case tcell.KeyCtrlS:
+			ui.saveFieldsEdit(state)
+			return nil
+		}
+		switch strings.ToLower(string(event.Rune())) {
+		case "a":
+			state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewField", len(state.rows)+1), typeName: "string"})
+			render()
+			manager.Select(len(state.rows), 0)
+			return nil
+		case "d":
+			toggleSelectedManagerRow(manager, state.rows)
+			render()
+			return nil
+		}
+		return event
+	})
+	ui.showManagerModal(" Fields ", context, manager, managerFooter("Tab focus  Up/Down move  a add  d delete  enter edit  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
+		state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewField", len(state.rows)+1), typeName: "string"})
+		render()
+		manager.Select(len(state.rows), 0)
+	}}, {"Save", func() { ui.saveFieldsEdit(state) }}, {"Cancel", ui.closeEdit}}))
+}
+
+func (ui *tviewUI) showValueObjectsManager(state *tviewValueObjectsEditState) {
+	serviceNames := serviceSummaryNames(ui.plan.Config.Services)
+	serviceSelector := tview.NewDropDown().SetLabel("Service ").SetOptions(serviceNames, func(_ string, index int) {
+		if index >= 0 && index < len(serviceNames) && serviceNames[index] != state.serviceName {
+			ui.openValueObjectsEditForService(serviceNames[index])
+		}
+	})
+	serviceSelector.SetCurrentOption(selectedIndex(serviceNames, state.serviceName))
+	manager := ui.newManagerTable([]string{"Name", "Type", "Actions"})
+	render := func() { renderManagerRows(manager, state.rows, true, "") }
+	render()
+	manager.SetSelectedFunc(func(row, column int) {
+		if row <= 0 || row > len(state.rows) {
+			return
+		}
+		if column == 2 {
+			state.rows[row-1].deleted = !state.rows[row-1].deleted
+			render()
+			return
+		}
+		ui.openFieldEdit(" Edit Value Object ", state.rows[row-1], func(updated tviewManagerRow) {
+			state.rows[row-1].name = updated.name
+			state.rows[row-1].typeName = updated.typeName
+			ui.showValueObjectsManager(state)
+		})
+	})
+	manager.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Key() {
+		case tcell.KeyCtrlS:
+			ui.saveValueObjectsEdit(state)
+			return nil
+		}
+		switch strings.ToLower(string(event.Rune())) {
+		case "a":
+			state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewValueObject", len(state.rows)+1), typeName: "string"})
+			render()
+			manager.Select(len(state.rows), 0)
+			return nil
+		case "d":
+			toggleSelectedManagerRow(manager, state.rows)
+			render()
+			return nil
+		case "r":
+			row, _ := manager.GetSelection()
+			ui.openRulesFromValueObjectState(state, row-1)
+			return nil
+		}
+		return event
+	})
+	ui.showManagerModal(" Value Objects ", serviceSelector, manager, managerFooter("Tab focus  Up/Down move  a add  d delete  enter edit/select  r rules  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
+		state.rows = append(state.rows, tviewManagerRow{name: nextNamedRow("NewValueObject", len(state.rows)+1), typeName: "string"})
+		render()
+		manager.Select(len(state.rows), 0)
+	}}, {"Rules", func() {
+		row, _ := manager.GetSelection()
+		ui.openRulesFromValueObjectState(state, row-1)
+	}}, {"Save", func() { ui.saveValueObjectsEdit(state) }}, {"Cancel", ui.closeEdit}}))
+}
+
+func (ui *tviewUI) openRulesFromValueObjectState(state *tviewValueObjectsEditState, index int) {
+	if index < 0 || index >= len(state.rows) || state.rows[index].deleted {
+		return
+	}
+	row := state.rows[index]
+	ui.showValueObjectRulesManager(&tviewValueObjectRulesEditState{
+		serviceName: state.serviceName,
+		valueObject: application.ValueObjectSummary{Name: strings.TrimSpace(row.name), Type: trimmedDefault(row.typeName, "string")},
+		rows:        append([]tviewManagerRow(nil), state.rows...),
+		validations: row.validations,
+	})
+}
+
+func (ui *tviewUI) showValueObjectRulesManager(state *tviewValueObjectRulesEditState) {
+	form := tview.NewForm()
+	form.SetBorder(false)
+	form.SetFieldTextColor(tcell.ColorWhite).SetLabelColor(tcell.ColorLightCyan).SetButtonTextColor(tcell.ColorBlack).SetButtonBackgroundColor(tcell.ColorTeal)
+	required := boolValue(state.validations.Required)
+	notEmpty := boolValue(state.validations.NotEmpty)
+	notDefault := boolValue(state.validations.NotDefault)
+	form.AddCheckbox("Required", required, func(checked bool) { state.validations.Required = &checked })
+	form.AddInputField("Min length", intString(state.validations.MinLength), tviewEditModalInputWidth, nil, func(value string) { state.validations.MinLength = intPointerFromText(value) })
+	form.AddInputField("Max length", intString(state.validations.MaxLength), tviewEditModalInputWidth, nil, func(value string) { state.validations.MaxLength = intPointerFromText(value) })
+	form.AddInputField("Pattern", stringValue(state.validations.Pattern), tviewEditModalInputWidth, nil, func(value string) { state.validations.Pattern = stringPointerFromText(value) })
+	form.AddInputField("Valid example", stringValue(state.validations.ValidExample), tviewEditModalInputWidth, nil, func(value string) { state.validations.ValidExample = stringPointerFromText(value) })
+	form.AddInputField("Invalid example", stringValue(state.validations.InvalidExample), tviewEditModalInputWidth, nil, func(value string) { state.validations.InvalidExample = stringPointerFromText(value) })
+	form.AddInputField("Minimum", stringValue(state.validations.Minimum), tviewEditModalInputWidth, nil, func(value string) { state.validations.Minimum = stringPointerFromText(value) })
+	form.AddInputField("Maximum", stringValue(state.validations.Maximum), tviewEditModalInputWidth, nil, func(value string) { state.validations.Maximum = stringPointerFromText(value) })
+	form.AddCheckbox("Not empty", notEmpty, func(checked bool) { state.validations.NotEmpty = &checked })
+	form.AddCheckbox("Not default", notDefault, func(checked bool) { state.validations.NotDefault = &checked })
+	form.AddButton("Save", func() { ui.saveValueObjectRulesEdit(state, form) })
+	form.AddButton("Cancel", ui.closeEdit)
+	ui.showEditForm(form, fmt.Sprintf(" Rules: %s/%s ", state.serviceName, state.valueObject.Name))
+}
+
+func (ui *tviewUI) saveValueObjectRulesEdit(state *tviewValueObjectRulesEditState, form *tview.Form) {
+	if ui.updateValueObjects == nil {
+		ui.closeEditWithMessage("Value object editing is not available.")
+		return
+	}
+	validations := application.ValidationRuleSettings{
+		Required:       boolPointerFromCheckbox(form, 0),
+		MinLength:      intPointerFromForm(form, 1),
+		MaxLength:      intPointerFromForm(form, 2),
+		Pattern:        stringPointerFromForm(form, 3),
+		ValidExample:   stringPointerFromForm(form, 4),
+		InvalidExample: stringPointerFromForm(form, 5),
+		Minimum:        stringPointerFromForm(form, 6),
+		Maximum:        stringPointerFromForm(form, 7),
+		NotEmpty:       boolPointerFromCheckbox(form, 8),
+		NotDefault:     boolPointerFromCheckbox(form, 9),
+	}
+	valueObjectName := strings.TrimSpace(state.valueObject.Name)
+	for index := range state.rows {
+		if strings.TrimSpace(state.rows[index].name) == valueObjectName {
+			state.rows[index].validations = validations
+			break
+		}
+	}
+	result, err := ui.updateValueObjects(ui.request, tviewValueObjectSettingsFromState(&tviewValueObjectsEditState{serviceName: state.serviceName, rows: state.rows}))
+	ui.applyValueObjectsSaveResult(result, err)
+}
+
 func (ui *tviewUI) showEditForm(form *tview.Form, title string) {
 	form.SetBorder(false)
 	form.SetFieldTextColor(tcell.ColorWhite).
@@ -740,6 +957,210 @@ func (ui *tviewUI) showEditForm(form *tview.Form, title string) {
 	ui.root.RemovePage(tviewEditModalPage)
 	ui.root.AddPage(tviewEditModalPage, modal, true, true)
 	ui.app.SetFocus(panel)
+}
+
+type managerButton struct {
+	label string
+	run   func()
+}
+
+func (ui *tviewUI) newManagerTable(headers []string) *tview.Table {
+	table := tview.NewTable().SetSelectable(true, true).SetFixed(1, 0)
+	table.SetBorder(false)
+	table.SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorTeal).Bold(true))
+	for column, header := range headers {
+		table.SetCell(0, column, tview.NewTableCell(header).SetTextColor(tcell.ColorLightCyan).SetSelectable(false).SetExpansion(1))
+	}
+	table.Select(1, 0)
+	return table
+}
+
+func renderManagerRows(table *tview.Table, rows []tviewManagerRow, withType bool, actionLabel string) {
+	for table.GetRowCount() > 1 {
+		table.RemoveRow(1)
+	}
+	if len(rows) == 0 {
+		table.SetCell(1, 0, tview.NewTableCell("No rows yet. Press a to add one.").SetTextColor(tcell.ColorGray).SetExpansion(2))
+		return
+	}
+	for index, row := range rows {
+		textColor := tcell.ColorWhite
+		action := "Delete"
+		if row.deleted {
+			textColor = tcell.ColorGray
+			action = "Restore"
+		}
+		table.SetCell(index+1, 0, tview.NewTableCell(emptyDash(strings.TrimSpace(row.name))).SetTextColor(textColor).SetExpansion(2))
+		if withType {
+			table.SetCell(index+1, 1, tview.NewTableCell(trimmedDefault(row.typeName, "string")).SetTextColor(textColor).SetExpansion(1))
+			if actionLabel != "" && !row.deleted {
+				action += " | " + actionLabel
+			}
+			table.SetCell(index+1, 2, tview.NewTableCell(action).SetTextColor(tcell.ColorYellow).SetAlign(tview.AlignRight).SetExpansion(1))
+		} else {
+			table.SetCell(index+1, 1, tview.NewTableCell(action).SetTextColor(tcell.ColorYellow).SetAlign(tview.AlignRight).SetExpansion(1))
+		}
+	}
+}
+
+func managerFooter(shortcuts string, buttons []managerButton) *tview.Flex {
+	form := tview.NewForm()
+	form.SetBorder(false)
+	form.SetButtonTextColor(tcell.ColorBlack).SetButtonBackgroundColor(tcell.ColorTeal)
+	for _, button := range buttons {
+		form.AddButton(button.label, button.run)
+	}
+	return tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(tview.NewTextView().SetDynamicColors(true).SetText("[gray]"+shortcuts), 1, 0, false).
+		AddItem(form, 1, 0, false)
+}
+
+func (ui *tviewUI) showManagerModal(title string, header tview.Primitive, manager *tview.Table, footer *tview.Flex) {
+	body := tview.NewFlex().SetDirection(tview.FlexRow)
+	if header != nil {
+		body.AddItem(header, 2, 0, false)
+	}
+	body.AddItem(manager, 0, 1, true).AddItem(footer, 3, 0, false)
+	panel := tview.NewFrame(body).SetBorders(1, 1, 0, 1, 1, 1)
+	panel.SetBorder(true).SetTitle(title).SetTitleAlign(tview.AlignLeft)
+	panel.SetBorderColor(tcell.ColorTeal).SetTitleColor(tcell.ColorLightCyan)
+	modal := centerPrimitive(panel, 86, 22)
+	ui.editOpen = true
+	ui.root.RemovePage(tviewEditModalPage)
+	ui.root.AddPage(tviewEditModalPage, modal, true, true)
+	if header != nil {
+		ui.app.SetFocus(header)
+		return
+	}
+	ui.app.SetFocus(manager)
+}
+
+func (ui *tviewUI) openNameEdit(title, value string, save func(string)) {
+	form := tview.NewForm()
+	addEditInputField(form, "Name", value)
+	form.AddButton("Apply", func() { save(formInputText(form, 0)) })
+	form.AddButton("Cancel", ui.closeEdit)
+	ui.showEditForm(form, title)
+}
+
+func (ui *tviewUI) openFieldEdit(title string, row tviewManagerRow, save func(tviewManagerRow)) {
+	form := tview.NewForm()
+	addEditInputField(form, "Name", row.name)
+	addEditInputField(form, "Type", trimmedDefault(row.typeName, "string"))
+	form.AddButton("Apply", func() {
+		row.name = formInputText(form, 0)
+		row.typeName = formInputText(form, 1)
+		save(row)
+	})
+	form.AddButton("Cancel", ui.closeEdit)
+	ui.showEditForm(form, title)
+}
+
+func tviewServicesStateFromPlan(plan application.GenerationPlan) *tviewServicesEditState {
+	services := plan.Config.ServiceNames
+	if len(services) == 0 && len(plan.Config.Services) > 0 {
+		services = serviceSummaryNames(plan.Config.Services)
+	}
+	state := &tviewServicesEditState{rows: make([]tviewManagerRow, 0, len(services))}
+	for _, name := range services {
+		state.rows = append(state.rows, tviewManagerRow{original: name, name: name})
+	}
+	return state
+}
+
+func tviewEntitiesStateFromService(service application.ServiceSummary) *tviewEntitiesEditState {
+	state := &tviewEntitiesEditState{serviceName: service.Name, rows: make([]tviewManagerRow, 0, len(service.Entities))}
+	for _, entity := range service.Entities {
+		state.rows = append(state.rows, tviewManagerRow{original: entity.Name, name: entity.Name})
+	}
+	return state
+}
+
+func tviewFieldsStateFromEntity(serviceName string, entity application.EntitySummary) *tviewFieldsEditState {
+	state := &tviewFieldsEditState{serviceName: serviceName, entityName: entity.Name, rows: make([]tviewManagerRow, 0, len(entity.Fields))}
+	for _, field := range entity.Fields {
+		state.rows = append(state.rows, tviewManagerRow{original: field.Name, name: field.Name, typeName: field.Type})
+	}
+	return state
+}
+
+func tviewValueObjectsStateFromService(service application.ServiceSummary) *tviewValueObjectsEditState {
+	state := &tviewValueObjectsEditState{serviceName: service.Name, rows: make([]tviewManagerRow, 0, len(service.ValueObjects))}
+	for _, valueObject := range service.ValueObjects {
+		state.rows = append(state.rows, tviewManagerRow{original: valueObject.Name, name: valueObject.Name, typeName: valueObject.Type, validations: validationRuleSettingsFromSummary(valueObject.Validations)})
+	}
+	return state
+}
+
+func toggleSelectedManagerRow(table *tview.Table, rows []tviewManagerRow) {
+	row, _ := table.GetSelection()
+	if row <= 0 || row > len(rows) {
+		return
+	}
+	rows[row-1].deleted = !rows[row-1].deleted
+}
+
+func nextNamedRow(prefix string, count int) string {
+	return fmt.Sprintf("%s%d", prefix, count)
+}
+
+func trimmedDefault(value, fallback string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return fallback
+	}
+	return trimmed
+}
+
+func boolValue(value *bool) bool {
+	return value != nil && *value
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func intString(value *int) string {
+	if value == nil {
+		return ""
+	}
+	return strconv.Itoa(*value)
+}
+
+func stringPointerFromText(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func intPointerFromText(value string) *int {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	parsed, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return nil
+	}
+	return &parsed
+}
+
+func stringPointerFromForm(form *tview.Form, index int) *string {
+	return stringPointerFromText(formInputText(form, index))
+}
+
+func intPointerFromForm(form *tview.Form, index int) *int {
+	return intPointerFromText(formInputText(form, index))
+}
+
+func boolPointerFromCheckbox(form *tview.Form, index int) *bool {
+	checked := formCheckboxChecked(form, index)
+	return &checked
 }
 
 func (ui *tviewUI) closeEdit() {

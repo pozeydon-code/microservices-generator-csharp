@@ -1829,8 +1829,8 @@ func TestTViewServicesEditOpensModal(t *testing.T) {
 	if !ui.root.HasPage(tviewEditModalPage) {
 		t.Fatalf("expected services edit to open as a modal page")
 	}
-	if _, ok := ui.app.GetFocus().(*tview.InputField); !ok {
-		t.Fatalf("expected services edit focus to be inside a tview form, got %T", ui.app.GetFocus())
+	if _, ok := ui.app.GetFocus().(*tview.Table); !ok {
+		t.Fatalf("expected services edit focus to be inside a table manager, got %T", ui.app.GetFocus())
 	}
 }
 
@@ -1921,14 +1921,13 @@ func TestTViewServicesEditSavesRenamesAndRefreshesPlan(t *testing.T) {
 			return application.UpdateServiceSettingsResult{Plan: refreshedPlan}, nil
 		},
 	)
-	form := tview.NewForm()
-	form.AddInputField("Service 1", " CatalogService ", 40, nil, nil)
-	form.AddCheckbox("Delete", false, nil)
-	form.AddInputField("Service 2", " OrderService ", 40, nil, nil)
-	form.AddCheckbox("Delete", true, nil)
-	form.AddInputField("New service", " ShippingService ", 40, nil, nil)
+	state := &tviewServicesEditState{rows: []tviewManagerRow{
+		{original: "ProductService", name: " CatalogService "},
+		{original: "OrderService", name: " OrderService ", deleted: true},
+		{name: " ShippingService "},
+	}}
 
-	ui.saveServicesEdit(form, []string{"ProductService", "OrderService"})
+	ui.saveServicesEdit(state)
 
 	if len(updated.Services) != 2 {
 		t.Fatalf("expected two service settings, got %+v", updated.Services)
@@ -1941,6 +1940,54 @@ func TestTViewServicesEditSavesRenamesAndRefreshesPlan(t *testing.T) {
 	}
 	if ui.plan.Config.ServiceNames[0] != "CatalogService" || ui.plan.FileCount != 4 {
 		t.Fatalf("expected refreshed service plan, got %+v", ui.plan)
+	}
+}
+
+func TestTViewServicesManagerSavesMultipleNewServices(t *testing.T) {
+	var updated application.ServiceSettings
+	ui := newTViewUI(
+		application.GenerationPlan{Config: application.ConfigSummary{ServiceNames: []string{"ProductService"}}},
+		application.GenerateRequest{},
+		func(application.GenerateRequest) (application.GenerationPlan, error) {
+			return application.GenerationPlan{}, nil
+		},
+		nil,
+		nil,
+		func(_ application.GenerateRequest, settings application.ServiceSettings) (application.UpdateServiceSettingsResult, error) {
+			updated = settings
+			return application.UpdateServiceSettingsResult{}, nil
+		},
+	)
+
+	ui.saveServicesEdit(&tviewServicesEditState{rows: []tviewManagerRow{
+		{original: "ProductService", name: "ProductService"},
+		{name: "OrderService"},
+		{name: "ShippingService"},
+	}})
+
+	if len(updated.Services) != 3 {
+		t.Fatalf("expected all service rows to be submitted before closing, got %+v", updated.Services)
+	}
+	if updated.Services[1] != (application.ServiceNameSetting{Name: "OrderService"}) || updated.Services[2] != (application.ServiceNameSetting{Name: "ShippingService"}) {
+		t.Fatalf("unexpected new service settings: %+v", updated.Services)
+	}
+}
+
+func TestTViewServicesManagerKeepsActionsInTableAndFooterSticky(t *testing.T) {
+	plan := application.GenerationPlan{Config: application.ConfigSummary{ServiceNames: []string{"ProductService", "OrderService", "ShippingService", "BillingService", "CatalogService", "IdentityService"}}}
+	ui := newTViewUI(plan, application.GenerateRequest{}, nil, nil)
+
+	ui.openServicesEdit()
+
+	manager, ok := ui.app.GetFocus().(*tview.Table)
+	if !ok {
+		t.Fatalf("expected services manager table focus, got %T", ui.app.GetFocus())
+	}
+	if got := manager.GetCell(0, 1).Text; got != "Actions" {
+		t.Fatalf("expected right-side actions column, got %q", got)
+	}
+	if got := manager.GetCell(1, 1).Text; got != "Delete" {
+		t.Fatalf("expected delete action in the row action column, got %q", got)
 	}
 }
 
@@ -1968,19 +2015,14 @@ func TestTViewEntityEditSavesSelectedServiceEntitiesAndFieldsNatively(t *testing
 			return application.UpdateFieldSettingsResult{Plan: application.GenerationPlan{FileCount: 2}}, nil
 		},
 	)
-	form := tview.NewForm()
-	form.AddDropDown("Service", []string{"ProductService", "OrderService"}, 1, nil)
-	form.AddDropDown("Fields for", []string{"Order"}, 0, nil)
-	form.AddInputField("Entity 1", " PurchaseOrder ", 40, nil, nil)
-	form.AddCheckbox("Delete", false, nil)
-	form.AddInputField("New entity", " Invoice ", 40, nil, nil)
-	form.AddInputField("Field 1 name", " Amount ", 30, nil, nil)
-	form.AddInputField("Field 1 type", " Money ", 30, nil, nil)
-	form.AddCheckbox("Delete field", false, nil)
-	form.AddInputField("New field name", " Currency ", 30, nil, nil)
-	form.AddInputField("New field type", " string ", 30, nil, nil)
-
-	ui.saveEntitiesEdit(form, ui.plan.Config.Services[1], 0)
+	ui.saveEntitiesEdit(&tviewEntitiesEditState{serviceName: "OrderService", rows: []tviewManagerRow{
+		{original: "Order", name: " PurchaseOrder "},
+		{name: " Invoice "},
+	}})
+	ui.saveFieldsEdit(&tviewFieldsEditState{serviceName: "OrderService", entityName: "PurchaseOrder", rows: []tviewManagerRow{
+		{original: "Total", name: " Amount ", typeName: " Money "},
+		{name: " Currency ", typeName: " string "},
+	}})
 
 	if entitySettings.ServiceName != "OrderService" {
 		t.Fatalf("unexpected entity settings: %+v", entitySettings)
@@ -1996,6 +2038,66 @@ func TestTViewEntityEditSavesSelectedServiceEntitiesAndFieldsNatively(t *testing
 	}
 	if ui.editOpen {
 		t.Fatalf("expected native entity edit form to close after save")
+	}
+}
+
+func TestTViewEntityManagerDoesNotSaveFieldsInline(t *testing.T) {
+	fieldCalls := 0
+	entityCalls := 0
+	ui := newTViewUI(
+		application.GenerationPlan{Config: application.ConfigSummary{Services: []application.ServiceSummary{{Name: "OrderService", Entities: []application.EntitySummary{{Name: "Order", Fields: []application.FieldSummary{{Name: "Total", Type: "decimal"}}}}}}}},
+		application.GenerateRequest{},
+		func(application.GenerateRequest) (application.GenerationPlan, error) {
+			return application.GenerationPlan{}, nil
+		},
+		nil,
+		nil,
+		nil,
+		func(application.GenerateRequest, application.EntitySettings) (application.UpdateEntitySettingsResult, error) {
+			entityCalls++
+			return application.UpdateEntitySettingsResult{}, nil
+		},
+		func(application.GenerateRequest, application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+			fieldCalls++
+			return application.UpdateFieldSettingsResult{}, nil
+		},
+	)
+
+	ui.saveEntitiesEdit(&tviewEntitiesEditState{serviceName: "OrderService", rows: []tviewManagerRow{{original: "Order", name: "PurchaseOrder"}}})
+
+	if entityCalls != 1 || fieldCalls != 0 {
+		t.Fatalf("expected entities save to be separate from fields save, entityCalls=%d fieldCalls=%d", entityCalls, fieldCalls)
+	}
+}
+
+func TestTViewFieldsManagerSavesFieldPayloadSeparately(t *testing.T) {
+	var updated application.FieldSettings
+	ui := newTViewUI(
+		application.GenerationPlan{},
+		application.GenerateRequest{},
+		func(application.GenerateRequest) (application.GenerationPlan, error) {
+			return application.GenerationPlan{}, nil
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		func(_ application.GenerateRequest, settings application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+			updated = settings
+			return application.UpdateFieldSettingsResult{}, nil
+		},
+	)
+
+	ui.saveFieldsEdit(&tviewFieldsEditState{serviceName: "OrderService", entityName: "Order", rows: []tviewManagerRow{
+		{original: "Total", name: "Amount", typeName: "Money"},
+		{name: "Currency", typeName: "string"},
+	}})
+
+	if updated.ServiceName != "OrderService" || updated.EntityName != "Order" {
+		t.Fatalf("unexpected field context: %+v", updated)
+	}
+	if len(updated.Fields) != 2 || updated.Fields[0] != (application.FieldSetting{OriginalName: "Total", Name: "Amount", Type: "Money"}) || updated.Fields[1] != (application.FieldSetting{Name: "Currency", Type: "string"}) {
+		t.Fatalf("unexpected field payload: %+v", updated.Fields)
 	}
 }
 
@@ -2020,19 +2122,8 @@ func TestTViewEntityEditBlocksGenerationWhenFieldSaveFailsAfterEntitySave(t *tes
 			return application.UpdateFieldSettingsResult{}, errors.New("field save failed")
 		},
 	)
-	form := tview.NewForm()
-	form.AddDropDown("Service", []string{"OrderService"}, 0, nil)
-	form.AddDropDown("Fields for", []string{"Order"}, 0, nil)
-	form.AddInputField("Entity 1", "Order", 40, nil, nil)
-	form.AddCheckbox("Delete", false, nil)
-	form.AddInputField("New entity", "", 40, nil, nil)
-	form.AddInputField("Field 1 name", "Total", 30, nil, nil)
-	form.AddInputField("Field 1 type", "decimal", 30, nil, nil)
-	form.AddCheckbox("Delete field", false, nil)
-	form.AddInputField("New field name", "", 30, nil, nil)
-	form.AddInputField("New field type", "string", 30, nil, nil)
-
-	ui.saveEntitiesEdit(form, ui.plan.Config.Services[0], 0)
+	ui.saveEntitiesEdit(&tviewEntitiesEditState{serviceName: "OrderService", rows: []tviewManagerRow{{original: "Order", name: "Order"}}})
+	ui.saveFieldsEdit(&tviewFieldsEditState{serviceName: "OrderService", entityName: "Order", rows: []tviewManagerRow{{original: "Total", name: "Total", typeName: "decimal"}}})
 	ui.generateFiles()
 
 	if !ui.planStale {
@@ -2067,15 +2158,10 @@ func TestTViewValueObjectEditSavesSelectedServiceAndAddsNatively(t *testing.T) {
 			return application.UpdateValueObjectSettingsResult{Plan: application.GenerationPlan{FileCount: 2}}, nil
 		},
 	)
-	form := tview.NewForm()
-	form.AddDropDown("Service", []string{"ProductService", "OrderService"}, 1, nil)
-	form.AddInputField("Value object 1 name", " PurchaseNumber ", 40, nil, nil)
-	form.AddInputField("Value object 1 type", " string ", 30, nil, nil)
-	form.AddCheckbox("Delete", false, nil)
-	form.AddInputField("New value object name", " Money ", 40, nil, nil)
-	form.AddInputField("New value object type", " decimal ", 30, nil, nil)
-
-	ui.saveValueObjectsEdit(form, ui.plan.Config.Services[1])
+	ui.saveValueObjectsEdit(&tviewValueObjectsEditState{serviceName: "OrderService", rows: []tviewManagerRow{
+		{original: "OrderNumber", name: " PurchaseNumber ", typeName: " string "},
+		{name: " Money ", typeName: " decimal "},
+	}})
 
 	if updated.ServiceName != "OrderService" {
 		t.Fatalf("unexpected value object settings: %+v", updated)
@@ -2085,6 +2171,57 @@ func TestTViewValueObjectEditSavesSelectedServiceAndAddsNatively(t *testing.T) {
 	}
 	if ui.editOpen {
 		t.Fatalf("expected native value object edit form to close after save")
+	}
+}
+
+func TestTViewValueObjectRulesSavePreservesRowsAndAppliesRules(t *testing.T) {
+	var updated application.ValueObjectSettings
+	ui := newTViewUI(
+		application.GenerationPlan{},
+		application.GenerateRequest{},
+		func(application.GenerateRequest) (application.GenerationPlan, error) {
+			return application.GenerationPlan{}, nil
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		func(_ application.GenerateRequest, settings application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
+			updated = settings
+			return application.UpdateValueObjectSettingsResult{}, nil
+		},
+	)
+	form := tview.NewForm()
+	form.AddCheckbox("Required", true, nil)
+	form.AddInputField("Min length", "3", 32, nil, nil)
+	form.AddInputField("Max length", "80", 32, nil, nil)
+	form.AddInputField("Pattern", "^[A-Z]", 32, nil, nil)
+	form.AddInputField("Valid example", "ABC", 32, nil, nil)
+	form.AddInputField("Invalid example", "abc", 32, nil, nil)
+	form.AddInputField("Minimum", "1", 32, nil, nil)
+	form.AddInputField("Maximum", "99", 32, nil, nil)
+	form.AddCheckbox("Not empty", true, nil)
+	form.AddCheckbox("Not default", false, nil)
+
+	ui.saveValueObjectRulesEdit(&tviewValueObjectRulesEditState{
+		serviceName: "OrderService",
+		valueObject: application.ValueObjectSummary{Name: "OrderNumber", Type: "string"},
+		rows: []tviewManagerRow{
+			{original: "OrderNumber", name: "OrderNumber", typeName: "string"},
+			{original: "Money", name: "Money", typeName: "decimal", validations: application.ValidationRuleSettings{Minimum: stringPtr("0")}},
+		},
+	}, form)
+
+	if updated.ServiceName != "OrderService" || len(updated.ValueObjects) != 2 {
+		t.Fatalf("unexpected value object settings: %+v", updated)
+	}
+	rules := updated.ValueObjects[0].Validations
+	if rules.Required == nil || !*rules.Required || rules.MinLength == nil || *rules.MinLength != 3 || rules.MaxLength == nil || *rules.MaxLength != 80 || rules.Pattern == nil || *rules.Pattern != "^[A-Z]" || rules.ValidExample == nil || *rules.ValidExample != "ABC" || rules.InvalidExample == nil || *rules.InvalidExample != "abc" || rules.Minimum == nil || *rules.Minimum != "1" || rules.Maximum == nil || *rules.Maximum != "99" || rules.NotEmpty == nil || !*rules.NotEmpty || rules.NotDefault == nil || *rules.NotDefault {
+		t.Fatalf("unexpected applied validation rules: %+v", rules)
+	}
+	if updated.ValueObjects[1].Name != "Money" || updated.ValueObjects[1].Validations.Minimum == nil || *updated.ValueObjects[1].Validations.Minimum != "0" {
+		t.Fatalf("expected other value objects to be preserved, got %+v", updated.ValueObjects[1])
 	}
 }
 
