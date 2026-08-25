@@ -340,15 +340,8 @@ func newLegacyModel(plan application.GenerationPlan, request application.Generat
 }
 
 func Run(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, updateServices UpdateServicesFunc, updateEntities UpdateEntitiesFunc, updateFields UpdateFieldsFunc, updateValueObjects UpdateValueObjectsFunc, targetFrameworkSuggestions []string) error {
-	ui := newTViewUI(plan, request, planFunc, generate)
-	if err := runTViewApplication(ui.app, ui.root); err != nil {
-		return err
-	}
-	if !ui.editRequested {
-		return nil
-	}
-	_, err := runTeaProgram(newLegacyModel(ui.plan, request, planFunc, generate, update, updateServices, updateEntities, updateFields, updateValueObjects, targetFrameworkSuggestions), tea.WithAltScreen())
-	return err
+	ui := newTViewUI(plan, request, planFunc, generate, update, updateServices, updateEntities, updateFields, updateValueObjects, targetFrameworkSuggestions)
+	return runTViewApplication(ui.app, ui.root)
 }
 
 func (m Model) Init() tea.Cmd {
@@ -3020,6 +3013,7 @@ func (m Model) saveSettingsCmd() tea.Cmd {
 		SolutionName:        m.edit.name.string(),
 		SolutionDescription: m.edit.description.string(),
 		TargetFramework:     m.edit.targetFramework.string(),
+		SolutionFormat:      m.plan.Config.SolutionFormat,
 		GatewayEnabled:      &gatewayEnabled,
 	}
 	return func() tea.Msg {

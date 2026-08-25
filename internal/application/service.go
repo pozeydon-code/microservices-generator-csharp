@@ -69,6 +69,7 @@ type SolutionSettings struct {
 	SolutionName        string
 	SolutionDescription string
 	TargetFramework     string
+	SolutionFormat      string
 	GatewayEnabled      *bool
 }
 
@@ -352,7 +353,11 @@ func (s Service) UpdateSolutionSettings(request GenerateRequest, settings Soluti
 		targetFramework = settings.TargetFramework
 	}
 	cfg.Generation.TargetFramework = targetFramework
-	cfg.Generation.SolutionFormat = spec.DefaultSolutionFormat(targetFramework)
+	if strings.TrimSpace(settings.SolutionFormat) != "" {
+		cfg.Generation.SolutionFormat = strings.TrimSpace(settings.SolutionFormat)
+	} else {
+		cfg.Generation.SolutionFormat = spec.DefaultSolutionFormat(targetFramework)
+	}
 	if settings.GatewayEnabled != nil {
 		cfg.Generation.Gateway.Enabled = *settings.GatewayEnabled
 	}
