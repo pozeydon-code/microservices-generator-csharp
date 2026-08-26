@@ -610,31 +610,84 @@ func (ui *tviewUI) applyValueObjectsSaveResult(result application.UpdateValueObj
 }
 
 func (ui *tviewUI) openProjectEdit() {
-	form := tview.NewForm()
-	addEditInputField(form, "Solution name", ui.plan.Config.SolutionName)
-	addEditInputField(form, "Description", ui.plan.Config.SolutionDescription)
-	addEditInputField(form, "Target framework", ui.plan.Config.TargetFramework)
-	addEditInputField(form, "Solution format", ui.plan.Config.SolutionFormat)
-	form.AddCheckbox("Gateway enabled", ui.plan.Config.GatewayEnabled, nil)
-	form.AddButton("Save", func() { ui.saveProjectEdit(form) })
-	form.AddButton("Cancel", ui.closeEdit)
-	ui.showEditForm(form, " Edit Project ")
-}
-
-func (ui *tviewUI) saveProjectEdit(form *tview.Form) {
 	if ui.updateSettings == nil {
 		ui.closeEditWithMessage("Project editing is not available.")
 		return
 	}
-	gateway := form.GetFormItem(4).(*tview.Checkbox).IsChecked()
-	result, err := ui.updateSettings(ui.request, application.SolutionSettings{
-		SolutionName:        formInputText(form, 0),
-		SolutionDescription: formInputText(form, 1),
-		TargetFramework:     formInputText(form, 2),
-		SolutionFormat:      formInputText(form, 3),
-		GatewayEnabled:      &gateway,
-	})
-	ui.applyProjectSaveResult(result, err)
+	name := ui.plan.Config.SolutionName
+	description := ui.plan.Config.SolutionDescription
+	targetFramework := ui.plan.Config.TargetFramework
+	solutionFormat := ui.plan.Config.SolutionFormat
+	gatewayEnabled := fmt.Sprintf("%t", ui.plan.Config.GatewayEnabled)
+	type projectField struct {
+		label  string
+		value  *string
+		toggle bool
+	}
+	fields := []projectField{
+		{"Solution name", &name, false},
+		{"Description", &description, false},
+		{"Target framework", &targetFramework, false},
+		{"Solution format", &solutionFormat, false},
+		{"Gateway enabled", &gatewayEnabled, true},
+	}
+	saveSettings := func() {
+		gateway := gatewayEnabled == "true"
+		result, err := ui.updateSettings(ui.request, application.SolutionSettings{
+			SolutionName:        strings.TrimSpace(name),
+			SolutionDescription: strings.TrimSpace(description),
+			TargetFramework:     strings.TrimSpace(targetFramework),
+			SolutionFormat:      strings.TrimSpace(solutionFormat),
+			GatewayEnabled:      &gateway,
+		})
+		ui.applyProjectSaveResult(result, err)
+	}
+	render := func(manager *tview.Table) {
+		for manager.GetRowCount() > 1 {
+			manager.RemoveRow(1)
+		}
+		for index, field := range fields {
+			manager.SetCell(index+1, 0, managerCell(field.label, tcell.StyleDefault.Foreground(tcell.ColorWhite)).SetExpansion(2))
+			manager.SetCell(index+1, 1, managerCell(*field.value, tcell.StyleDefault.Foreground(tcell.ColorWhite)).SetExpansion(3))
+		}
+	}
+	var showManager func()
+	showManager = func() {
+		manager := ui.newManagerTable([]string{"Property", "Value"})
+		render(manager)
+		manager.SetSelectedFunc(func(row, column int) {
+			if row <= 0 || row > len(fields) {
+				return
+			}
+			field := &fields[row-1]
+			if field.toggle {
+				*field.value = fmt.Sprintf("%t", *field.value != "true")
+				render(manager)
+				return
+			}
+			ui.openNameEdit(" Edit "+field.label+" ", *field.value, func(value string) {
+				*field.value = value
+				showManager()
+			}, showManager)
+		})
+		manager.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+			switch event.Key() {
+			case tcell.KeyCtrlS:
+				saveSettings()
+				render(manager)
+				return nil
+			}
+			if moveManagerSelection(manager, len(fields), event) {
+				return nil
+			}
+			return event
+		})
+		ui.showManagerModal(" Project ", nil, nil, manager, managerFooter("Tab focus  Up/Down/j/k move  Enter edit/toggle  ctrl+s save  esc cancel", []managerButton{{"Save", func() {
+			saveSettings()
+			render(manager)
+		}}, {"Cancel", ui.closeEdit}}))
+	}
+	showManager()
 }
 
 func (ui *tviewUI) applyProjectSaveResult(result application.UpdateSolutionSettingsResult, err error) {
@@ -1056,7 +1109,7 @@ func (ui *tviewUI) saveValueObjectRulesEdit(state *tviewValueObjectRulesEditStat
 }
 
 func (ui *tviewUI) showEditForm(form *tview.Form, title string) {
-	ui.modalFocus = nil
+	ui.modalFocus = ui.modalFocus[:0]
 	ui.modalFocusIndex = 0
 	form.SetBorder(false)
 	form.SetFieldTextColor(tcell.ColorWhite).
@@ -1073,7 +1126,7 @@ func (ui *tviewUI) showEditForm(form *tview.Form, title string) {
 	ui.editOpen = true
 	ui.root.RemovePage(tviewEditModalPage)
 	ui.root.AddPage(tviewEditModalPage, modal, true, true)
-	ui.app.SetFocus(panel)
+	ui.app.SetFocus(form)
 }
 
 type managerButton struct {
@@ -1298,11 +1351,15 @@ func (ui *tviewUI) showManagerModal(title string, header tview.Primitive, header
 	ui.app.SetFocus(ui.modalFocus[ui.modalFocusIndex])
 }
 
-func (ui *tviewUI) openNameEdit(title, value string, save func(string)) {
+func (ui *tviewUI) openNameEdit(title, value string, save func(string), cancel ...func()) {
+	cancelFunc := ui.closeEdit
+	if len(cancel) > 0 {
+		cancelFunc = cancel[0]
+	}
 	form := tview.NewForm()
 	addEditInputField(form, "Name", value)
 	form.AddButton("Apply", func() { save(formInputText(form, 0)) })
-	form.AddButton("Cancel", ui.closeEdit)
+	form.AddButton("Cancel", cancelFunc)
 	ui.showEditForm(form, title)
 }
 

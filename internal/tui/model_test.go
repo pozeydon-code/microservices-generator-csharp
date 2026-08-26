@@ -1783,7 +1783,7 @@ func TestTViewGenerateKeyRoutesBeforeGenerating(t *testing.T) {
 }
 
 func TestTViewEditKeyOpensNativeProjectForm(t *testing.T) {
-	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil)
+	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, noopUpdateSettings)
 	ui.open(tviewScreenProject)
 
 	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
@@ -1794,13 +1794,13 @@ func TestTViewEditKeyOpensNativeProjectForm(t *testing.T) {
 	if !ui.root.HasPage(tviewEditModalPage) {
 		t.Fatalf("expected project edit to open as a modal page")
 	}
-	if _, ok := ui.app.GetFocus().(*tview.InputField); !ok {
-		t.Fatalf("expected project edit focus to be inside the tview form, got %T", ui.app.GetFocus())
+	if _, ok := ui.app.GetFocus().(*tview.Table); !ok {
+		t.Fatalf("expected project edit focus to be on the manager table, got %T", ui.app.GetFocus())
 	}
 }
 
 func TestTViewEditModalClosesWithEscape(t *testing.T) {
-	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil)
+	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, noopUpdateSettings)
 	ui.open(tviewScreenProject)
 	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
 
@@ -1834,22 +1834,28 @@ func TestTViewServicesEditOpensModal(t *testing.T) {
 	}
 }
 
-func TestTViewEditModalLetsTabReachFormControls(t *testing.T) {
-	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil)
+func TestTViewEditModalTabsBetweenManagerAndActions(t *testing.T) {
+	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, noopUpdateSettings)
 	ui.open(tviewScreenProject)
 	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
 
 	tab := tcell.NewEventKey(tcell.KeyTAB, 0, tcell.ModNone)
-	if got := ui.handleKey(tab); got != tab {
-		t.Fatalf("expected tab to reach modal form controls")
+	if got := ui.handleKey(tab); got != nil {
+		t.Fatalf("expected tab to cycle modal focus, got %v", got)
+	}
+	if ui.modalFocusIndex != 1 {
+		t.Fatalf("expected tab to move focus to modal actions, got index %d and focus %T", ui.modalFocusIndex, ui.app.GetFocus())
 	}
 	if ui.focus != tviewFocusSidebar {
 		t.Fatalf("expected modal tab to leave outer panel focus unchanged, got %d", ui.focus)
 	}
 
 	backtab := tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModShift)
-	if got := ui.handleKey(backtab); got != backtab {
-		t.Fatalf("expected shift+tab to reach modal form controls")
+	if got := ui.handleKey(backtab); got != nil {
+		t.Fatalf("expected shift+tab to cycle modal focus, got %v", got)
+	}
+	if _, ok := ui.app.GetFocus().(*tview.Table); !ok {
+		t.Fatalf("expected shift+tab to return focus to manager table, got %T", ui.app.GetFocus())
 	}
 }
 
@@ -1869,7 +1875,7 @@ func TestTViewProjectEditSavesAndRefreshesPlan(t *testing.T) {
 	refreshes := 0
 	refreshedPlan := application.GenerationPlan{Config: application.ConfigSummary{SolutionName: "Commerce", SolutionDescription: "Updated", TargetFramework: "net9.0", SolutionFormat: "slnx", GatewayEnabled: true}, FileCount: 3}
 	ui := newTViewUI(
-		application.GenerationPlan{Config: application.ConfigSummary{SolutionName: "Catalog", TargetFramework: "net8.0", SolutionFormat: "sln"}},
+		application.GenerationPlan{Config: application.ConfigSummary{SolutionName: " Commerce ", SolutionDescription: " Updated ", TargetFramework: " net9.0 ", SolutionFormat: " slnx ", GatewayEnabled: true}},
 		application.GenerateRequest{ConfigPath: "microgen.json"},
 		func(application.GenerateRequest) (application.GenerationPlan, error) {
 			refreshes++
@@ -1881,14 +1887,10 @@ func TestTViewProjectEditSavesAndRefreshesPlan(t *testing.T) {
 			return application.UpdateSolutionSettingsResult{Plan: refreshedPlan}, nil
 		},
 	)
-	form := tview.NewForm()
-	form.AddInputField("Solution name", " Commerce ", 40, nil, nil)
-	form.AddInputField("Description", " Updated ", 70, nil, nil)
-	form.AddInputField("Target framework", " net9.0 ", 20, nil, nil)
-	form.AddInputField("Solution format", " slnx ", 20, nil, nil)
-	form.AddCheckbox("Gateway enabled", true, nil)
+	ui.open(tviewScreenProject)
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
 
-	ui.saveProjectEdit(form)
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyCtrlS, 0, tcell.ModNone))
 
 	if updated.SolutionName != "Commerce" || updated.SolutionDescription != "Updated" || updated.TargetFramework != "net9.0" || updated.SolutionFormat != "slnx" {
 		t.Fatalf("unexpected project settings: %+v", updated)
@@ -2016,6 +2018,10 @@ func sendKeyToTViewFocus(ui *tviewUI, event *tcell.EventKey) {
 		return
 	}
 	focus.InputHandler()(event, func(primitive tview.Primitive) { ui.app.SetFocus(primitive) })
+}
+
+func noopUpdateSettings(application.GenerateRequest, application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+	return application.UpdateSolutionSettingsResult{}, nil
 }
 
 func TestTViewEntityEditSavesSelectedServiceEntitiesAndFieldsNatively(t *testing.T) {
@@ -2499,14 +2505,10 @@ func TestTViewGenerateBlocksAfterSaveRefreshFailureUntilSuccessfulRefresh(t *tes
 			return application.UpdateSolutionSettingsResult{Plan: application.GenerationPlan{Config: application.ConfigSummary{SolutionName: "Commerce"}}}, nil
 		},
 	)
-	form := tview.NewForm()
-	form.AddInputField("Solution name", "Commerce", 40, nil, nil)
-	form.AddInputField("Description", "", 70, nil, nil)
-	form.AddInputField("Target framework", "net8.0", 20, nil, nil)
-	form.AddInputField("Solution format", "sln", 20, nil, nil)
-	form.AddCheckbox("Gateway enabled", false, nil)
 
-	ui.saveProjectEdit(form)
+	ui.open(tviewScreenProject)
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyCtrlS, 0, tcell.ModNone))
 	ui.generateFiles()
 
 	if generated != 0 {
