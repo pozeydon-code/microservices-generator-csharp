@@ -1073,7 +1073,7 @@ func (ui *tviewUI) showValueObjectRulesManager(state *tviewValueObjectRulesEditS
 	panel.SetBorderColor(tcell.ColorTeal).SetTitleColor(tcell.ColorLightCyan)
 	modal := centerPrimitive(panel, 76, 28)
 	ui.editOpen = true
-	ui.modalFocus = []tview.Primitive{form}
+	ui.modalFocus = ui.modalFocus[:0]
 	ui.modalFocusIndex = 0
 	ui.root.RemovePage(tviewEditModalPage)
 	ui.root.AddPage(tviewEditModalPage, modal, true, true)

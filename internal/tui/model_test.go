@@ -2309,6 +2309,39 @@ func TestTViewValueObjectRulesSavePreservesNewValueObjectWithUpdatedRules(t *tes
 	}
 }
 
+func TestTViewValueObjectRulesModalLetsFormHandleTab(t *testing.T) {
+	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil, nil, nil, nil, nil)
+
+	ui.showValueObjectRulesManager(&tviewValueObjectRulesEditState{
+		serviceName: "ProductService",
+		valueObject: application.ValueObjectSummary{Name: "ProductName", Type: "string"},
+		validations: application.ValidationRuleSettings{Required: boolPtr(true)},
+		rows:        []tviewManagerRow{{original: "ProductName", name: "ProductName", typeName: "string"}},
+	})
+
+	if !ui.editOpen {
+		t.Fatalf("expected rules modal to open")
+	}
+	if _, ok := ui.app.GetFocus().(*tview.Checkbox); !ok {
+		t.Fatalf("expected rules modal focus to start on the first form control, got %T", ui.app.GetFocus())
+	}
+	if len(ui.modalFocus) != 0 {
+		t.Fatalf("expected rules modal not to register modal focus cycling, got %d entries", len(ui.modalFocus))
+	}
+	tab := tcell.NewEventKey(tcell.KeyTAB, 0, tcell.ModNone)
+	if got := ui.handleKey(tab); got != tab {
+		t.Fatalf("expected tab to reach the rules form, got %v", got)
+	}
+	sendKeyToTViewFocus(ui, tab)
+	if _, ok := ui.app.GetFocus().(*tview.InputField); !ok {
+		t.Fatalf("expected tab to move focus through rules form controls, got %T", ui.app.GetFocus())
+	}
+	backtab := tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModShift)
+	if got := ui.handleKey(backtab); got != backtab {
+		t.Fatalf("expected shift+tab to reach the rules form, got %v", got)
+	}
+}
+
 func TestTViewEditKeyOpensNativeNestedForms(t *testing.T) {
 	var entitySettings application.EntitySettings
 	var valueObjectSettings application.ValueObjectSettings
