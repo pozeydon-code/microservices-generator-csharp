@@ -585,9 +585,35 @@ func tviewValueObjectSettingsFromState(state *tviewValueObjectsEditState) applic
 		if strings.TrimSpace(row.name) == "" || row.deleted {
 			continue
 		}
-		settings.ValueObjects = append(settings.ValueObjects, application.ValueObjectNameSetting{OriginalName: row.original, Name: strings.TrimSpace(row.name), Type: trimmedDefault(row.typeName, "string"), Validations: row.validations})
+		typeName := trimmedDefault(row.typeName, "string")
+		validations := row.validations
+		if row.original == "" && typeName == "string" && emptyValidationRuleSettings(validations) {
+			validations = defaultStringValueObjectValidations()
+		}
+		settings.ValueObjects = append(settings.ValueObjects, application.ValueObjectNameSetting{OriginalName: row.original, Name: strings.TrimSpace(row.name), Type: typeName, Validations: validations})
 	}
 	return settings
+}
+
+func defaultStringValueObjectValidations() application.ValidationRuleSettings {
+	required := true
+	minLength := 1
+	maxLength := 100
+	validExample := "Sample"
+	return application.ValidationRuleSettings{Required: &required, MinLength: &minLength, MaxLength: &maxLength, ValidExample: &validExample}
+}
+
+func emptyValidationRuleSettings(validations application.ValidationRuleSettings) bool {
+	return validations.Required == nil &&
+		validations.MinLength == nil &&
+		validations.MaxLength == nil &&
+		validations.Pattern == nil &&
+		validations.ValidExample == nil &&
+		validations.InvalidExample == nil &&
+		validations.Minimum == nil &&
+		validations.Maximum == nil &&
+		validations.NotEmpty == nil &&
+		validations.NotDefault == nil
 }
 
 func (ui *tviewUI) applyValueObjectsSaveResult(result application.UpdateValueObjectSettingsResult, err error) {

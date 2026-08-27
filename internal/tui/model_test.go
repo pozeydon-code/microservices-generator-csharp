@@ -2194,13 +2194,18 @@ func TestTViewValueObjectEditSavesSelectedServiceAndAddsNatively(t *testing.T) {
 	ui.saveValueObjectsEdit(&tviewValueObjectsEditState{serviceName: "OrderService", rows: []tviewManagerRow{
 		{original: "OrderNumber", name: " PurchaseNumber ", typeName: " string "},
 		{name: " Money ", typeName: " decimal "},
+		{name: " Code ", typeName: " string "},
 	}})
 
 	if updated.ServiceName != "OrderService" {
 		t.Fatalf("unexpected value object settings: %+v", updated)
 	}
-	if len(updated.ValueObjects) != 2 || updated.ValueObjects[0].OriginalName != "OrderNumber" || updated.ValueObjects[0].Name != "PurchaseNumber" || updated.ValueObjects[0].Type != "string" || updated.ValueObjects[1].Name != "Money" || updated.ValueObjects[1].Type != "decimal" {
+	if len(updated.ValueObjects) != 3 || updated.ValueObjects[0].OriginalName != "OrderNumber" || updated.ValueObjects[0].Name != "PurchaseNumber" || updated.ValueObjects[0].Type != "string" || updated.ValueObjects[1].Name != "Money" || updated.ValueObjects[1].Type != "decimal" || updated.ValueObjects[2].Name != "Code" || updated.ValueObjects[2].Type != "string" {
 		t.Fatalf("unexpected value object settings: %+v", updated)
+	}
+	rules := updated.ValueObjects[2].Validations
+	if rules.Required == nil || !*rules.Required || rules.MinLength == nil || *rules.MinLength != 1 || rules.MaxLength == nil || *rules.MaxLength != 100 || rules.ValidExample == nil || *rules.ValidExample != "Sample" {
+		t.Fatalf("expected native new value object defaults, got %+v", rules)
 	}
 	if ui.editOpen {
 		t.Fatalf("expected native value object edit form to close after save")
