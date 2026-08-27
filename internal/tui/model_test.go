@@ -9,7 +9,10 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/gdamore/tcell/v2"
 	"github.com/pozeydon-code/microservices-generator-csharp/internal/application"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/spec"
+	"github.com/rivo/tview"
 )
 
 var ansiRegexp = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -1701,20 +1704,982 @@ func TestWizardValueObjectsAndReviewViewsStaySingleColumn(t *testing.T) {
 	assertNotContains(t, view, "Navigation")
 }
 
-func TestRunUsesFullscreenProgramOption(t *testing.T) {
-	original := runTeaProgram
-	t.Cleanup(func() { runTeaProgram = original })
-	optionCount := 0
-	runTeaProgram = func(model tea.Model, options ...tea.ProgramOption) (tea.Model, error) {
-		optionCount = len(options)
-		return model, nil
+func TestRunUsesTViewApplication(t *testing.T) {
+	original := runTViewApplication
+	t.Cleanup(func() { runTViewApplication = original })
+	called := false
+	runTViewApplication = func(app *tview.Application, root tview.Primitive) error {
+		called = app != nil && root != nil
+		return nil
 	}
 
 	if err := Run(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil, nil, nil, nil, nil, nil); err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
-	if optionCount != 1 {
-		t.Fatalf("expected one fullscreen program option, got %d", optionCount)
+	if !called {
+		t.Fatalf("expected Run to start a tview application")
+	}
+}
+
+func TestNewTViewUIWiresNativeEditCallbacks(t *testing.T) {
+	updateSettings := func(application.GenerateRequest, application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+		return application.UpdateSolutionSettingsResult{}, nil
+	}
+	updateServices := func(application.GenerateRequest, application.ServiceSettings) (application.UpdateServiceSettingsResult, error) {
+		return application.UpdateServiceSettingsResult{}, nil
+	}
+	updateEntities := func(application.GenerateRequest, application.EntitySettings) (application.UpdateEntitySettingsResult, error) {
+		return application.UpdateEntitySettingsResult{}, nil
+	}
+	updateFields := func(application.GenerateRequest, application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+		return application.UpdateFieldSettingsResult{}, nil
+	}
+	updateValueObjects := func(application.GenerateRequest, application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
+		return application.UpdateValueObjectSettingsResult{}, nil
+	}
+
+	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, updateSettings, updateServices, updateEntities, updateFields, updateValueObjects, []string{"net10.0"})
+
+	if ui.updateSettings == nil || ui.updateServices == nil || ui.updateEntities == nil || ui.updateFields == nil || ui.updateValueObjects == nil {
+		t.Fatalf("expected all native tview edit callbacks to be wired")
+	}
+	if len(ui.targetFrameworkSuggestions) != 1 || ui.targetFrameworkSuggestions[0] != "net10.0" {
+		t.Fatalf("expected target framework suggestions to remain wired, got %v", ui.targetFrameworkSuggestions)
+	}
+}
+
+func TestTViewGenerateHonorsForceLock(t *testing.T) {
+	ui := newTViewUI(application.GenerationPlan{ForceRequired: true}, application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
+		t.Fatalf("generate should not run while force is required")
+		return application.GenerateResult{}, nil
+	})
+
+	ui.generateFiles()
+
+	if ui.screen != tviewScreenGenerate {
+		t.Fatalf("expected generate screen, got %d", ui.screen)
+	}
+	if !strings.Contains(ui.message, "Generation is locked") {
+		t.Fatalf("expected force lock message, got %q", ui.message)
+	}
+}
+
+func TestTViewGenerateKeyRoutesBeforeGenerating(t *testing.T) {
+	generated := 0
+	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
+		generated++
+		return application.GenerateResult{Plan: application.GenerationPlan{FileCount: 1}, OutputDir: "out"}, nil
+	})
+
+	ui.open(tviewScreenProject)
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'g', tcell.ModNone))
+	if generated != 0 || ui.screen != tviewScreenGenerate {
+		t.Fatalf("expected first g to route to Generate without generating, generated=%d screen=%d", generated, ui.screen)
+	}
+
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'g', tcell.ModNone))
+	if generated != 1 || ui.screen != tviewScreenResult {
+		t.Fatalf("expected second g to generate and show Result, generated=%d screen=%d", generated, ui.screen)
+	}
+}
+
+func TestTViewEditKeyOpensNativeProjectForm(t *testing.T) {
+	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, noopUpdateSettings)
+	ui.open(tviewScreenProject)
+
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
+
+	if !ui.editOpen {
+		t.Fatalf("expected edit key to open native tview editing")
+	}
+	if !ui.root.HasPage(tviewEditModalPage) {
+		t.Fatalf("expected project edit to open as a modal page")
+	}
+	if _, ok := ui.app.GetFocus().(*tview.Table); !ok {
+		t.Fatalf("expected project edit focus to be on the manager table, got %T", ui.app.GetFocus())
+	}
+}
+
+func TestTViewEditModalClosesWithEscape(t *testing.T) {
+	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, noopUpdateSettings)
+	ui.open(tviewScreenProject)
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
+
+	ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+
+	if ui.editOpen {
+		t.Fatalf("expected escape to close edit modal")
+	}
+	if ui.root.HasPage(tviewEditModalPage) {
+		t.Fatalf("expected edit modal page to be removed")
+	}
+	if ui.app.GetFocus() != ui.sidebar {
+		t.Fatalf("expected focus to return to dashboard, got %T", ui.app.GetFocus())
+	}
+}
+
+func TestTViewServicesEditOpensModal(t *testing.T) {
+	ui := newTViewUI(application.GenerationPlan{Config: application.ConfigSummary{ServiceNames: []string{"ProductService"}}}, application.GenerateRequest{}, nil, nil)
+	ui.open(tviewScreenServices)
+
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
+
+	if !ui.editOpen {
+		t.Fatalf("expected services edit to stay in tview")
+	}
+	if !ui.root.HasPage(tviewEditModalPage) {
+		t.Fatalf("expected services edit to open as a modal page")
+	}
+	if _, ok := ui.app.GetFocus().(*tview.Table); !ok {
+		t.Fatalf("expected services edit focus to be inside a table manager, got %T", ui.app.GetFocus())
+	}
+}
+
+func TestTViewEditModalTabsBetweenManagerAndActions(t *testing.T) {
+	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, noopUpdateSettings)
+	ui.open(tviewScreenProject)
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
+
+	tab := tcell.NewEventKey(tcell.KeyTAB, 0, tcell.ModNone)
+	if got := ui.handleKey(tab); got != nil {
+		t.Fatalf("expected tab to cycle modal focus, got %v", got)
+	}
+	if ui.modalFocusIndex != 1 {
+		t.Fatalf("expected tab to move focus to modal actions, got index %d and focus %T", ui.modalFocusIndex, ui.app.GetFocus())
+	}
+	if ui.focus != tviewFocusSidebar {
+		t.Fatalf("expected modal tab to leave outer panel focus unchanged, got %d", ui.focus)
+	}
+
+	backtab := tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModShift)
+	if got := ui.handleKey(backtab); got != nil {
+		t.Fatalf("expected shift+tab to cycle modal focus, got %v", got)
+	}
+	if _, ok := ui.app.GetFocus().(*tview.Table); !ok {
+		t.Fatalf("expected shift+tab to return focus to manager table, got %T", ui.app.GetFocus())
+	}
+}
+
+func TestTViewEditInputFieldsUseCompactModalWidth(t *testing.T) {
+	form := tview.NewForm()
+
+	addEditInputField(form, "Description", "A longer project description")
+
+	field := form.GetFormItem(0).(*tview.InputField)
+	if field.GetFieldWidth() != tviewEditModalInputWidth {
+		t.Fatalf("expected compact modal input width %d, got %d", tviewEditModalInputWidth, field.GetFieldWidth())
+	}
+}
+
+func TestTViewProjectEditSavesAndRefreshesPlan(t *testing.T) {
+	updated := application.SolutionSettings{}
+	refreshes := 0
+	refreshedPlan := application.GenerationPlan{Config: application.ConfigSummary{SolutionName: "Commerce", SolutionDescription: "Updated", TargetFramework: "net9.0", SolutionFormat: "slnx", GatewayEnabled: true}, FileCount: 3}
+	ui := newTViewUI(
+		application.GenerationPlan{Config: application.ConfigSummary{SolutionName: " Commerce ", SolutionDescription: " Updated ", TargetFramework: " net9.0 ", SolutionFormat: " slnx ", GatewayEnabled: true}},
+		application.GenerateRequest{ConfigPath: "microgen.json"},
+		func(application.GenerateRequest) (application.GenerationPlan, error) {
+			refreshes++
+			return refreshedPlan, nil
+		},
+		nil,
+		func(_ application.GenerateRequest, settings application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+			updated = settings
+			return application.UpdateSolutionSettingsResult{Plan: refreshedPlan}, nil
+		},
+	)
+	ui.open(tviewScreenProject)
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
+
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyCtrlS, 0, tcell.ModNone))
+
+	if updated.SolutionName != "Commerce" || updated.SolutionDescription != "Updated" || updated.TargetFramework != "net9.0" || updated.SolutionFormat != "slnx" {
+		t.Fatalf("unexpected project settings: %+v", updated)
+	}
+	if updated.GatewayEnabled == nil || !*updated.GatewayEnabled {
+		t.Fatalf("expected gateway setting to be saved, got %+v", updated.GatewayEnabled)
+	}
+	if refreshes != 1 {
+		t.Fatalf("expected plan refresh after save, got %d", refreshes)
+	}
+	if ui.plan.Config.SolutionName != "Commerce" || ui.plan.FileCount != 3 {
+		t.Fatalf("expected refreshed plan to be shown, got %+v", ui.plan)
+	}
+	if ui.editOpen {
+		t.Fatalf("expected edit form to close after save")
+	}
+}
+
+func TestTViewServicesEditSavesRenamesAndRefreshesPlan(t *testing.T) {
+	var updated application.ServiceSettings
+	refreshedPlan := application.GenerationPlan{Config: application.ConfigSummary{SolutionName: "Commerce", ServiceNames: []string{"CatalogService", "ShippingService"}, ServiceCount: 2}, FileCount: 4}
+	ui := newTViewUI(
+		application.GenerationPlan{Config: application.ConfigSummary{SolutionName: "Commerce", ServiceNames: []string{"ProductService", "OrderService"}, ServiceCount: 2}},
+		application.GenerateRequest{},
+		func(application.GenerateRequest) (application.GenerationPlan, error) { return refreshedPlan, nil },
+		nil,
+		nil,
+		func(_ application.GenerateRequest, settings application.ServiceSettings) (application.UpdateServiceSettingsResult, error) {
+			updated = settings
+			return application.UpdateServiceSettingsResult{Plan: refreshedPlan}, nil
+		},
+	)
+	state := &tviewServicesEditState{rows: []tviewManagerRow{
+		{original: "ProductService", name: " CatalogService "},
+		{original: "OrderService", name: " OrderService ", deleted: true},
+		{name: " ShippingService "},
+	}}
+
+	ui.saveServicesEdit(state)
+
+	if len(updated.Services) != 2 {
+		t.Fatalf("expected two service settings, got %+v", updated.Services)
+	}
+	if updated.Services[0] != (application.ServiceNameSetting{OriginalName: "ProductService", Name: "CatalogService"}) {
+		t.Fatalf("unexpected first service setting: %+v", updated.Services[0])
+	}
+	if updated.Services[1] != (application.ServiceNameSetting{Name: "ShippingService"}) {
+		t.Fatalf("unexpected second service setting: %+v", updated.Services[1])
+	}
+	if ui.plan.Config.ServiceNames[0] != "CatalogService" || ui.plan.FileCount != 4 {
+		t.Fatalf("expected refreshed service plan, got %+v", ui.plan)
+	}
+}
+
+func TestTViewServicesManagerSavesMultipleNewServices(t *testing.T) {
+	var updated application.ServiceSettings
+	ui := newTViewUI(
+		application.GenerationPlan{Config: application.ConfigSummary{ServiceNames: []string{"ProductService"}}},
+		application.GenerateRequest{},
+		func(application.GenerateRequest) (application.GenerationPlan, error) {
+			return application.GenerationPlan{}, nil
+		},
+		nil,
+		nil,
+		func(_ application.GenerateRequest, settings application.ServiceSettings) (application.UpdateServiceSettingsResult, error) {
+			updated = settings
+			return application.UpdateServiceSettingsResult{}, nil
+		},
+	)
+
+	ui.saveServicesEdit(&tviewServicesEditState{rows: []tviewManagerRow{
+		{original: "ProductService", name: "ProductService"},
+		{name: "OrderService"},
+		{name: "ShippingService"},
+	}})
+
+	if len(updated.Services) != 3 {
+		t.Fatalf("expected all service rows to be submitted before closing, got %+v", updated.Services)
+	}
+	if updated.Services[1] != (application.ServiceNameSetting{Name: "OrderService"}) || updated.Services[2] != (application.ServiceNameSetting{Name: "ShippingService"}) {
+		t.Fatalf("unexpected new service settings: %+v", updated.Services)
+	}
+}
+
+func TestTViewServicesManagerKeepsActionsInTableAndFooterSticky(t *testing.T) {
+	plan := application.GenerationPlan{Config: application.ConfigSummary{ServiceNames: []string{"ProductService", "OrderService", "ShippingService", "BillingService", "CatalogService", "IdentityService"}}}
+	ui := newTViewUI(plan, application.GenerateRequest{}, nil, nil)
+
+	ui.openServicesEdit()
+
+	manager, ok := ui.app.GetFocus().(*tview.Table)
+	if !ok {
+		t.Fatalf("expected services manager table focus, got %T", ui.app.GetFocus())
+	}
+	if got := manager.GetCell(0, 1).Text; got != "Actions" {
+		t.Fatalf("expected right-side actions column, got %q", got)
+	}
+	if got := manager.GetCell(1, 1).Text; got != "Delete" {
+		t.Fatalf("expected delete action in the row action column, got %q", got)
+	}
+}
+
+func TestTViewManagerRowsUseReadableSelectedStyles(t *testing.T) {
+	manager := tview.NewTable().SetSelectable(true, true).SetFixed(1, 0)
+	manager.SetCell(0, 0, tview.NewTableCell("Name"))
+	manager.SetCell(0, 1, tview.NewTableCell("Actions"))
+	renderManagerRows(manager, []tviewManagerRow{{name: "Product"}}, false, "")
+
+	for _, cell := range []*tview.TableCell{manager.GetCell(1, 0), manager.GetCell(1, 1)} {
+		selectedForeground, selectedBackground, _ := cell.SelectedStyle.Decompose()
+		if selectedForeground != tcell.ColorWhite || selectedBackground != tcell.ColorTeal {
+			t.Fatalf("expected selected row cell to be readable white on teal, got fg=%v bg=%v", selectedForeground, selectedBackground)
+		}
+	}
+
+	foreground, _, _ := manager.GetCell(1, 1).Style.Decompose()
+	if foreground != tcell.ColorYellow {
+		t.Fatalf("expected non-selected action text to stay yellow, got %v", foreground)
+	}
+}
+
+func sendKeyToTViewFocus(ui *tviewUI, event *tcell.EventKey) {
+	focus := ui.app.GetFocus()
+	if focus == nil || focus.InputHandler() == nil {
+		return
+	}
+	focus.InputHandler()(event, func(primitive tview.Primitive) { ui.app.SetFocus(primitive) })
+}
+
+func noopUpdateSettings(application.GenerateRequest, application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+	return application.UpdateSolutionSettingsResult{}, nil
+}
+
+func TestTViewEntityEditSavesSelectedServiceEntitiesAndFieldsNatively(t *testing.T) {
+	var entitySettings application.EntitySettings
+	var fieldSettings application.FieldSettings
+	ui := newTViewUI(
+		application.GenerationPlan{Config: application.ConfigSummary{Services: []application.ServiceSummary{
+			{Name: "ProductService", Entities: []application.EntitySummary{{Name: "Product", Fields: []application.FieldSummary{{Name: "Name", Type: "string"}}}}},
+			{Name: "OrderService", Entities: []application.EntitySummary{{Name: "Order", Fields: []application.FieldSummary{{Name: "Total", Type: "decimal"}}}}},
+		}}},
+		application.GenerateRequest{},
+		func(application.GenerateRequest) (application.GenerationPlan, error) {
+			return application.GenerationPlan{FileCount: 2}, nil
+		},
+		nil,
+		nil,
+		nil,
+		func(_ application.GenerateRequest, settings application.EntitySettings) (application.UpdateEntitySettingsResult, error) {
+			entitySettings = settings
+			return application.UpdateEntitySettingsResult{Plan: application.GenerationPlan{FileCount: 1}}, nil
+		},
+		func(_ application.GenerateRequest, settings application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+			fieldSettings = settings
+			return application.UpdateFieldSettingsResult{Plan: application.GenerationPlan{FileCount: 2}}, nil
+		},
+	)
+	ui.saveEntitiesEdit(&tviewEntitiesEditState{serviceName: "OrderService", rows: []tviewManagerRow{
+		{original: "Order", name: " PurchaseOrder "},
+		{name: " Invoice "},
+	}})
+	ui.saveFieldsEdit(&tviewFieldsEditState{serviceName: "OrderService", entityName: "PurchaseOrder", rows: []tviewManagerRow{
+		{original: "Total", name: " Amount ", typeName: " Money "},
+		{name: " Currency ", typeName: " string "},
+	}})
+
+	if entitySettings.ServiceName != "OrderService" {
+		t.Fatalf("unexpected entity settings: %+v", entitySettings)
+	}
+	if len(entitySettings.Entities) != 2 || entitySettings.Entities[0] != (application.EntityNameSetting{OriginalName: "Order", Name: "PurchaseOrder"}) || entitySettings.Entities[1] != (application.EntityNameSetting{Name: "Invoice"}) {
+		t.Fatalf("unexpected entity settings: %+v", entitySettings)
+	}
+	if fieldSettings.ServiceName != "OrderService" || fieldSettings.EntityName != "PurchaseOrder" {
+		t.Fatalf("unexpected field settings: %+v", fieldSettings)
+	}
+	if len(fieldSettings.Fields) != 2 || fieldSettings.Fields[0] != (application.FieldSetting{OriginalName: "Total", Name: "Amount", Type: "Money"}) || fieldSettings.Fields[1] != (application.FieldSetting{Name: "Currency", Type: "string"}) {
+		t.Fatalf("unexpected field settings: %+v", fieldSettings)
+	}
+	if ui.editOpen {
+		t.Fatalf("expected native entity edit form to close after save")
+	}
+}
+
+func TestTViewEntityManagerDoesNotSaveFieldsInline(t *testing.T) {
+	fieldCalls := 0
+	entityCalls := 0
+	ui := newTViewUI(
+		application.GenerationPlan{Config: application.ConfigSummary{Services: []application.ServiceSummary{{Name: "OrderService", Entities: []application.EntitySummary{{Name: "Order", Fields: []application.FieldSummary{{Name: "Total", Type: "decimal"}}}}}}}},
+		application.GenerateRequest{},
+		func(application.GenerateRequest) (application.GenerationPlan, error) {
+			return application.GenerationPlan{}, nil
+		},
+		nil,
+		nil,
+		nil,
+		func(application.GenerateRequest, application.EntitySettings) (application.UpdateEntitySettingsResult, error) {
+			entityCalls++
+			return application.UpdateEntitySettingsResult{}, nil
+		},
+		func(application.GenerateRequest, application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+			fieldCalls++
+			return application.UpdateFieldSettingsResult{}, nil
+		},
+	)
+
+	ui.saveEntitiesEdit(&tviewEntitiesEditState{serviceName: "OrderService", rows: []tviewManagerRow{{original: "Order", name: "PurchaseOrder"}}})
+
+	if entityCalls != 1 || fieldCalls != 0 {
+		t.Fatalf("expected entities save to be separate from fields save, entityCalls=%d fieldCalls=%d", entityCalls, fieldCalls)
+	}
+}
+
+func TestTViewFieldsManagerSavesFieldPayloadSeparately(t *testing.T) {
+	var updated application.FieldSettings
+	ui := newTViewUI(
+		application.GenerationPlan{},
+		application.GenerateRequest{},
+		func(application.GenerateRequest) (application.GenerationPlan, error) {
+			return application.GenerationPlan{}, nil
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		func(_ application.GenerateRequest, settings application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+			updated = settings
+			return application.UpdateFieldSettingsResult{}, nil
+		},
+	)
+
+	ui.saveFieldsEdit(&tviewFieldsEditState{serviceName: "OrderService", entityName: "Order", rows: []tviewManagerRow{
+		{original: "Total", name: "Amount", typeName: "Money"},
+		{name: "Currency", typeName: "string"},
+	}})
+
+	if updated.ServiceName != "OrderService" || updated.EntityName != "Order" {
+		t.Fatalf("unexpected field context: %+v", updated)
+	}
+	if len(updated.Fields) != 2 || updated.Fields[0] != (application.FieldSetting{OriginalName: "Total", Name: "Amount", Type: "Money"}) || updated.Fields[1] != (application.FieldSetting{Name: "Currency", Type: "string"}) {
+		t.Fatalf("unexpected field payload: %+v", updated.Fields)
+	}
+}
+
+func TestTViewEntityEditBlocksGenerationWhenFieldSaveFailsAfterEntitySave(t *testing.T) {
+	generated := 0
+	ui := newTViewUI(
+		application.GenerationPlan{Config: application.ConfigSummary{Services: []application.ServiceSummary{
+			{Name: "OrderService", Entities: []application.EntitySummary{{Name: "Order", Fields: []application.FieldSummary{{Name: "Total", Type: "decimal"}}}}},
+		}}},
+		application.GenerateRequest{},
+		nil,
+		func(application.GenerateRequest) (application.GenerateResult, error) {
+			generated++
+			return application.GenerateResult{Plan: application.GenerationPlan{FileCount: 1}, OutputDir: "out"}, nil
+		},
+		nil,
+		nil,
+		func(application.GenerateRequest, application.EntitySettings) (application.UpdateEntitySettingsResult, error) {
+			return application.UpdateEntitySettingsResult{Plan: application.GenerationPlan{FileCount: 1}}, nil
+		},
+		func(application.GenerateRequest, application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+			return application.UpdateFieldSettingsResult{}, errors.New("field save failed")
+		},
+	)
+	ui.saveEntitiesEdit(&tviewEntitiesEditState{serviceName: "OrderService", rows: []tviewManagerRow{{original: "Order", name: "Order"}}})
+	ui.saveFieldsEdit(&tviewFieldsEditState{serviceName: "OrderService", entityName: "Order", rows: []tviewManagerRow{{original: "Total", name: "Total", typeName: "decimal"}}})
+	ui.generateFiles()
+
+	if !ui.planStale {
+		t.Fatalf("expected partial entity save to mark plan stale")
+	}
+	if generated != 0 {
+		t.Fatalf("expected stale partial save to block generation, got %d", generated)
+	}
+	if !strings.Contains(ui.message, "blocked until the plan refreshes successfully") {
+		t.Fatalf("expected stale generation block message, got %q", ui.message)
+	}
+}
+
+func TestTViewValueObjectEditSavesSelectedServiceAndAddsNatively(t *testing.T) {
+	var updated application.ValueObjectSettings
+	ui := newTViewUI(
+		application.GenerationPlan{Config: application.ConfigSummary{Services: []application.ServiceSummary{
+			{Name: "ProductService", ValueObjects: []application.ValueObjectSummary{{Name: "ProductName", Type: "string"}}},
+			{Name: "OrderService", ValueObjects: []application.ValueObjectSummary{{Name: "OrderNumber", Type: "string"}}},
+		}}},
+		application.GenerateRequest{},
+		func(application.GenerateRequest) (application.GenerationPlan, error) {
+			return application.GenerationPlan{FileCount: 2}, nil
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		func(_ application.GenerateRequest, settings application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
+			updated = settings
+			return application.UpdateValueObjectSettingsResult{Plan: application.GenerationPlan{FileCount: 2}}, nil
+		},
+	)
+	ui.saveValueObjectsEdit(&tviewValueObjectsEditState{serviceName: "OrderService", rows: []tviewManagerRow{
+		{original: "OrderNumber", name: " PurchaseNumber ", typeName: " string "},
+		{name: " Money ", typeName: " decimal "},
+		{name: " Code ", typeName: " string "},
+	}})
+
+	if updated.ServiceName != "OrderService" {
+		t.Fatalf("unexpected value object settings: %+v", updated)
+	}
+	if len(updated.ValueObjects) != 3 || updated.ValueObjects[0].OriginalName != "OrderNumber" || updated.ValueObjects[0].Name != "PurchaseNumber" || updated.ValueObjects[0].Type != "string" || updated.ValueObjects[1].Name != "Money" || updated.ValueObjects[1].Type != "decimal" || updated.ValueObjects[2].Name != "Code" || updated.ValueObjects[2].Type != "string" {
+		t.Fatalf("unexpected value object settings: %+v", updated)
+	}
+	rules := updated.ValueObjects[2].Validations
+	if rules.Required == nil || !*rules.Required || rules.MinLength == nil || *rules.MinLength != 1 || rules.MaxLength == nil || *rules.MaxLength != 100 || rules.ValidExample == nil || *rules.ValidExample != "Sample" {
+		t.Fatalf("expected native new value object defaults, got %+v", rules)
+	}
+	if ui.editOpen {
+		t.Fatalf("expected native value object edit form to close after save")
+	}
+}
+
+func TestTViewValueObjectRulesSavePreservesRowsAndAppliesRules(t *testing.T) {
+	var updated application.ValueObjectSettings
+	ui := newTViewUI(
+		application.GenerationPlan{},
+		application.GenerateRequest{},
+		func(application.GenerateRequest) (application.GenerationPlan, error) {
+			return application.GenerationPlan{}, nil
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		func(_ application.GenerateRequest, settings application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
+			updated = settings
+			return application.UpdateValueObjectSettingsResult{}, nil
+		},
+	)
+	form := tview.NewForm()
+	form.AddCheckbox("Required", true, nil)
+	form.AddInputField("Min length", "3", 32, nil, nil)
+	form.AddInputField("Max length", "80", 32, nil, nil)
+	form.AddInputField("Pattern", "^[A-Z]", 32, nil, nil)
+	form.AddInputField("Valid example", "ABC", 32, nil, nil)
+	form.AddInputField("Invalid example", "abc", 32, nil, nil)
+	form.AddInputField("Minimum", "1", 32, nil, nil)
+	form.AddInputField("Maximum", "99", 32, nil, nil)
+	form.AddCheckbox("Not empty", true, nil)
+	form.AddCheckbox("Not default", false, nil)
+
+	ui.saveValueObjectRulesEdit(&tviewValueObjectRulesEditState{
+		serviceName: "OrderService",
+		valueObject: application.ValueObjectSummary{Name: "OrderNumber", Type: "string"},
+		rows: []tviewManagerRow{
+			{original: "OrderNumber", name: "OrderNumber", typeName: "string"},
+			{original: "Money", name: "Money", typeName: "decimal", validations: application.ValidationRuleSettings{Minimum: stringPtr("0")}},
+		},
+	}, form)
+
+	if updated.ServiceName != "OrderService" || len(updated.ValueObjects) != 2 {
+		t.Fatalf("unexpected value object settings: %+v", updated)
+	}
+	rules := updated.ValueObjects[0].Validations
+	if rules.Required == nil || !*rules.Required || rules.MinLength == nil || *rules.MinLength != 3 || rules.MaxLength == nil || *rules.MaxLength != 80 || rules.Pattern == nil || *rules.Pattern != "^[A-Z]" || rules.ValidExample == nil || *rules.ValidExample != "ABC" || rules.InvalidExample == nil || *rules.InvalidExample != "abc" {
+		t.Fatalf("unexpected applied validation rules: %+v", rules)
+	}
+	if rules.Minimum != nil || rules.Maximum != nil || rules.NotEmpty != nil || rules.NotDefault != nil {
+		t.Fatalf("expected non-applicable string rules to be omitted, got %+v", rules)
+	}
+	if updated.ValueObjects[1].Name != "Money" || updated.ValueObjects[1].Validations.Minimum == nil || *updated.ValueObjects[1].Validations.Minimum != "0" {
+		t.Fatalf("expected other value objects to be preserved, got %+v", updated.ValueObjects[1])
+	}
+}
+
+func TestTViewValueObjectRulesSaveOmitsNonApplicableFalseRulesThroughApplicationUpdate(t *testing.T) {
+	var captured application.ValueObjectSettings
+	var saved spec.Config
+	cfg := spec.Config{
+		SchemaVersion: spec.ConfigSchemaVersion,
+		Generation: spec.GenerationOptions{
+			TargetFramework: spec.DefaultTargetFramework,
+			SolutionFormat:  spec.DefaultSolutionFormat(spec.DefaultTargetFramework),
+		},
+		Solution: spec.Solution{Name: "CommercePlatform", Description: "Product management."},
+		Services: []spec.Service{{
+			Name:         "ProductService",
+			ValueObjects: []spec.ValueObject{{Name: "ProductName", Type: "string"}},
+			Entities:     []spec.Entity{{Name: "Product", Fields: []spec.Field{{Name: "Id", Type: "Guid"}}}},
+		}},
+	}
+	service := application.NewService(application.Ports{
+		ConfigLoader: tuiConfigLoaderFunc(func(string) (spec.Config, error) { return cfg, nil }),
+		ConfigSaver: tuiConfigSaverFunc(func(_ string, cfg spec.Config) error {
+			saved = cfg
+			return nil
+		}),
+		Generator: tuiGeneratorFunc(func(spec.Config) ([]application.GeneratedFile, error) { return nil, nil }),
+		OutputPlanner: tuiOutputPlannerFunc(func(string, []application.GeneratedFile, bool) (application.OutputPlan, error) {
+			return application.OutputPlan{}, nil
+		}),
+	})
+	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{ConfigPath: "microgen.json"}, nil, nil, nil, nil, nil, nil, func(request application.GenerateRequest, settings application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
+		captured = settings
+		return service.UpdateValueObjectSettings(request, settings)
+	})
+	form := tview.NewForm()
+	form.AddCheckbox("Required", false, nil)
+	form.AddInputField("Min length", "3", 32, nil, nil)
+	form.AddInputField("Max length", "80", 32, nil, nil)
+	form.AddInputField("Pattern", "", 32, nil, nil)
+	form.AddInputField("Valid example", "Sample", 32, nil, nil)
+	form.AddInputField("Invalid example", "", 32, nil, nil)
+	form.AddInputField("Minimum", "1", 32, nil, nil)
+	form.AddInputField("Maximum", "99", 32, nil, nil)
+	form.AddCheckbox("Not empty", false, nil)
+	form.AddCheckbox("Not default", false, nil)
+
+	ui.saveValueObjectRulesEdit(&tviewValueObjectRulesEditState{
+		serviceName: "ProductService",
+		valueObject: application.ValueObjectSummary{Name: "ProductName", Type: "string"},
+		rows:        []tviewManagerRow{{original: "ProductName", name: "ProductName", typeName: "string"}},
+	}, form)
+
+	if ui.err != nil {
+		t.Fatalf("expected application update to accept string rules, got %v", ui.err)
+	}
+	rules := captured.ValueObjects[0].Validations
+	if rules.MinLength == nil || *rules.MinLength != 3 || rules.MaxLength == nil || *rules.MaxLength != 80 || rules.ValidExample == nil || *rules.ValidExample != "Sample" {
+		t.Fatalf("unexpected captured string rules: %+v", rules)
+	}
+	if rules.Required != nil || rules.Minimum != nil || rules.Maximum != nil || rules.NotEmpty != nil || rules.NotDefault != nil {
+		t.Fatalf("expected non-applicable false rules to be omitted from captured settings, got %+v", rules)
+	}
+	savedRules := saved.Services[0].ValueObjects[0].Validations
+	if savedRules.MinLength == nil || *savedRules.MinLength != 3 || savedRules.MaxLength == nil || *savedRules.MaxLength != 80 || savedRules.ValidExample == nil || *savedRules.ValidExample != "Sample" {
+		t.Fatalf("unexpected saved string rules: %+v", savedRules)
+	}
+	if savedRules.Required != nil || savedRules.Minimum != nil || savedRules.Maximum != nil || savedRules.NotEmpty != nil || savedRules.NotDefault != nil {
+		t.Fatalf("expected non-applicable false rules to be omitted from saved config, got %+v", savedRules)
+	}
+}
+
+func TestTViewValueObjectRulesSavePreservesNewValueObjectWithUpdatedRules(t *testing.T) {
+	var updated application.ValueObjectSettings
+	ui := newTViewUI(
+		application.GenerationPlan{},
+		application.GenerateRequest{},
+		func(application.GenerateRequest) (application.GenerationPlan, error) {
+			return application.GenerationPlan{}, nil
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		func(_ application.GenerateRequest, settings application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
+			updated = settings
+			return application.UpdateValueObjectSettingsResult{}, nil
+		},
+	)
+	form := tview.NewForm()
+	form.AddCheckbox("Required", true, nil)
+	form.AddInputField("Min length", "2", 32, nil, nil)
+	form.AddInputField("Max length", "", 32, nil, nil)
+	form.AddInputField("Pattern", "", 32, nil, nil)
+	form.AddInputField("Valid example", "OK", 32, nil, nil)
+	form.AddInputField("Invalid example", "", 32, nil, nil)
+	form.AddInputField("Minimum", "", 32, nil, nil)
+	form.AddInputField("Maximum", "", 32, nil, nil)
+	form.AddCheckbox("Not empty", true, nil)
+	form.AddCheckbox("Not default", false, nil)
+
+	ui.saveValueObjectRulesEdit(&tviewValueObjectRulesEditState{
+		serviceName: "OrderService",
+		valueObject: application.ValueObjectSummary{Name: "NewValueObject2", Type: "Guid"},
+		rows: []tviewManagerRow{
+			{original: "OrderNumber", name: "OrderNumber", typeName: "string"},
+			{name: "NewValueObject2", typeName: "Guid"},
+		},
+	}, form)
+
+	if updated.ServiceName != "OrderService" || len(updated.ValueObjects) != 2 {
+		t.Fatalf("unexpected value object payload: %+v", updated)
+	}
+	if updated.ValueObjects[1].OriginalName != "" || updated.ValueObjects[1].Name != "NewValueObject2" || updated.ValueObjects[1].Type != "Guid" {
+		t.Fatalf("expected newly added value object to be preserved completely, got %+v", updated.ValueObjects[1])
+	}
+	rules := updated.ValueObjects[1].Validations
+	if rules.NotEmpty == nil || !*rules.NotEmpty {
+		t.Fatalf("expected rules to be applied to new value object, got %+v", rules)
+	}
+	if rules.Required != nil || rules.MinLength != nil || rules.ValidExample != nil || rules.NotDefault != nil {
+		t.Fatalf("expected non-applicable Guid rules to be omitted, got %+v", rules)
+	}
+}
+
+func TestTViewValueObjectRulesModalLetsFormHandleTab(t *testing.T) {
+	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil, nil, nil, nil, nil)
+
+	ui.showValueObjectRulesManager(&tviewValueObjectRulesEditState{
+		serviceName: "ProductService",
+		valueObject: application.ValueObjectSummary{Name: "ProductName", Type: "string"},
+		validations: application.ValidationRuleSettings{Required: boolPtr(true)},
+		rows:        []tviewManagerRow{{original: "ProductName", name: "ProductName", typeName: "string"}},
+	})
+
+	if !ui.editOpen {
+		t.Fatalf("expected rules modal to open")
+	}
+	if _, ok := ui.app.GetFocus().(*tview.Checkbox); !ok {
+		t.Fatalf("expected rules modal focus to start on the first form control, got %T", ui.app.GetFocus())
+	}
+	if len(ui.modalFocus) != 0 {
+		t.Fatalf("expected rules modal not to register modal focus cycling, got %d entries", len(ui.modalFocus))
+	}
+	tab := tcell.NewEventKey(tcell.KeyTAB, 0, tcell.ModNone)
+	if got := ui.handleKey(tab); got != tab {
+		t.Fatalf("expected tab to reach the rules form, got %v", got)
+	}
+	sendKeyToTViewFocus(ui, tab)
+	if _, ok := ui.app.GetFocus().(*tview.InputField); !ok {
+		t.Fatalf("expected tab to move focus through rules form controls, got %T", ui.app.GetFocus())
+	}
+	backtab := tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModShift)
+	if got := ui.handleKey(backtab); got != backtab {
+		t.Fatalf("expected shift+tab to reach the rules form, got %v", got)
+	}
+}
+
+func TestTViewEditKeyOpensNativeNestedForms(t *testing.T) {
+	var entitySettings application.EntitySettings
+	var valueObjectSettings application.ValueObjectSettings
+	ui := newTViewUI(
+		application.GenerationPlan{Config: application.ConfigSummary{Services: []application.ServiceSummary{{Name: "ProductService", Entities: []application.EntitySummary{{Name: "Product"}}, ValueObjects: []application.ValueObjectSummary{{Name: "ProductName", Type: "string"}}}}}},
+		application.GenerateRequest{},
+		nil,
+		nil,
+		nil,
+		nil,
+		func(_ application.GenerateRequest, settings application.EntitySettings) (application.UpdateEntitySettingsResult, error) {
+			entitySettings = settings
+			return application.UpdateEntitySettingsResult{}, nil
+		},
+		nil,
+		func(_ application.GenerateRequest, settings application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
+			valueObjectSettings = settings
+			return application.UpdateValueObjectSettingsResult{}, nil
+		},
+	)
+
+	ui.open(tviewScreenEntities)
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
+	if !ui.editOpen {
+		t.Fatalf("expected entities edit to stay in tview")
+	}
+	if !ui.root.HasPage(tviewEditModalPage) {
+		t.Fatalf("expected entities edit to open as a modal page")
+	}
+	manager, ok := ui.app.GetFocus().(*tview.Table)
+	if !ok || manager.GetCell(0, 0).Text != "Name" {
+		t.Fatalf("expected entities edit focus to start on manager table, got %T", ui.app.GetFocus())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 'a', tcell.ModNone))
+	if manager.GetRowCount() != 3 {
+		t.Fatalf("expected add key to append an entity row, got %d rows", manager.GetRowCount())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyCtrlS, 0, tcell.ModNone))
+	if len(entitySettings.Entities) != 2 || entitySettings.Entities[1].Name != "NewEntity2" {
+		t.Fatalf("expected entity save to include added row, got %+v", entitySettings)
+	}
+	if !ui.editOpen {
+		t.Fatalf("expected entities modal to stay open after ctrl+s save")
+	}
+	ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+
+	ui.open(tviewScreenValueObjects)
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
+	if !ui.editOpen {
+		t.Fatalf("expected value objects edit to stay in tview")
+	}
+	if !ui.root.HasPage(tviewEditModalPage) {
+		t.Fatalf("expected value objects edit to open as a modal page")
+	}
+	manager, ok = ui.app.GetFocus().(*tview.Table)
+	if !ok || manager.GetCell(0, 0).Text != "Name" {
+		t.Fatalf("expected value objects edit focus to start on manager table, got %T", ui.app.GetFocus())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 'a', tcell.ModNone))
+	if manager.GetRowCount() != 3 {
+		t.Fatalf("expected add key to append a value-object row, got %d rows", manager.GetRowCount())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyCtrlS, 0, tcell.ModNone))
+	if len(valueObjectSettings.ValueObjects) != 2 || valueObjectSettings.ValueObjects[1].Name != "NewValueObject2" {
+		t.Fatalf("expected value-object save to include added row, got %+v", valueObjectSettings)
+	}
+	if !ui.editOpen {
+		t.Fatalf("expected value objects modal to stay open after ctrl+s save")
+	}
+}
+
+func TestTViewEntityServicePickerSelectsAndCancelsWithoutFocusTrap(t *testing.T) {
+	ui := newTViewUI(application.GenerationPlan{Config: application.ConfigSummary{Services: []application.ServiceSummary{
+		{Name: "ProductService", Entities: []application.EntitySummary{{Name: "Product"}}},
+		{Name: "OrderService", Entities: []application.EntitySummary{{Name: "Order"}}},
+	}}}, application.GenerateRequest{}, nil, nil)
+
+	ui.openEntitiesEditForService("ProductService")
+	manager, ok := ui.app.GetFocus().(*tview.Table)
+	if !ok {
+		t.Fatalf("expected entities manager focus, got %T", ui.app.GetFocus())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 's', tcell.ModNone))
+	if _, ok := ui.app.GetFocus().(*tview.List); !ok {
+		t.Fatalf("expected service picker list focus, got %T", ui.app.GetFocus())
+	}
+	ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	if ui.app.GetFocus() != manager || ui.root.HasPage(tviewServicePickerPage) {
+		t.Fatalf("expected service picker escape to restore manager focus without closing edit")
+	}
+	if !ui.editOpen {
+		t.Fatalf("expected canceling picker to keep entity manager open")
+	}
+
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 's', tcell.ModNone))
+	list, ok := ui.app.GetFocus().(*tview.List)
+	if !ok {
+		t.Fatalf("expected service picker list focus, got %T", ui.app.GetFocus())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 'j', tcell.ModNone))
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	if ui.root.HasPage(tviewServicePickerPage) || ui.app.GetFocus() == list {
+		t.Fatalf("expected selecting a service to close picker and leave list focus")
+	}
+	manager, ok = ui.app.GetFocus().(*tview.Table)
+	if !ok || manager.GetCell(1, 0).Text != "Order" {
+		t.Fatalf("expected service selection to open OrderService entities, got focus=%T first row=%q", ui.app.GetFocus(), manager.GetCell(1, 0).Text)
+	}
+}
+
+func TestTViewValueObjectServicePickerSelectsAndCancelsWithoutFocusTrap(t *testing.T) {
+	ui := newTViewUI(application.GenerationPlan{Config: application.ConfigSummary{Services: []application.ServiceSummary{
+		{Name: "ProductService", ValueObjects: []application.ValueObjectSummary{{Name: "ProductName", Type: "string"}}},
+		{Name: "OrderService", ValueObjects: []application.ValueObjectSummary{{Name: "OrderNumber", Type: "string"}}},
+	}}}, application.GenerateRequest{}, nil, nil)
+
+	ui.openValueObjectsEditForService("ProductService")
+	manager, ok := ui.app.GetFocus().(*tview.Table)
+	if !ok {
+		t.Fatalf("expected value objects manager focus, got %T", ui.app.GetFocus())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 's', tcell.ModNone))
+	if _, ok := ui.app.GetFocus().(*tview.List); !ok {
+		t.Fatalf("expected service picker list focus, got %T", ui.app.GetFocus())
+	}
+	ui.handleKey(tcell.NewEventKey(tcell.KeyEscape, 0, tcell.ModNone))
+	if ui.app.GetFocus() != manager || ui.root.HasPage(tviewServicePickerPage) {
+		t.Fatalf("expected service picker escape to restore manager focus without closing edit")
+	}
+
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 's', tcell.ModNone))
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyDown, 0, tcell.ModNone))
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone))
+	manager, ok = ui.app.GetFocus().(*tview.Table)
+	if !ok || manager.GetCell(1, 0).Text != "OrderNumber" {
+		t.Fatalf("expected service selection to open OrderService value objects, got focus=%T first row=%q", ui.app.GetFocus(), manager.GetCell(1, 0).Text)
+	}
+}
+
+func TestTViewFieldsManagerStartsOnOperableTableAndSavesAddedField(t *testing.T) {
+	var fieldSettings application.FieldSettings
+	ui := newTViewUI(
+		application.GenerationPlan{},
+		application.GenerateRequest{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		func(_ application.GenerateRequest, settings application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+			fieldSettings = settings
+			return application.UpdateFieldSettingsResult{}, nil
+		},
+	)
+
+	ui.showFieldsManager(&tviewFieldsEditState{serviceName: "ProductService", entityName: "Product", rows: []tviewManagerRow{{original: "Name", name: "Name", typeName: "string"}}})
+
+	manager, ok := ui.app.GetFocus().(*tview.Table)
+	if !ok {
+		t.Fatalf("expected fields modal to focus an operable table, got %T", ui.app.GetFocus())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyRune, 'a', tcell.ModNone))
+	if manager.GetRowCount() != 3 {
+		t.Fatalf("expected add key to append a field row, got %d rows", manager.GetRowCount())
+	}
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyCtrlS, 0, tcell.ModNone))
+
+	if fieldSettings.ServiceName != "ProductService" || fieldSettings.EntityName != "Product" {
+		t.Fatalf("unexpected field context: %+v", fieldSettings)
+	}
+	if len(fieldSettings.Fields) != 2 || fieldSettings.Fields[1].Name != "NewField2" || fieldSettings.Fields[1].Type != "string" {
+		t.Fatalf("expected saved fields to include added row, got %+v", fieldSettings.Fields)
+	}
+}
+
+func TestTViewGenerateBlocksAfterSaveRefreshFailureUntilSuccessfulRefresh(t *testing.T) {
+	refreshes := 0
+	generated := 0
+	ui := newTViewUI(
+		application.GenerationPlan{Config: application.ConfigSummary{SolutionName: "Commerce"}},
+		application.GenerateRequest{},
+		func(application.GenerateRequest) (application.GenerationPlan, error) {
+			refreshes++
+			if refreshes == 1 {
+				return application.GenerationPlan{}, errors.New("plan failed")
+			}
+			return application.GenerationPlan{Config: application.ConfigSummary{SolutionName: "Commerce"}, FileCount: 3}, nil
+		},
+		func(application.GenerateRequest) (application.GenerateResult, error) {
+			generated++
+			return application.GenerateResult{Plan: application.GenerationPlan{FileCount: 3}, OutputDir: "out"}, nil
+		},
+		func(application.GenerateRequest, application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+			return application.UpdateSolutionSettingsResult{Plan: application.GenerationPlan{Config: application.ConfigSummary{SolutionName: "Commerce"}}}, nil
+		},
+	)
+
+	ui.open(tviewScreenProject)
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
+	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyCtrlS, 0, tcell.ModNone))
+	ui.generateFiles()
+
+	if generated != 0 {
+		t.Fatalf("expected generation to be blocked while plan is stale")
+	}
+	if !ui.planStale || !strings.Contains(ui.message, "blocked until the plan refreshes successfully") {
+		t.Fatalf("expected stale plan block message, stale=%t message=%q", ui.planStale, ui.message)
+	}
+
+	ui.refreshPlan()
+	ui.generateFiles()
+
+	if generated != 1 {
+		t.Fatalf("expected generation after successful refresh, got %d", generated)
+	}
+}
+
+func TestTViewTabCyclesVisiblePanels(t *testing.T) {
+	ui := newTViewUI(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil)
+
+	if ui.focus != tviewFocusSidebar || ui.app.GetFocus() != ui.sidebar {
+		t.Fatalf("expected initial sidebar focus")
+	}
+	ui.handleKey(tcell.NewEventKey(tcell.KeyTAB, 0, tcell.ModNone))
+	if ui.focus != tviewFocusDetails || ui.app.GetFocus() != ui.detail {
+		t.Fatalf("expected details focus after tab")
+	}
+	ui.handleKey(tcell.NewEventKey(tcell.KeyTAB, 0, tcell.ModNone))
+	if ui.focus != tviewFocusFiles || ui.app.GetFocus() != ui.files {
+		t.Fatalf("expected files focus after second tab")
+	}
+	ui.handleKey(tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModShift))
+	if ui.focus != tviewFocusDetails || ui.app.GetFocus() != ui.detail {
+		t.Fatalf("expected details focus after shift tab")
+	}
+}
+
+func TestNewLegacyModelPreservesEditableCallbacks(t *testing.T) {
+	updateServices := func(application.GenerateRequest, application.ServiceSettings) (application.UpdateServiceSettingsResult, error) {
+		return application.UpdateServiceSettingsResult{}, nil
+	}
+	updateEntities := func(application.GenerateRequest, application.EntitySettings) (application.UpdateEntitySettingsResult, error) {
+		return application.UpdateEntitySettingsResult{}, nil
+	}
+	updateFields := func(application.GenerateRequest, application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+		return application.UpdateFieldSettingsResult{}, nil
+	}
+	updateValueObjects := func(application.GenerateRequest, application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
+		return application.UpdateValueObjectSettingsResult{}, nil
+	}
+
+	model := newLegacyModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil, updateServices, updateEntities, updateFields, updateValueObjects, []string{"net10.0"})
+
+	if model.updateServices == nil || model.updateEntities == nil || model.updateFields == nil || model.updateValueObjects == nil {
+		t.Fatalf("expected legacy workspace callbacks to be preserved")
+	}
+	if got := model.targetFrameworkSuggestions; len(got) != 1 || got[0] != "net10.0" {
+		t.Fatalf("expected target framework suggestions to be preserved, got %v", got)
 	}
 }
 
@@ -4798,6 +5763,30 @@ func valueObjectEditNames(valueObjects []valueObjectEditItem) []string {
 		names[index] = valueObject.name.string()
 	}
 	return names
+}
+
+type tuiConfigLoaderFunc func(string) (spec.Config, error)
+
+func (loader tuiConfigLoaderFunc) LoadConfig(path string) (spec.Config, error) {
+	return loader(path)
+}
+
+type tuiConfigSaverFunc func(string, spec.Config) error
+
+func (saver tuiConfigSaverFunc) SaveConfig(path string, cfg spec.Config) error {
+	return saver(path, cfg)
+}
+
+type tuiGeneratorFunc func(spec.Config) ([]application.GeneratedFile, error)
+
+func (generator tuiGeneratorFunc) Generate(cfg spec.Config) ([]application.GeneratedFile, error) {
+	return generator(cfg)
+}
+
+type tuiOutputPlannerFunc func(string, []application.GeneratedFile, bool) (application.OutputPlan, error)
+
+func (planner tuiOutputPlannerFunc) PlanOutput(outputDir string, files []application.GeneratedFile, force bool) (application.OutputPlan, error) {
+	return planner(outputDir, files, force)
 }
 
 func intPtr(value int) *int {
