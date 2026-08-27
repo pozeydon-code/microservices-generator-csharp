@@ -1111,18 +1111,7 @@ func (ui *tviewUI) saveValueObjectRulesEdit(state *tviewValueObjectRulesEditStat
 		ui.message = "Value object editing is not available."
 		return
 	}
-	validations := application.ValidationRuleSettings{
-		Required:       boolPointerFromFormLabel(form, "Required"),
-		MinLength:      intPointerFromFormLabel(form, "Min length"),
-		MaxLength:      intPointerFromFormLabel(form, "Max length"),
-		Pattern:        stringPointerFromFormLabel(form, "Pattern"),
-		ValidExample:   stringPointerFromFormLabel(form, "Valid example"),
-		InvalidExample: stringPointerFromFormLabel(form, "Invalid example"),
-		Minimum:        stringPointerFromFormLabel(form, "Minimum"),
-		Maximum:        stringPointerFromFormLabel(form, "Maximum"),
-		NotEmpty:       boolPointerFromFormLabel(form, "Not empty"),
-		NotDefault:     boolPointerFromFormLabel(form, "Not default"),
-	}
+	validations := validationRuleSettingsFromRulesForm(state.valueObject.Type, form)
 	valueObjectName := strings.TrimSpace(state.valueObject.Name)
 	for index := range state.rows {
 		if strings.TrimSpace(state.rows[index].name) == valueObjectName {
@@ -1132,6 +1121,31 @@ func (ui *tviewUI) saveValueObjectRulesEdit(state *tviewValueObjectRulesEditStat
 	}
 	result, err := ui.updateValueObjects(ui.request, tviewValueObjectSettingsFromState(&tviewValueObjectsEditState{serviceName: state.serviceName, rows: state.rows}))
 	ui.applyValueObjectsSaveResult(result, err)
+}
+
+func validationRuleSettingsFromRulesForm(valueObjectType string, form *tview.Form) application.ValidationRuleSettings {
+	switch valueObjectType {
+	case "string":
+		return application.ValidationRuleSettings{
+			Required:       boolRulePointerFromFormLabel(form, "Required"),
+			MinLength:      intPointerFromFormLabel(form, "Min length"),
+			MaxLength:      intPointerFromFormLabel(form, "Max length"),
+			Pattern:        stringPointerFromFormLabel(form, "Pattern"),
+			ValidExample:   stringPointerFromFormLabel(form, "Valid example"),
+			InvalidExample: stringPointerFromFormLabel(form, "Invalid example"),
+		}
+	case "int", "long", "double", "decimal":
+		return application.ValidationRuleSettings{
+			Minimum: stringPointerFromFormLabel(form, "Minimum"),
+			Maximum: stringPointerFromFormLabel(form, "Maximum"),
+		}
+	case "Guid":
+		return application.ValidationRuleSettings{NotEmpty: boolRulePointerFromFormLabel(form, "Not empty")}
+	case "DateTime":
+		return application.ValidationRuleSettings{NotDefault: boolRulePointerFromFormLabel(form, "Not default")}
+	default:
+		return application.ValidationRuleSettings{}
+	}
 }
 
 func (ui *tviewUI) showEditForm(form *tview.Form, title string) {
@@ -1541,6 +1555,14 @@ func intPointerFromFormLabel(form *tview.Form, label string) *int {
 
 func boolPointerFromFormLabel(form *tview.Form, label string) *bool {
 	checked := formCheckboxCheckedByLabel(form, label)
+	return &checked
+}
+
+func boolRulePointerFromFormLabel(form *tview.Form, label string) *bool {
+	checked := formCheckboxCheckedByLabel(form, label)
+	if !checked {
+		return nil
+	}
 	return &checked
 }
 

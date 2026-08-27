@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gdamore/tcell/v2"
 	"github.com/pozeydon-code/microservices-generator-csharp/internal/application"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/spec"
 	"github.com/rivo/tview"
 )
 
@@ -2255,11 +2256,82 @@ func TestTViewValueObjectRulesSavePreservesRowsAndAppliesRules(t *testing.T) {
 		t.Fatalf("unexpected value object settings: %+v", updated)
 	}
 	rules := updated.ValueObjects[0].Validations
-	if rules.Required == nil || !*rules.Required || rules.MinLength == nil || *rules.MinLength != 3 || rules.MaxLength == nil || *rules.MaxLength != 80 || rules.Pattern == nil || *rules.Pattern != "^[A-Z]" || rules.ValidExample == nil || *rules.ValidExample != "ABC" || rules.InvalidExample == nil || *rules.InvalidExample != "abc" || rules.Minimum == nil || *rules.Minimum != "1" || rules.Maximum == nil || *rules.Maximum != "99" || rules.NotEmpty == nil || !*rules.NotEmpty || rules.NotDefault == nil || *rules.NotDefault {
+	if rules.Required == nil || !*rules.Required || rules.MinLength == nil || *rules.MinLength != 3 || rules.MaxLength == nil || *rules.MaxLength != 80 || rules.Pattern == nil || *rules.Pattern != "^[A-Z]" || rules.ValidExample == nil || *rules.ValidExample != "ABC" || rules.InvalidExample == nil || *rules.InvalidExample != "abc" {
 		t.Fatalf("unexpected applied validation rules: %+v", rules)
+	}
+	if rules.Minimum != nil || rules.Maximum != nil || rules.NotEmpty != nil || rules.NotDefault != nil {
+		t.Fatalf("expected non-applicable string rules to be omitted, got %+v", rules)
 	}
 	if updated.ValueObjects[1].Name != "Money" || updated.ValueObjects[1].Validations.Minimum == nil || *updated.ValueObjects[1].Validations.Minimum != "0" {
 		t.Fatalf("expected other value objects to be preserved, got %+v", updated.ValueObjects[1])
+	}
+}
+
+func TestTViewValueObjectRulesSaveOmitsNonApplicableFalseRulesThroughApplicationUpdate(t *testing.T) {
+	var captured application.ValueObjectSettings
+	var saved spec.Config
+	cfg := spec.Config{
+		SchemaVersion: spec.ConfigSchemaVersion,
+		Generation: spec.GenerationOptions{
+			TargetFramework: spec.DefaultTargetFramework,
+			SolutionFormat:  spec.DefaultSolutionFormat(spec.DefaultTargetFramework),
+		},
+		Solution: spec.Solution{Name: "CommercePlatform", Description: "Product management."},
+		Services: []spec.Service{{
+			Name:         "ProductService",
+			ValueObjects: []spec.ValueObject{{Name: "ProductName", Type: "string"}},
+			Entities:     []spec.Entity{{Name: "Product", Fields: []spec.Field{{Name: "Id", Type: "Guid"}}}},
+		}},
+	}
+	service := application.NewService(application.Ports{
+		ConfigLoader: tuiConfigLoaderFunc(func(string) (spec.Config, error) { return cfg, nil }),
+		ConfigSaver: tuiConfigSaverFunc(func(_ string, cfg spec.Config) error {
+			saved = cfg
+			return nil
+		}),
+		Generator: tuiGeneratorFunc(func(spec.Config) ([]application.GeneratedFile, error) { return nil, nil }),
+		OutputPlanner: tuiOutputPlannerFunc(func(string, []application.GeneratedFile, bool) (application.OutputPlan, error) {
+			return application.OutputPlan{}, nil
+		}),
+	})
+	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{ConfigPath: "microgen.json"}, nil, nil, nil, nil, nil, nil, func(request application.GenerateRequest, settings application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
+		captured = settings
+		return service.UpdateValueObjectSettings(request, settings)
+	})
+	form := tview.NewForm()
+	form.AddCheckbox("Required", false, nil)
+	form.AddInputField("Min length", "3", 32, nil, nil)
+	form.AddInputField("Max length", "80", 32, nil, nil)
+	form.AddInputField("Pattern", "", 32, nil, nil)
+	form.AddInputField("Valid example", "Sample", 32, nil, nil)
+	form.AddInputField("Invalid example", "", 32, nil, nil)
+	form.AddInputField("Minimum", "1", 32, nil, nil)
+	form.AddInputField("Maximum", "99", 32, nil, nil)
+	form.AddCheckbox("Not empty", false, nil)
+	form.AddCheckbox("Not default", false, nil)
+
+	ui.saveValueObjectRulesEdit(&tviewValueObjectRulesEditState{
+		serviceName: "ProductService",
+		valueObject: application.ValueObjectSummary{Name: "ProductName", Type: "string"},
+		rows:        []tviewManagerRow{{original: "ProductName", name: "ProductName", typeName: "string"}},
+	}, form)
+
+	if ui.err != nil {
+		t.Fatalf("expected application update to accept string rules, got %v", ui.err)
+	}
+	rules := captured.ValueObjects[0].Validations
+	if rules.MinLength == nil || *rules.MinLength != 3 || rules.MaxLength == nil || *rules.MaxLength != 80 || rules.ValidExample == nil || *rules.ValidExample != "Sample" {
+		t.Fatalf("unexpected captured string rules: %+v", rules)
+	}
+	if rules.Required != nil || rules.Minimum != nil || rules.Maximum != nil || rules.NotEmpty != nil || rules.NotDefault != nil {
+		t.Fatalf("expected non-applicable false rules to be omitted from captured settings, got %+v", rules)
+	}
+	savedRules := saved.Services[0].ValueObjects[0].Validations
+	if savedRules.MinLength == nil || *savedRules.MinLength != 3 || savedRules.MaxLength == nil || *savedRules.MaxLength != 80 || savedRules.ValidExample == nil || *savedRules.ValidExample != "Sample" {
+		t.Fatalf("unexpected saved string rules: %+v", savedRules)
+	}
+	if savedRules.Required != nil || savedRules.Minimum != nil || savedRules.Maximum != nil || savedRules.NotEmpty != nil || savedRules.NotDefault != nil {
+		t.Fatalf("expected non-applicable false rules to be omitted from saved config, got %+v", savedRules)
 	}
 }
 
@@ -2309,8 +2381,11 @@ func TestTViewValueObjectRulesSavePreservesNewValueObjectWithUpdatedRules(t *tes
 		t.Fatalf("expected newly added value object to be preserved completely, got %+v", updated.ValueObjects[1])
 	}
 	rules := updated.ValueObjects[1].Validations
-	if rules.Required == nil || !*rules.Required || rules.MinLength == nil || *rules.MinLength != 2 || rules.ValidExample == nil || *rules.ValidExample != "OK" || rules.NotEmpty == nil || !*rules.NotEmpty {
+	if rules.NotEmpty == nil || !*rules.NotEmpty {
 		t.Fatalf("expected rules to be applied to new value object, got %+v", rules)
+	}
+	if rules.Required != nil || rules.MinLength != nil || rules.ValidExample != nil || rules.NotDefault != nil {
+		t.Fatalf("expected non-applicable Guid rules to be omitted, got %+v", rules)
 	}
 }
 
@@ -5688,6 +5763,30 @@ func valueObjectEditNames(valueObjects []valueObjectEditItem) []string {
 		names[index] = valueObject.name.string()
 	}
 	return names
+}
+
+type tuiConfigLoaderFunc func(string) (spec.Config, error)
+
+func (loader tuiConfigLoaderFunc) LoadConfig(path string) (spec.Config, error) {
+	return loader(path)
+}
+
+type tuiConfigSaverFunc func(string, spec.Config) error
+
+func (saver tuiConfigSaverFunc) SaveConfig(path string, cfg spec.Config) error {
+	return saver(path, cfg)
+}
+
+type tuiGeneratorFunc func(spec.Config) ([]application.GeneratedFile, error)
+
+func (generator tuiGeneratorFunc) Generate(cfg spec.Config) ([]application.GeneratedFile, error) {
+	return generator(cfg)
+}
+
+type tuiOutputPlannerFunc func(string, []application.GeneratedFile, bool) (application.OutputPlan, error)
+
+func (planner tuiOutputPlannerFunc) PlanOutput(outputDir string, files []application.GeneratedFile, force bool) (application.OutputPlan, error) {
+	return planner(outputDir, files, force)
 }
 
 func intPtr(value int) *int {
