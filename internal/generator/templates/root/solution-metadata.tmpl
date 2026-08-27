@@ -3,5 +3,6 @@
   "targetFramework": "{{ .TargetFramework }}",
   "solution": "{{ .Solution.Name }}",
   "services": [{{ range $index, $service := .Services }}{{ if $index }}, {{ end }}"{{ $service.Name }}"{{ end }}]{{ if .Gateway.Enabled }},
-  "gateway": "{{ .Gateway.Project.Name }}"{{ end }}
+  "gateway": "{{ .Gateway.Project.Name }}",
+  "gatewayPath": "{{ .Gateway.Project.Path }}"{{ end }}
 }

@@ -263,11 +263,11 @@ func gatewayView(solutionName string, services []spec.Service) GatewayView {
 	projectName := solutionName + ".Gateway"
 	view := GatewayView{
 		Enabled: true,
-		Project: rootProjectView(projectName),
+		Project: gatewayProjectView(projectName),
 		Routes:  make([]GatewayRouteView, 0, len(services)),
 	}
 	for index, service := range services {
-		serviceRouteName := strings.ToLower(service.Name)
+		serviceRouteName := serviceRoutePrefix(service.Name)
 		localPort := defaultGatewayServicePort(index)
 		view.Routes = append(view.Routes, GatewayRouteView{
 			ServiceName:        service.Name,
@@ -281,11 +281,37 @@ func gatewayView(solutionName string, services []spec.Service) GatewayView {
 	return view
 }
 
+func serviceRoutePrefix(serviceName string) string {
+	var builder strings.Builder
+	runes := []rune(serviceName)
+	for index, current := range runes {
+		if index > 0 && isUpperASCII(current) && (!isUpperASCII(runes[index-1]) || (index+1 < len(runes) && isLowerASCII(runes[index+1]))) {
+			builder.WriteByte('-')
+		}
+		builder.WriteRune(current)
+	}
+	return strings.ToLower(builder.String())
+}
+
+func isUpperASCII(value rune) bool {
+	return value >= 'A' && value <= 'Z'
+}
+
+func isLowerASCII(value rune) bool {
+	return value >= 'a' && value <= 'z'
+}
+
 func rootProjectView(projectName string) ProjectView {
 	directory := projectName
 	fileName := projectName + ".csproj"
 	solutionPath := join("src", directory, fileName)
 	return ProjectView{Name: projectName, Directory: directory, FileName: fileName, Path: solutionPath, SolutionPath: solutionPath, GUID: deterministicGUID(projectName)}
+}
+
+func gatewayProjectView(projectName string) ProjectView {
+	fileName := projectName + ".csproj"
+	solutionPath := join("Gateway", fileName)
+	return ProjectView{Name: projectName, Directory: "Gateway", FileName: fileName, Path: solutionPath, SolutionPath: solutionPath, GUID: deterministicGUID(projectName)}
 }
 
 func rootSolutionProjectView(project ProjectView) ProjectView {

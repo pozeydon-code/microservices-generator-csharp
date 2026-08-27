@@ -70,16 +70,17 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		if err := g.appendRendered(&files, solution.Solution.Name+"."+solution.SolutionFormat, solutionTemplate, solution); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("src", solution.Gateway.Project.Directory, solution.Gateway.Project.FileName), templatePath(gatewayTemplateDir, "gateway-project.tmpl"), solution.Gateway); err != nil {
+		gatewayDirectory := projectDirectory(solution.Gateway.Project.Path)
+		if err := g.appendRendered(&files, solution.Gateway.Project.Path, templatePath(gatewayTemplateDir, "gateway-project.tmpl"), solution.Gateway); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("src", solution.Gateway.Project.Directory, "Program.cs"), templatePath(gatewayTemplateDir, "gateway-program.tmpl"), solution.Gateway); err != nil {
+		if err := g.appendRendered(&files, join(gatewayDirectory, "Program.cs"), templatePath(gatewayTemplateDir, "gateway-program.tmpl"), solution.Gateway); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join("src", solution.Gateway.Project.Directory, "appsettings.json"), templatePath(gatewayTemplateDir, "gateway-appsettings.tmpl"), solution.Gateway); err != nil {
+		if err := g.appendRendered(&files, join(gatewayDirectory, "appsettings.json"), templatePath(gatewayTemplateDir, "gateway-appsettings.tmpl"), solution.Gateway); err != nil {
 			return nil, err
 		}
-		if err := g.appendPropsFiles(&files, join("src", solution.Gateway.Project.Directory), solution); err != nil {
+		if err := g.appendPropsFiles(&files, gatewayDirectory, solution); err != nil {
 			return nil, err
 		}
 	}

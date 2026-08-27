@@ -60,7 +60,7 @@ MICROGEN_TEST_SQLSERVER='Server=localhost,1433;User Id=sa;Password=<password>;En
 | Build `{{ .Name }}` | `dotnet build ./{{ .Name }}/{{ .SolutionFileName }} --nologo -warnaserror` |
 | Test `{{ .Name }}` | `dotnet test ./{{ .Name }}/{{ .SolutionFileName }} --nologo -warnaserror` |
 {{- end }}{{ if .Gateway.Enabled }}
-| Run gateway | `dotnet run --project ./src/{{ .Gateway.Project.Directory }}` |
+| Run gateway | `dotnet run --project ./{{ .Gateway.Project.Directory }}` |
 
 ### Gateway routing
 
@@ -70,7 +70,7 @@ Run each generated WebApi on the deterministic local port shown below, then star
 {{- range .Gateway.Routes }}
 ASPNETCORE_URLS=http://localhost:{{ .LocalPort }} dotnet run --project ./{{ .ServiceName }}/src/{{ .ServiceName }}.WebApi
 {{- end }}
-dotnet run --project ./src/{{ .Gateway.Project.Directory }}
+dotnet run --project ./{{ .Gateway.Project.Directory }}
 ```
 {{ end }}
 

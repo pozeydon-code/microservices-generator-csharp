@@ -213,15 +213,20 @@ func TestGenerateGatewayProducesDeterministicGoldenOutput(t *testing.T) {
 		{path: "microgen.json", goldenName: filepath.Join("gateway-enabled", "microgen.json")},
 		{path: "ProductService/Directory.Build.props", goldenName: filepath.Join("gateway-enabled", "Directory.Build.props")},
 		{path: "ProductService/Directory.Packages.props", goldenName: filepath.Join("gateway-enabled", "Directory.Packages.props")},
-		{path: "src/ShopPlatform.Gateway/Directory.Build.props", goldenName: filepath.Join("gateway-enabled", "Directory.Build.props")},
-		{path: "src/ShopPlatform.Gateway/Directory.Packages.props", goldenName: filepath.Join("gateway-enabled", "Directory.Packages.props")},
-		{path: "src/ShopPlatform.Gateway/ShopPlatform.Gateway.csproj", goldenName: filepath.Join("gateway-enabled", "ShopPlatform.Gateway.csproj")},
-		{path: "src/ShopPlatform.Gateway/Program.cs", goldenName: filepath.Join("gateway-enabled", "Gateway.Program.cs")},
-		{path: "src/ShopPlatform.Gateway/appsettings.json", goldenName: filepath.Join("gateway-enabled", "Gateway.appsettings.json")},
+		{path: "Gateway/Directory.Build.props", goldenName: filepath.Join("gateway-enabled", "Directory.Build.props")},
+		{path: "Gateway/Directory.Packages.props", goldenName: filepath.Join("gateway-enabled", "Directory.Packages.props")},
+		{path: "Gateway/ShopPlatform.Gateway.csproj", goldenName: filepath.Join("gateway-enabled", "ShopPlatform.Gateway.csproj")},
+		{path: "Gateway/Program.cs", goldenName: filepath.Join("gateway-enabled", "Gateway.Program.cs")},
+		{path: "Gateway/appsettings.json", goldenName: filepath.Join("gateway-enabled", "Gateway.appsettings.json")},
 	}
 
 	for _, file := range expectedFiles {
 		assertGoldenFile(t, first, file.path, file.goldenName)
+	}
+	for _, file := range first {
+		if strings.HasPrefix(file.Path, "src/ShopPlatform.Gateway/") {
+			t.Fatalf("expected no old gateway path, got %s", file.Path)
+		}
 	}
 }
 
@@ -275,8 +280,8 @@ func TestGenerateEmitsPortablePropsForGatewayWhenEnabled(t *testing.T) {
 	}
 	rootBuildProps := generatedContent(t, files, "Directory.Build.props")
 	rootPackagesProps := generatedContent(t, files, "Directory.Packages.props")
-	gatewayBuildProps := generatedContent(t, files, "src/ShopPlatform.Gateway/Directory.Build.props")
-	gatewayPackagesProps := generatedContent(t, files, "src/ShopPlatform.Gateway/Directory.Packages.props")
+	gatewayBuildProps := generatedContent(t, files, "Gateway/Directory.Build.props")
+	gatewayPackagesProps := generatedContent(t, files, "Gateway/Directory.Packages.props")
 
 	if !bytes.Equal(gatewayBuildProps, rootBuildProps) {
 		t.Fatal("expected gateway Directory.Build.props to match root props")
@@ -309,7 +314,7 @@ func TestGenerateOmitsGatewayFolderAndPropsWhenGatewayDisabledOrOmitted(t *testi
 				t.Fatalf("generate disabled gateway props: %v", err)
 			}
 			for _, file := range files {
-				if strings.HasPrefix(file.Path, "src/CommercePlatform.Gateway/") {
+				if strings.HasPrefix(file.Path, "Gateway/") || strings.HasPrefix(file.Path, "src/CommercePlatform.Gateway/") {
 					t.Fatalf("expected no gateway output when disabled, got %s", file.Path)
 				}
 			}
@@ -488,8 +493,11 @@ func TestGatewayFoundationIsRootLevelAndDisabledByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build enabled solution view: %v", err)
 	}
-	if enabled.Gateway.Project.Path != "src/ShopPlatform.Gateway/ShopPlatform.Gateway.csproj" {
+	if enabled.Gateway.Project.Path != "Gateway/ShopPlatform.Gateway.csproj" {
 		t.Fatalf("expected root gateway project path, got %q", enabled.Gateway.Project.Path)
+	}
+	if enabled.Gateway.Project.Directory != "Gateway" || enabled.Gateway.Project.Name != "ShopPlatform.Gateway" || enabled.Gateway.Project.FileName != "ShopPlatform.Gateway.csproj" {
+		t.Fatalf("expected fixed folder with preserved gateway identity, got %#v", enabled.Gateway.Project)
 	}
 	for _, service := range enabled.Services {
 		for _, project := range []ProjectView{service.DomainProject, service.ApplicationProject, service.InfrastructureProject} {
@@ -521,9 +529,9 @@ func TestGenerateGatewayTemplatesAndReverseProxyConfigWhenEnabled(t *testing.T) 
 		t.Fatalf("generate gateway config: %v", err)
 	}
 
-	gatewayProject := string(generatedContent(t, files, "src/ShopPlatform.Gateway/ShopPlatform.Gateway.csproj"))
-	gatewayProgram := string(generatedContent(t, files, "src/ShopPlatform.Gateway/Program.cs"))
-	gatewaySettings := string(generatedContent(t, files, "src/ShopPlatform.Gateway/appsettings.json"))
+	gatewayProject := string(generatedContent(t, files, "Gateway/ShopPlatform.Gateway.csproj"))
+	gatewayProgram := string(generatedContent(t, files, "Gateway/Program.cs"))
+	gatewaySettings := string(generatedContent(t, files, "Gateway/appsettings.json"))
 	packages := string(generatedContent(t, files, "Directory.Packages.props"))
 
 	assertContains(t, gatewayProject, `<Project Sdk="Microsoft.NET.Sdk.Web">`)
@@ -532,16 +540,16 @@ func TestGenerateGatewayTemplatesAndReverseProxyConfigWhenEnabled(t *testing.T) 
 	assertContains(t, gatewayProgram, "builder.Services.AddReverseProxy()")
 	assertContains(t, gatewayProgram, `.LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"))`)
 	assertContains(t, gatewayProgram, "app.MapReverseProxy();")
-	assertContains(t, gatewaySettings, `"productservice-route"`)
-	assertContains(t, gatewaySettings, `"productservice-cluster"`)
-	assertContains(t, gatewaySettings, `"Path": "/productservice/{**catch-all}"`)
-	assertContains(t, gatewaySettings, `"PathRemovePrefix": "/productservice"`)
-	assertContains(t, gatewaySettings, `"Address": "http://localhost:5100/"`)
-	assertContains(t, gatewaySettings, `"orderingservice-route"`)
-	assertContains(t, gatewaySettings, `"orderingservice-cluster"`)
-	assertContains(t, gatewaySettings, `"Path": "/orderingservice/{**catch-all}"`)
-	assertContains(t, gatewaySettings, `"PathRemovePrefix": "/orderingservice"`)
+	assertContains(t, gatewaySettings, `"product-service-route"`)
+	assertContains(t, gatewaySettings, `"product-service-cluster"`)
+	assertContains(t, gatewaySettings, `"Path": "/product-service/{**catch-all}"`)
+	assertContains(t, gatewaySettings, `"PathRemovePrefix": "/product-service"`)
 	assertContains(t, gatewaySettings, `"Address": "http://localhost:5101/"`)
+	assertContains(t, gatewaySettings, `"ordering-service-route"`)
+	assertContains(t, gatewaySettings, `"ordering-service-cluster"`)
+	assertContains(t, gatewaySettings, `"Path": "/ordering-service/{**catch-all}"`)
+	assertContains(t, gatewaySettings, `"PathRemovePrefix": "/ordering-service"`)
+	assertContains(t, gatewaySettings, `"Address": "http://localhost:5100/"`)
 	assertContains(t, packages, `Yarp.ReverseProxy" Version="2.3.0`)
 }
 
@@ -566,17 +574,23 @@ func TestGenerateGatewayUpdatesRootSolutionReadmeAndScaffoldPlan(t *testing.T) {
 		t.Fatalf("build gateway solution view: %v", err)
 	}
 
-	assertContains(t, solution, `ShopPlatform.Gateway", "src/ShopPlatform.Gateway/ShopPlatform.Gateway.csproj`)
+	assertContains(t, solution, `ShopPlatform.Gateway", "Gateway/ShopPlatform.Gateway.csproj`)
+	assertNotContains(t, solution, `src/ShopPlatform.Gateway/`)
 	assertContains(t, solution, `ProductService.Application", "ProductService/src/ProductService.Application/ProductService.Application.csproj`)
 	assertContains(t, solution, `ProductService.WebApi", "ProductService/src/ProductService.WebApi/ProductService.WebApi.csproj`)
 	assertNotContains(t, solution, `ProductService.Application", "src/ProductService.Application/ProductService.Application.csproj`)
 	assertContains(t, readme, `Run gateway`)
 	assertContains(t, readme, `ASPNETCORE_URLS=http://localhost:5100 dotnet run --project ./ProductService/src/ProductService.WebApi`)
-	assertContains(t, readme, `dotnet run --project ./src/ShopPlatform.Gateway`)
+	assertContains(t, readme, `dotnet run --project ./Gateway`)
+	assertNotContains(t, readme, `./src/ShopPlatform.Gateway`)
 	assertContains(t, metadata, `"gateway": "ShopPlatform.Gateway"`)
-	assertContains(t, scaffoldCommandText(view.ScaffoldPlan), "dotnet new web --framework 'net8.0' --name 'ShopPlatform.Gateway' --output './src/ShopPlatform.Gateway' --no-restore")
-	assertContains(t, scaffoldCommandText(view.ScaffoldPlan), "dotnet sln './ShopPlatform.sln' add './src/ShopPlatform.Gateway/ShopPlatform.Gateway.csproj'")
-	assertContains(t, scaffoldPackageText(view.ScaffoldPlan), "src/ShopPlatform.Gateway/ShopPlatform.Gateway.csproj -> Yarp.ReverseProxy")
+	assertContains(t, metadata, `"gatewayPath": "Gateway/ShopPlatform.Gateway.csproj"`)
+	assertNotContains(t, metadata, `src/ShopPlatform.Gateway/`)
+	assertContains(t, scaffoldCommandText(view.ScaffoldPlan), "dotnet new web --framework 'net8.0' --name 'ShopPlatform.Gateway' --output './Gateway' --no-restore")
+	assertContains(t, scaffoldCommandText(view.ScaffoldPlan), "dotnet sln './ShopPlatform.sln' add './Gateway/ShopPlatform.Gateway.csproj'")
+	assertNotContains(t, scaffoldCommandText(view.ScaffoldPlan), "src/ShopPlatform.Gateway")
+	assertContains(t, scaffoldPackageText(view.ScaffoldPlan), "Gateway/ShopPlatform.Gateway.csproj -> Yarp.ReverseProxy")
+	assertNotContains(t, scaffoldPackageText(view.ScaffoldPlan), "src/ShopPlatform.Gateway")
 }
 
 func TestGenerateCreateCQRSSliceUsesApplicationPipelineAndWebApiMapping(t *testing.T) {

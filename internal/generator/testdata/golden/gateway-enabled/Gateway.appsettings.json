@@ -1,18 +1,18 @@
 {
   "ReverseProxy": {
-    "Routes": {      "productservice-route": {
-        "ClusterId": "productservice-cluster",
+    "Routes": {      "product-service-route": {
+        "ClusterId": "product-service-cluster",
         "Match": {
-          "Path": "/productservice/{**catch-all}"
+          "Path": "/product-service/{**catch-all}"
         },
         "Transforms": [
           {
-            "PathRemovePrefix": "/productservice"
+            "PathRemovePrefix": "/product-service"
           }
         ]
       }
     },
-    "Clusters": {      "productservice-cluster": {
+    "Clusters": {      "product-service-cluster": {
         "Destinations": {
           "default": {
             "Address": "http://localhost:5100/"
