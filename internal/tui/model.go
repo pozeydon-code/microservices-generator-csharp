@@ -3841,44 +3841,52 @@ func (m Model) workspaceHeader() string {
 	if m.returnToWizard {
 		workspace = "Advanced workspace | esc back to wizard"
 	}
-	return fmt.Sprintf("%s - %s  %s  %s %s\n%s", appTitleStyle.Render("Microgen"), m.statusBadge(), dimStyle.Render(workspace), labelStyle.Render("Current project:"), project, m.primaryActionStyle().Render("Primary: "+m.primaryAction()))
+	return fmt.Sprintf("%s  %s %s  %s\n%s %s\n%s", appTitleStyle.Render("Microgen Workspace"), labelStyle.Render("Status"), m.statusBadge(), dimStyle.Render(workspace), labelStyle.Render("Project"), project, m.primaryActionStyle().Render("Primary action "+m.primaryAction()))
 }
 
 func (m Model) navigationRail() string {
 	var builder strings.Builder
-	fmt.Fprintln(&builder, sectionTitleStyle.Render("Navigation"))
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Route map"))
 	for screen := screenOverview; screen < screenCount; screen++ {
-		cursor := " "
+		cursor := "○"
 		style := dimStyle
 		if screen == m.activeScreen() {
-			cursor = ">"
+			cursor = "●"
 			style = readyStyle
 		} else if screen == m.selectedScreen {
-			cursor = "*"
+			cursor = "◌"
 			style = labelStyle
 		}
 		fmt.Fprintf(&builder, "%s %d %s\n", style.Render(cursor), screen+1, style.Render(screen.label()))
 	}
 	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, dimStyle.Render("Enter open"))
+	fmt.Fprintln(&builder, dimStyle.Render("Enter opens selected route"))
 	return strings.TrimRight(builder.String(), "\n")
 }
 
 func (m Model) compactNavigation() string {
-	lines := []string{"Navigation "}
+	prefix := "Route map "
+	lines := []string{prefix}
 	for screen := screenOverview; screen < screenCount; screen++ {
-		plainLabel := fmt.Sprintf("%d:%s", screen+1, screen.label())
-		label := plainLabel
+		marker := "○"
+		style := dimStyle
 		if screen == m.activeScreen() {
-			label = readyStyle.Render("[" + label + "]")
+			marker = "●"
+			style = readyStyle
+		} else if screen == m.selectedScreen {
+			marker = "◌"
+			style = labelStyle
 		}
+		plainLabel := fmt.Sprintf("%s %d %s", marker, screen+1, screen.label())
+		label := plainLabel
+		label = style.Render(label)
 		separator := ""
-		if lines[len(lines)-1] != "Navigation " {
+		if lines[len(lines)-1] != prefix {
 			separator = "  "
 		}
 		candidate := lines[len(lines)-1] + separator + label
-		if m.windowWidth > 0 && lipgloss.Width(candidate) > m.windowWidth && lines[len(lines)-1] != "Navigation " {
-			lines = append(lines, strings.Repeat(" ", len("Navigation "))+label)
+		if m.windowWidth > 0 && lipgloss.Width(candidate) > m.windowWidth && lines[len(lines)-1] != prefix {
+			lines = append(lines, strings.Repeat(" ", len(prefix))+label)
 			continue
 		}
 		lines[len(lines)-1] = candidate
@@ -4637,33 +4645,33 @@ func (m Model) footerCard() string {
 	if m.postSaveRefreshFailed() {
 		return "Locked: r retry refresh | q/esc/ctrl+c quit"
 	}
-	fmt.Fprintln(&builder, "Navigate: up/down select route, enter open, h/l switch, ? help.")
+	fmt.Fprintln(&builder, "Keys: ↑/↓ route | enter open | ? help")
 	switch m.activeScreen() {
 	case screenProject:
-		fmt.Fprintln(&builder, "Project: e edit settings, r refresh.")
+		fmt.Fprintln(&builder, "Project: e edit | r refresh")
 	case screenServices:
-		fmt.Fprintln(&builder, "Services: tab/left/right context; up/down select; enter open.")
-		fmt.Fprintln(&builder, "Actions: e services; f fields; v value objects; a/r/d in editors; r refresh.")
+		fmt.Fprintln(&builder, "Services: tab context | enter open | e edit | r refresh")
 	case screenEntities:
-		fmt.Fprintln(&builder, "Entities: up/down select; enter/e edit; f fields; a/r/d in editor; r refresh.")
+		fmt.Fprintln(&builder, "Entities: enter/e edit | f fields | r refresh")
 	case screenValueObjects:
-		fmt.Fprintln(&builder, "Value Objects: up/down select; enter/e edit; o rules; a/r/d in editor; r refresh.")
+		fmt.Fprintln(&builder, "Value Objects: enter/e edit | o rules | r refresh")
 	case screenPreview:
-		fmt.Fprintln(&builder, readyHelp)
+		fmt.Fprintln(&builder, "Preview: files ↑/↓/pg/home/end | a filter | r refresh | g generate")
+		if m.plan.ForceRequired || m.plan.Readiness.OutputForceRequired {
+			fmt.Fprintln(&builder, dangerStyle.Render("Force required: review output safety before generating"))
+		}
 	case screenGenerate:
-		fmt.Fprintln(&builder, "Generate: g confirm generation, r refresh.")
+		fmt.Fprintln(&builder, "Generate: g confirm write | r refresh")
 	case screenResult:
 		if m.status == statusFailed {
-			fmt.Fprintln(&builder, "Result: g retry generation, esc back to Generate, r refresh.")
-			fmt.Fprintln(&builder, "Generate: g generate, r refresh.")
+			fmt.Fprintln(&builder, "Result: g retry generation | esc Generate | r refresh")
 		} else {
-			fmt.Fprintln(&builder, generatedHelp)
-			fmt.Fprintln(&builder, "Result: esc back to Generate.")
+			fmt.Fprintln(&builder, "Result: r refresh | esc Generate")
 		}
 	default:
-		fmt.Fprintln(&builder, "Overview: r refresh, 2 Project, 3 Services, 4 Entities, 5 Value Objects, 6 Preview, 7 Generate.")
+		fmt.Fprintln(&builder, "Overview: r refresh | g generate")
 	}
-	fmt.Fprintln(&builder, "Back: esc | Exit: q/ctrl+c")
+	fmt.Fprintln(&builder, "Back esc | Quit q/ctrl+c")
 	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 }
 
