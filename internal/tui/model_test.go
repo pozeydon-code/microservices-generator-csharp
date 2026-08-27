@@ -59,11 +59,10 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	model := workspaceModel(plan, application.GenerateRequest{ConfigPath: "microgen.json"}, nil, nil, nil)
 	view := model.View()
 
-	assertContains(t, view, "Microgen Workspace")
-	assertContains(t, view, "Status READY")
-	assertContains(t, view, "Workspace")
-	assertContains(t, view, "Primary action g Generate")
-	assertContains(t, view, "Route map")
+	assertContains(t, view, "Microgen READY")
+	assertContains(t, view, "Routes")
+	assertContains(t, view, "g Generate")
+	assertContains(t, view, "Routes")
 	assertContains(t, view, "1 Overview")
 	assertContains(t, view, "2 Project")
 	assertContains(t, view, "3 Services")
@@ -78,7 +77,7 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	assertContains(t, view, "Source microgen.json (existing JSON)")
 	assertContains(t, view, "Output /tmp/generated")
 	assertContains(t, view, "Mode replace")
-	assertContains(t, view, "Keys: ↑/↓ route | enter open | ? help")
+	assertContains(t, view, "up/down route | enter open | ? help | ctrl+p routes")
 
 	model.currentStep = stepProject
 	view = model.View()
@@ -90,7 +89,7 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 
 	model.currentStep = stepServices
 	view = model.View()
-	assertContains(t, view, "Services workspace")
+	assertContains(t, view, "Services")
 	assertContains(t, view, "Selected service: ProductService")
 	assertContains(t, view, "Context: [Services]  Entities  Value Objects")
 	assertContains(t, view, "Service detail")
@@ -111,12 +110,14 @@ func TestModelViewIncludesGenerationPlanSummary(t *testing.T) {
 	assertContains(t, view, "DANGER replacement removes 1 previous generated file(s)")
 	assertContains(t, view, "src/ProductService/OldEndpoint.cs")
 	assertContains(t, view, "Planned Files")
-	assertContains(t, view, "Files 1-5 of 6 (filter: all)")
-	assertContains(t, view, "Selected: 1/6 [REPLACE] README.md")
-	assertContains(t, view, "> [1/6] [REPLACE] README.md")
-	assertContains(t, view, "  [5/6] [CREATE] tests/ProductService/ProductService.WebApi.Tests/Features/Products/ProductControllerTests.cs")
-	assertContains(t, view, "Preview: files ↑/↓/pg/home/end | a filter | r refresh | g generate")
-	assertContains(t, view, "Back esc | Quit q/ctrl+c")
+	assertContains(t, view, "Rows 1-5/6 filter=all")
+	assertContains(t, view, "Focus 1/6 [REPLACE] README.md")
+	assertContains(t, view, "#   Action     Path")
+	assertContains(t, view, ">  1 REPLACE    README.md")
+	assertContains(t, view, "   5 CREATE")
+	assertContains(t, view, "tests/ProductService/ProductService.WebApi.Tests/Features")
+	assertContains(t, view, "files up/down/pg/home/end | a filter | r refresh | g generate")
+	assertContains(t, view, "esc back | q quit")
 
 	model.currentStep = stepGenerate
 	view = model.View()
@@ -200,12 +201,11 @@ func TestModelGenerateStepShowsPostGenerateImpactSummary(t *testing.T) {
 	assertNotContains(t, view, "src/ProductService/OldEndpoint.cs")
 }
 
-func TestModelViewShowsPrimaryActionOnce(t *testing.T) {
+func TestModelViewShowsPrimaryActionWithoutRedundantLabel(t *testing.T) {
 	view := stripANSI(workspaceModel(plannedFilesPlan(2), application.GenerateRequest{}, nil, nil, nil).View())
 
-	if count := strings.Count(view, "Primary action"); count != 1 {
-		t.Fatalf("expected one primary action, got %d in %q", count, view)
-	}
+	assertContains(t, view, "g Generate")
+	assertNotContains(t, view, "Primary action")
 }
 
 func TestModelViewRendersProfessionalWorkspaceHeader(t *testing.T) {
@@ -215,10 +215,10 @@ func TestModelViewRendersProfessionalWorkspaceHeader(t *testing.T) {
 
 	view := stripANSI(model.View())
 
-	assertContains(t, view, "Microgen Workspace")
-	assertContains(t, view, "Status READY")
+	assertContains(t, view, "Microgen READY")
 	assertContains(t, view, "Project CommercePlatform")
-	assertContains(t, view, "Primary action g Generate")
+	assertContains(t, view, "g Generate")
+	assertNotContains(t, view, "Primary action")
 	assertNotContains(t, view, "Current project:")
 }
 
@@ -233,12 +233,12 @@ func TestModelViewRendersModernRouteNavigation(t *testing.T) {
 
 	view := stripANSI(model.View())
 
-	assertContains(t, view, "Route map")
+	assertContains(t, view, "Routes")
 	for _, route := range []string{"1 Overview", "2 Project", "3 Services", "4 Entities", "5 Value Objects", "6 Preview", "7 Generate", "8 Result"} {
 		assertContains(t, view, route)
 	}
-	assertContains(t, view, "● 6 Preview")
-	assertContains(t, view, "Enter opens selected")
+	assertContains(t, view, "> 6 Preview")
+	assertContains(t, view, "enter open | ctrl+p routes")
 	assertContains(t, view, "route")
 }
 
@@ -250,12 +250,12 @@ func TestModelViewFooterKeepsEssentialContextShortcuts(t *testing.T) {
 	}{
 		{
 			name: "overview keeps compact global help",
-			want: []string{"Keys: ↑/↓ route | enter open | ? help", "Back esc | Quit q/ctrl+c", "Overview: r refresh | g generate"},
+			want: []string{"up/down route | enter open | ? help | ctrl+p routes", "esc back | q quit", "overview r refresh g generate"},
 		},
 		{
 			name: "project keeps edit safety action",
 			set:  func(model *Model) { model.openScreen(screenProject) },
-			want: []string{"Keys: ↑/↓ route | enter open | ? help", "Project: e edit | r refresh"},
+			want: []string{"up/down route | enter open | ? help | ctrl+p routes", "project e edit r refresh"},
 		},
 		{
 			name: "failed generation keeps retry cue",
@@ -264,7 +264,7 @@ func TestModelViewFooterKeepsEssentialContextShortcuts(t *testing.T) {
 				model.status = statusFailed
 				model.err = errors.New("boom")
 			},
-			want: []string{"Result: g retry generation | esc Generate | r refresh", "Back esc | Quit q/ctrl+c"},
+			want: []string{"result g retry esc generate r refresh", "esc back | q quit"},
 		},
 		{
 			name: "stale refresh lock keeps only safe actions",
@@ -272,7 +272,7 @@ func TestModelViewFooterKeepsEssentialContextShortcuts(t *testing.T) {
 				model.status = statusFailed
 				model.errContext = "Refresh after save"
 			},
-			want: []string{"Locked: r retry refresh | q/esc/ctrl+c quit"},
+			want: []string{"locked | r retry refresh | q quit"},
 		},
 		{
 			name: "force preview keeps file navigation and force cue",
@@ -281,12 +281,12 @@ func TestModelViewFooterKeepsEssentialContextShortcuts(t *testing.T) {
 				model.plan.ForceRequired = true
 				model.plan.Readiness.OutputForceRequired = true
 			},
-			want: []string{"Preview: files ↑/↓/pg/home/end | a filter | r refresh | g generate", "Force required: review output safety before generating"},
+			want: []string{"files up/down/pg/home/end | a filter | r refresh | g generate", "force required"},
 		},
 		{
 			name: "busy refresh keeps wait message",
 			set:  func(model *Model) { model.status = statusRefreshing },
-			want: []string{"Refreshing plan. Please wait; editing, filtering, and generation are paused."},
+			want: []string{"refreshing plan | controls paused"},
 		},
 	}
 
@@ -312,18 +312,18 @@ func TestModelViewShowsBootstrappedConfigSource(t *testing.T) {
 	assertContains(t, view, "Created starter config. Edit project, service, entity, and basic field settings incrementally.")
 }
 
-func TestModelDefaultsToWizardMenu(t *testing.T) {
+func TestNewModelDefaultsToRouteUI(t *testing.T) {
 	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
 
-	if model.mode != modeWizard || model.wizardScreen != wizardMenu {
-		t.Fatalf("expected wizard menu by default, got mode=%v screen=%v", model.mode, model.wizardScreen)
+	if model.mode != modeWorkspace || model.screen != screenOverview || model.selectedScreen != screenOverview {
+		t.Fatalf("expected route UI by default, got mode=%v screen=%v selected=%v", model.mode, model.screen, model.selectedScreen)
 	}
 	view := stripANSI(model.View())
-	assertContains(t, view, "Breadcrumb: Wizard / Menu")
-	assertContains(t, view, "What would you like to configure?")
-	assertContains(t, view, "> Configure project")
-	assertContains(t, view, "Footer:")
-	assertNotContains(t, view, "Navigation")
+	assertContains(t, view, "Routes")
+	assertContains(t, view, "Route Overview/Overview")
+	assertContains(t, view, "up/down route | enter open | ? help | ctrl+p routes")
+	assertNotContains(t, view, "Breadcrumb: Wizard / Menu")
+	assertNotContains(t, view, "What would you like to configure?")
 }
 
 func TestWizardSelectionAndRouting(t *testing.T) {
@@ -342,7 +342,7 @@ func TestWizardSelectionAndRouting(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+			model := wizardModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
 			for range tt.moves {
 				updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyDown})
 				model = updated.(Model)
@@ -361,7 +361,7 @@ func TestWizardSelectionAndRouting(t *testing.T) {
 }
 
 func TestWizardEscReturnsToMenuAndQuitKeysExit(t *testing.T) {
-	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	model := wizardModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
 	model = updated.(Model)
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -383,7 +383,7 @@ func TestWizardEscReturnsToMenuAndQuitKeysExit(t *testing.T) {
 func TestWizardProjectStepUsesExistingEditorAndContinuesToServices(t *testing.T) {
 	plan := wizardPlan()
 	var captured application.SolutionSettings
-	model := NewModel(plan, application.GenerateRequest{}, nil, nil, func(_ application.GenerateRequest, settings application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+	model := wizardModel(plan, application.GenerateRequest{}, nil, nil, func(_ application.GenerateRequest, settings application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
 		captured = settings
 		return application.UpdateSolutionSettingsResult{Saved: true, Plan: plan}, nil
 	})
@@ -410,7 +410,7 @@ func TestWizardProjectStepUsesExistingEditorAndContinuesToServices(t *testing.T)
 }
 
 func TestWizardProjectSaveFailureKeepsEditorActive(t *testing.T) {
-	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, func(_ application.GenerateRequest, _ application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
+	model := wizardModel(wizardPlan(), application.GenerateRequest{}, nil, nil, func(_ application.GenerateRequest, _ application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
 		return application.UpdateSolutionSettingsResult{}, errors.New("config write failed")
 	})
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -429,7 +429,7 @@ func TestWizardProjectSaveFailureKeepsEditorActive(t *testing.T) {
 
 func TestWizardProjectStaleRefreshLocksUntilRetry(t *testing.T) {
 	plan := wizardPlan()
-	model := NewModel(plan, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
+	model := wizardModel(plan, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
 		return plan, nil
 	}, nil, func(_ application.GenerateRequest, _ application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
 		return application.UpdateSolutionSettingsResult{Saved: true, Config: plan.Config, PlanError: errors.New("generation plan failed")}, nil
@@ -459,7 +459,7 @@ func TestWizardProjectStaleRefreshLocksUntilRetry(t *testing.T) {
 }
 
 func TestWizardProjectViewShowsTargetFrameworkAndSuggestions(t *testing.T) {
-	model := NewModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil, []string{"net10.0", "net9.0", "net8.0"})
+	model := wizardModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil, []string{"net10.0", "net9.0", "net8.0"})
 	model.enterWizardProject()
 
 	view := stripANSI(model.View())
@@ -715,7 +715,7 @@ func TestWizardEntityAndFieldListsExposeAddEditAdvancedEntries(t *testing.T) {
 	assertContains(t, view, "Product (2 fields)")
 	assertContains(t, view, "Add entity")
 	assertContains(t, view, "Edit entities")
-	assertContains(t, view, "Advanced configuration")
+	assertContains(t, view, "Open route editor")
 
 	for range model.wizardEntityAddOption() {
 		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
@@ -733,7 +733,7 @@ func TestWizardEntityAndFieldListsExposeAddEditAdvancedEntries(t *testing.T) {
 	assertContains(t, view, "Id: Guid")
 	assertContains(t, view, "Add field")
 	assertContains(t, view, "Edit fields")
-	assertContains(t, view, "Advanced configuration")
+	assertContains(t, view, "Open route editor")
 	for range model.wizardFieldAddOption() {
 		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
 		model = updated.(Model)
@@ -969,14 +969,14 @@ func TestWizardGuidedViewsUseSingleColumnPromptListAndDetail(t *testing.T) {
 	assertContains(t, view, "Which service should we configure?")
 	assertContains(t, view, "Add service")
 	assertContains(t, view, "Edit services")
-	assertContains(t, view, "Advanced configuration")
+	assertContains(t, view, "Open route editor")
 	assertContains(t, view, "Selected service")
 	assertContains(t, view, "Entities: 1 | Fields: 2 | Value objects: 1")
 	assertNotContains(t, view, "Navigation")
 }
 
 func TestWizardAdvancedWorkspaceHasBackPath(t *testing.T) {
-	model := NewModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	model := wizardModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
 	for range wizardAdvancedWorkspace {
 		updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyDown})
 		model = updated.(Model)
@@ -984,15 +984,392 @@ func TestWizardAdvancedWorkspaceHasBackPath(t *testing.T) {
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	model = updated.(Model)
 	if cmd != nil || model.mode != modeWorkspace || model.screen != screenOverview || model.guidedWorkspace {
-		t.Fatalf("expected advanced workspace, got mode=%v screen=%v guided=%v cmd=%v", model.mode, model.screen, model.guidedWorkspace, cmd)
+		t.Fatalf("expected workspace, got mode=%v screen=%v guided=%v cmd=%v", model.mode, model.screen, model.guidedWorkspace, cmd)
 	}
 	view := stripANSI(model.View())
-	assertContains(t, view, "Advanced workspace")
-	assertContains(t, view, "Route map")
+	assertContains(t, view, "Routes")
+	assertNotContains(t, view, "Workspace")
 	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	model = updated.(Model)
 	if cmd != nil || model.mode != modeWizard {
-		t.Fatalf("expected esc to return from advanced workspace, got mode=%v cmd=%v", model.mode, cmd)
+		t.Fatalf("expected esc to return from workspace, got mode=%v cmd=%v", model.mode, cmd)
+	}
+}
+
+func TestWorkspaceViewsDoNotExposeAdvancedModeLanguage(t *testing.T) {
+	plan := plannedFilesPlan(2)
+	plan.Config.SolutionName = "CommercePlatform"
+	plan.OutputDir = "/tmp/generated"
+	result := application.GenerateResult{OutputDir: plan.OutputDir, Plan: plan}
+
+	tests := []struct {
+		name    string
+		prepare func(*Model)
+	}{
+		{name: "normal workspace", prepare: func(model *Model) { model.openScreen(screenOverview) }},
+		{name: "guided workspace", prepare: func(model *Model) { model.enterWizardWorkspace(screenPreview) }},
+		{name: "wizard menu", prepare: func(model *Model) { model.enterWizardMenu() }},
+		{name: "wizard result", prepare: func(model *Model) {
+			model.mode = modeWizard
+			model.wizardScreen = wizardResult
+			model.status = statusGenerated
+			model.result = result
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := workspaceModel(plan, application.GenerateRequest{}, nil, nil, nil)
+			tt.prepare(&model)
+			view := stripANSI(model.View())
+
+			assertNotContains(t, view, "Advanced workspace")
+			assertNotContains(t, view, "advanced workspace")
+			assertNotContains(t, view, "advanced mode")
+			assertNotContains(t, view, "Advanced configuration")
+			assertNotContains(t, view, "Inspect advanced preview")
+			assertNotContains(t, view, "guided setup")
+		})
+	}
+}
+
+func TestWideWorkspaceUsesFullScreenPaneLayout(t *testing.T) {
+	model := workspaceModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
+	model.layout = layoutWide
+	model.windowWidth = 120
+	model.openScreen(screenServices)
+
+	view := stripANSI(model.View())
+
+	assertContains(t, view, "Microgen READY")
+	assertContains(t, view, "Routes")
+	assertContains(t, view, "> 3 Services")
+	assertContains(t, view, "up/down route | enter open | ? help | ctrl+p routes")
+	assertContains(t, view, "services tab context e edit r refresh")
+	assertNotContains(t, view, "Main detail")
+	assertNotContains(t, view, "Command / status")
+	assertNotContains(t, view, "Active Overview")
+	assertNotContains(t, view, "Selected Services")
+	assertNotContains(t, view, "+-Sidebar")
+	assertNotContains(t, view, "+-Main detail")
+	assertNotContains(t, view, "+-Command / status")
+}
+
+func TestWorkspaceChromeUsesCompactSegments(t *testing.T) {
+	model := workspaceModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
+	model.openScreen(screenPreview)
+	updated, cmd := model.Update(tea.WindowSizeMsg{Width: 125, Height: 24})
+	if cmd != nil {
+		t.Fatal("expected no command from window resize")
+	}
+
+	view := stripANSI(updated.(Model).View())
+	lines := strings.Split(view, "\n")
+	if len(lines) != 24 {
+		t.Fatalf("expected 24 lines, got %d in %q", len(lines), view)
+	}
+	assertContains(t, lines[0], "Microgen READY")
+	assertContains(t, lines[0], "Route Preview/Preview")
+	assertContains(t, lines[len(lines)-1], "up/down route | enter open | ? help | ctrl+p routes")
+	assertNotContains(t, view, "Primary action")
+	assertNotContains(t, view, "Command / status")
+	assertNotContains(t, view, "Main detail")
+}
+
+func TestWorkspaceViewUsesFixedViewportHeight(t *testing.T) {
+	for _, screen := range []workspaceScreen{screenProject, screenPreview} {
+		t.Run(screen.label(), func(t *testing.T) {
+			model := workspaceModel(longPreviewPlan(), application.GenerateRequest{OutputDir: "/tmp/generated"}, nil, nil, nil)
+			model.openScreen(screen)
+			updated, cmd := model.Update(tea.WindowSizeMsg{Width: 125, Height: 24})
+			if cmd != nil {
+				t.Fatal("expected no command from window resize")
+			}
+
+			view := stripANSI(updated.(Model).View())
+			assertViewportSize(t, view, 125, 24)
+		})
+	}
+}
+
+func TestPreviewLongPathsStayInsideFixedViewport(t *testing.T) {
+	model := workspaceModel(longPreviewPlan(), application.GenerateRequest{OutputDir: "/tmp/generated"}, nil, nil, nil)
+	model.openScreen(screenPreview)
+	updated, cmd := model.Update(tea.WindowSizeMsg{Width: 125, Height: 24})
+	if cmd != nil {
+		t.Fatal("expected no command from window resize")
+	}
+
+	view := stripANSI(updated.(Model).View())
+	assertViewportSize(t, view, 125, 24)
+	assertContains(t, view, "...")
+	assertNotContains(t, view, "ExtremelyLongServiceNameThatWouldPreviouslyWrapAcrossTerminalRows")
+}
+
+func TestSwitchingPreviewToProjectKeepsFixedViewportHeight(t *testing.T) {
+	model := workspaceModel(longPreviewPlan(), application.GenerateRequest{OutputDir: "/tmp/generated"}, nil, nil, nil)
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 125, Height: 24})
+	model = updated.(Model)
+	model.openScreen(screenPreview)
+	assertViewportSize(t, stripANSI(model.View()), 125, 24)
+
+	model.openScreen(screenProject)
+	assertViewportSize(t, stripANSI(model.View()), 125, 24)
+}
+
+func TestOverlayViewportLinesPreservesDimensionsAndClamps(t *testing.T) {
+	tests := []struct {
+		name       string
+		base       []string
+		modal      string
+		width      int
+		wantHeight int
+		want       []string
+	}{
+		{
+			name:       "centers modal without changing viewport",
+			base:       []string{"aaaaaaaaaa", "bbbbbbbbbb", "cccccccccc", "dddddddddd", "eeeeeeeeee"},
+			modal:      "XX\nYY",
+			width:      10,
+			wantHeight: 5,
+			want:       []string{"aaaaaaaaaa", "    XX    ", "    YY    ", "dddddddddd", "eeeeeeeeee"},
+		},
+		{
+			name:       "clamps oversized modal inside compact viewport",
+			base:       []string{"aaaaaa", "bbbbbb"},
+			modal:      "one\ntwo\nthree",
+			width:      6,
+			wantHeight: 2,
+			want:       []string{" one  ", " two  "},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := overlayViewportLines(tt.base, tt.modal, tt.width)
+			if len(got) != tt.wantHeight {
+				t.Fatalf("expected %d lines, got %d in %#v", tt.wantHeight, len(got), got)
+			}
+			for index, line := range got {
+				if visible := len([]rune(stripANSI(line))); visible != tt.width {
+					t.Fatalf("expected line %d width %d, got %d in %q", index+1, tt.width, visible, line)
+				}
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("overlayViewportLines() = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestActiveModalSelectsVisibleWorkspaceOverlay(t *testing.T) {
+	model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	model.routeSelectorOpen = true
+	model.routeSelectorScreen = screenProject
+	if modal := stripANSI(model.activeModal()); !strings.Contains(modal, "Routes") || !strings.Contains(modal, "target Project") {
+		t.Fatalf("expected route selector modal with target context, got %q", modal)
+	}
+
+	model.helpOpen = true
+	if modal := stripANSI(model.activeModal()); !strings.Contains(modal, "Keys") || strings.Contains(modal, "target Project") {
+		t.Fatalf("expected help modal to take precedence over route selector, got %q", modal)
+	}
+}
+
+func TestWorkspaceModalsOverlayFixedViewport(t *testing.T) {
+	tests := []struct {
+		name      string
+		open      func(Model) Model
+		wantModal string
+	}{
+		{
+			name: "help overlay",
+			open: func(model Model) Model {
+				updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+				return updated.(Model)
+			},
+			wantModal: "Keys",
+		},
+		{
+			name: "route overlay",
+			open: func(model Model) Model {
+				updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+				return updated.(Model)
+			},
+			wantModal: "Routes",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := workspaceModel(longPreviewPlan(), application.GenerateRequest{OutputDir: "/tmp/generated"}, nil, nil, nil)
+			updated, _ := model.Update(tea.WindowSizeMsg{Width: 96, Height: 18})
+			model = tt.open(updated.(Model))
+
+			view := stripANSI(model.View())
+			assertViewportSize(t, view, 96, 18)
+			lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
+			footer := strings.TrimSpace(lines[len(lines)-1])
+			if !strings.Contains(footer, "up/down route") {
+				t.Fatalf("expected footer on final line, got %q in %q", footer, view)
+			}
+			modalLine := lineIndexContaining(lines, tt.wantModal)
+			if modalLine < 0 || modalLine >= len(lines)-1 {
+				t.Fatalf("expected %q before footer inside viewport, got index=%d in %q", tt.wantModal, modalLine, view)
+			}
+			assertNotContains(t, strings.Join(lines[modalLine+1:len(lines)-1], "\n"), "Microgen READY")
+		})
+	}
+}
+
+func TestWorkspaceModalsPreserveCompactHeight(t *testing.T) {
+	model := workspaceModel(longPreviewPlan(), application.GenerateRequest{OutputDir: "/tmp/generated"}, nil, nil, nil)
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 54, Height: 9})
+	model = updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	model = updated.(Model)
+
+	view := stripANSI(model.View())
+	assertViewportSize(t, view, 54, 9)
+	assertContains(t, view, "Routes")
+	assertContains(t, strings.Split(strings.TrimRight(view, "\n"), "\n")[8], "up/down route")
+}
+
+func TestWorkspaceModalOutputUsesNeutralPaneWording(t *testing.T) {
+	tests := []struct {
+		name string
+		open func(Model) Model
+	}{
+		{
+			name: "help",
+			open: func(model Model) Model {
+				updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+				return updated.(Model)
+			},
+		},
+		{
+			name: "route selector",
+			open: func(model Model) Model {
+				updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+				return updated.(Model)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{OutputDir: "/tmp/generated"}, nil, nil, nil)
+			updated, _ := model.Update(tea.WindowSizeMsg{Width: 90, Height: 20})
+			view := strings.ToLower(stripANSI(tt.open(updated.(Model)).View()))
+			for _, unwanted := range []string{"source product", "external product", "command / status", "advanced"} {
+				assertNotContains(t, view, unwanted)
+			}
+		})
+	}
+}
+
+func TestGuidedWorkspaceUsesUnifiedWorkspaceShell(t *testing.T) {
+	model := workspaceModel(wizardPlan(), application.GenerateRequest{}, nil, nil, nil)
+	model.enterWizardWorkspace(screenServices)
+	view := stripANSI(model.View())
+
+	assertContains(t, view, "Microgen READY")
+	assertContains(t, view, "Routes")
+	assertContains(t, view, "Route Services/Services")
+	assertContains(t, view, "esc back")
+	assertNotContains(t, view, "Command / status")
+	assertNotContains(t, view, "Breadcrumb: Wizard")
+	assertNotContains(t, view, "guided setup")
+}
+
+func TestGuidedWorkspaceEscReturnsWithNeutralWordingAndPreservesState(t *testing.T) {
+	plan := wizardPlan()
+	plan.Config.SolutionName = "CommercePlatform"
+	model := workspaceModel(plan, application.GenerateRequest{ConfigPath: "microgen.json", Force: true}, nil, nil, nil)
+	model.enterWizardReview()
+	model.enterWizardWorkspace(screenPreview)
+	model.message = "Review the route preview before generating."
+
+	view := stripANSI(model.View())
+	assertContains(t, view, "esc back")
+	assertContains(t, view, "Review the route preview before generating.")
+	assertContains(t, view, "esc back")
+	assertNotContains(t, view, "advanced")
+	assertNotContains(t, view, "guided setup")
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.mode != modeWizard || model.wizardScreen != wizardReview {
+		t.Fatalf("expected esc to return to guided review, got mode=%v screen=%v cmd=%v", model.mode, model.wizardScreen, cmd)
+	}
+	if model.plan.Config.SolutionName != "CommercePlatform" || model.request.ConfigPath != "microgen.json" || !model.request.Force || model.status != statusReady {
+		t.Fatalf("expected guided return to preserve config/request/status, got plan=%#v request=%#v status=%v err=%v", model.plan.Config, model.request, model.status, model.err)
+	}
+}
+
+func TestUnifiedWorkspaceSafetyStatesRemainVisibleAndProtected(t *testing.T) {
+	tests := []struct {
+		name       string
+		prepare    func(*Model)
+		msg        tea.KeyMsg
+		wantView   []string
+		wantStatus modelStatus
+		wantScreen workspaceScreen
+	}{
+		{
+			name: "busy generation blocks quit and keeps wait text",
+			prepare: func(model *Model) {
+				model.status = statusGenerating
+				model.openScreen(screenGenerate)
+			},
+			msg:        tea.KeyMsg{Type: tea.KeyEsc},
+			wantView:   []string{"Generating files. Please wait", "generating files | controls paused"},
+			wantStatus: statusGenerating,
+			wantScreen: screenGenerate,
+		},
+		{
+			name: "stale refresh stays locked until retry",
+			prepare: func(model *Model) {
+				model.status = statusFailed
+				model.errContext = "Refresh after save"
+				model.err = errors.New("refresh failed")
+				model.openScreen(screenGenerate)
+			},
+			msg:        tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}},
+			wantView:   []string{"locked | r retry refresh", "route selector unavailable until refresh succeeds"},
+			wantStatus: statusFailed,
+			wantScreen: screenGenerate,
+		},
+		{
+			name: "force required blocks generation",
+			prepare: func(model *Model) {
+				model.plan.ForceRequired = true
+				model.openScreen(screenGenerate)
+			},
+			msg:        tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}},
+			wantView:   []string{"Generation is locked until --force is confirmed", "Confirm --force or change the output directory"},
+			wantStatus: statusReady,
+			wantScreen: screenGenerate,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := workspaceModel(wizardPlan(), application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
+				t.Fatal("generation must remain protected")
+				return application.GenerateResult{}, nil
+			}, nil)
+			tt.prepare(&model)
+			updated, cmd := model.Update(tt.msg)
+			model = updated.(Model)
+			if cmd != nil || model.status != tt.wantStatus || model.activeScreen() != tt.wantScreen {
+				t.Fatalf("expected protected state status=%v screen=%v without command, got status=%v screen=%v cmd=%v", tt.wantStatus, tt.wantScreen, model.status, model.activeScreen(), cmd)
+			}
+			view := stripANSI(model.View())
+			for _, want := range tt.wantView {
+				assertContains(t, view, want)
+			}
+		})
 	}
 }
 
@@ -1012,7 +1389,7 @@ func TestGuidedGenerationReturnsMinimalResultWizard(t *testing.T) {
 	plan := plannedFilesPlan(2)
 	plan.OutputDir = "/tmp/generated"
 	request := application.GenerateRequest{OutputDir: plan.OutputDir}
-	model := NewModel(plan, request, nil, func(actual application.GenerateRequest) (application.GenerateResult, error) {
+	model := wizardModel(plan, request, nil, func(actual application.GenerateRequest) (application.GenerateResult, error) {
 		return application.GenerateResult{OutputDir: actual.OutputDir, Plan: plan}, nil
 	}, nil)
 	for range wizardGenerateSolution {
@@ -1036,7 +1413,7 @@ func TestGuidedGenerationReturnsMinimalResultWizard(t *testing.T) {
 	assertContains(t, view, "Generation complete")
 	assertContains(t, view, "2 files written to /tmp/generated")
 	assertContains(t, view, "Back to menu")
-	assertContains(t, view, "Advanced workspace")
+	assertContains(t, view, "Open route editor")
 	assertNotContains(t, view, "Navigation")
 }
 
@@ -1312,14 +1689,14 @@ func TestWizardValueObjectsAndReviewViewsStaySingleColumn(t *testing.T) {
 	assertContains(t, view, "Would you like to configure value objects before entities and fields?")
 	assertContains(t, view, "Configure value objects")
 	assertContains(t, view, "Skip to entities")
-	assertContains(t, view, "Advanced configuration")
+	assertContains(t, view, "Open route editor")
 	assertNotContains(t, view, "Navigation")
 
 	model.enterWizardReview()
 	view = stripANSI(model.View())
 	assertContains(t, view, "Review your generation plan")
 	assertContains(t, view, "Generate solution")
-	assertContains(t, view, "Inspect advanced preview")
+	assertContains(t, view, "Inspect route preview")
 	assertContains(t, view, "Back to fields")
 	assertNotContains(t, view, "Navigation")
 }
@@ -1397,6 +1774,122 @@ func TestModelUpdateSelectsAndOpensWorkspaceRoutes(t *testing.T) {
 	}
 	assertContains(t, model.View(), "Solution")
 	assertNotContains(t, model.View(), "Wizard")
+}
+
+func TestModelUpdateRouteSelectorOpensMovesConfirmsAndCancels(t *testing.T) {
+	model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	model.openScreen(screenServices)
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	model = updated.(Model)
+	if cmd != nil || !model.routeSelectorOpen || model.routeSelectorScreen != screenServices || model.activeScreen() != screenServices {
+		t.Fatalf("expected ctrl+p to open selector on active Services route, open=%v selector=%v active=%v cmd=%v", model.routeSelectorOpen, model.routeSelectorScreen, model.activeScreen(), cmd)
+	}
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	if cmd != nil || model.routeSelectorScreen != screenEntities || model.activeScreen() != screenServices {
+		t.Fatalf("expected selector down to highlight Entities without opening it, selector=%v active=%v cmd=%v", model.routeSelectorScreen, model.activeScreen(), cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	model = updated.(Model)
+	if cmd != nil || model.routeSelectorScreen != screenValueObjects || model.activeScreen() != screenServices {
+		t.Fatalf("expected selector j to highlight Value Objects without opening it, selector=%v active=%v cmd=%v", model.routeSelectorScreen, model.activeScreen(), cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyUp})
+	model = updated.(Model)
+	if cmd != nil || model.routeSelectorScreen != screenEntities || model.activeScreen() != screenServices {
+		t.Fatalf("expected selector up to highlight Entities without opening it, selector=%v active=%v cmd=%v", model.routeSelectorScreen, model.activeScreen(), cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	model = updated.(Model)
+	if cmd != nil || model.routeSelectorScreen != screenServices || model.activeScreen() != screenServices {
+		t.Fatalf("expected selector k to highlight Services, selector=%v active=%v cmd=%v", model.routeSelectorScreen, model.activeScreen(), cmd)
+	}
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil || model.routeSelectorOpen || model.screen != screenEntities || model.selectedScreen != screenEntities || model.currentStep != stepEntities {
+		t.Fatalf("expected enter to confirm selector route, open=%v screen=%v selected=%v step=%v cmd=%v", model.routeSelectorOpen, model.screen, model.selectedScreen, model.currentStep, cmd)
+	}
+
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	model = updated.(Model)
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if cmd != nil || model.routeSelectorOpen || model.activeScreen() != screenEntities || model.screen != screenEntities {
+		t.Fatalf("expected esc to cancel selector and preserve active route, open=%v active=%v screen=%v cmd=%v", model.routeSelectorOpen, model.activeScreen(), model.screen, cmd)
+	}
+}
+
+func TestModelUpdateRouteSelectorIsBlockedDuringSafetyCriticalStates(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     modelStatus
+		errContext string
+	}{
+		{name: "refreshing", status: statusRefreshing},
+		{name: "generating", status: statusGenerating},
+		{name: "saving", status: statusSaving},
+		{name: "post-save refresh lock", status: statusFailed, errContext: "Refresh after save"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+			model.openScreen(screenServices)
+			model.status = tt.status
+			model.errContext = tt.errContext
+			selectorBefore := model.routeSelectorScreen
+
+			updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+			model = updated.(Model)
+			if cmd != nil || model.routeSelectorOpen || model.routeSelectorScreen != selectorBefore || model.screen != screenServices {
+				t.Fatalf("expected selector open to be blocked, open=%v selector=%v screen=%v cmd=%v", model.routeSelectorOpen, model.routeSelectorScreen, model.screen, cmd)
+			}
+		})
+	}
+}
+
+func TestModelUpdateNestedEditorShortcutsAreBlockedDuringBusyStates(t *testing.T) {
+	tests := []struct {
+		name   string
+		status modelStatus
+	}{
+		{name: "refreshing", status: statusRefreshing},
+		{name: "generating", status: statusGenerating},
+		{name: "saving", status: statusSaving},
+	}
+
+	for _, tt := range tests {
+		t.Run("fields shortcut "+tt.name, func(t *testing.T) {
+			model := modelOnStep(plannedFilesPlan(1), stepEntities)
+			model.status = tt.status
+
+			updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+			model = updated.(Model)
+
+			if cmd != nil || model.edit.mode == editModeFields || model.status != tt.status {
+				t.Fatalf("expected busy state to block fields shortcut, status=%v mode=%v cmd=%v", model.status, model.edit.mode, cmd)
+			}
+		})
+
+		t.Run("rules shortcut "+tt.name, func(t *testing.T) {
+			model := modelOnStep(plannedFilesPlan(1), stepValueObjects)
+			model.status = tt.status
+
+			updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+			model = updated.(Model)
+
+			if cmd != nil || model.valueObjectsEdit.rulesOpen || model.status != tt.status {
+				t.Fatalf("expected busy state to block rules shortcut, status=%v rulesOpen=%v cmd=%v", model.status, model.valueObjectsEdit.rulesOpen, cmd)
+			}
+		})
+	}
 }
 
 func TestModelUpdateSwitchesServicesResourceContextsAndSelections(t *testing.T) {
@@ -1499,7 +1992,7 @@ func TestModelUpdateHelpOverlayAndBusyLocks(t *testing.T) {
 	model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
 	model = updated.(Model)
-	if cmd != nil || !model.helpOpen || !strings.Contains(stripANSI(model.View()), "Global:") {
+	if cmd != nil || !model.helpOpen || !strings.Contains(stripANSI(model.View()), "Keys") {
 		t.Fatalf("expected help overlay, got open=%v cmd=%v view=%q", model.helpOpen, cmd, model.View())
 	}
 	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -1532,8 +2025,8 @@ func TestModelViewUsesResponsiveWorkspaceShell(t *testing.T) {
 		want     string
 		unwanted string
 	}{
-		{name: "wide rail", width: 120, want: "Enter opens selected", unwanted: "Navigation ["},
-		{name: "medium top navigation", width: 90, want: "Route map ● 1 Overview", unwanted: "Enter opens selected route"},
+		{name: "wide rail", width: 120, want: "enter open | ctrl+p routes", unwanted: "Navigation ["},
+		{name: "medium top navigation", width: 90, want: "Routes > 1 Overview", unwanted: "Enter opens selected route"},
 		{name: "narrow focused content", width: 60, want: "Overview", unwanted: "Enter opens selected route"},
 	}
 
@@ -1553,6 +2046,205 @@ func TestModelViewUsesResponsiveWorkspaceShell(t *testing.T) {
 	}
 }
 
+func TestModelViewRouteSelectorShowsModalDiscoveryAndSafetyContext(t *testing.T) {
+	plan := plannedFilesPlan(1)
+	plan.ForceRequired = true
+	plan.Readiness.OutputForceRequired = true
+	model := workspaceModel(plan, application.GenerateRequest{OutputDir: "/tmp/generated"}, nil, nil, nil)
+	model.openScreen(screenPreview)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	model = updated.(Model)
+	if cmd != nil {
+		t.Fatalf("expected selector open without command, got %v", cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	if cmd != nil {
+		t.Fatalf("expected selector movement without command, got %v", cmd)
+	}
+
+	view := stripANSI(model.View())
+	assertContains(t, view, "Routes")
+	assertContains(t, view, "active Preview  target Generate")
+	assertContains(t, view, "1 Overview")
+	assertContains(t, view, "8 Result")
+	assertContains(t, view, "enter switch | esc cancel | up/down move")
+	assertContains(t, view, "Safety: force required before writing to /tmp/generated")
+}
+
+func TestTUIViewHidesAdvancedWorkspaceWords(t *testing.T) {
+	plan := plannedFilesPlan(3)
+	plan.OutputDir = "/tmp/generated"
+	tests := []struct {
+		name    string
+		prepare func(*Model)
+	}{
+		{name: "menu", prepare: func(model *Model) { model.enterWizardMenu() }},
+		{name: "services", prepare: func(model *Model) { model.enterWizardServices() }},
+		{name: "value objects", prepare: func(model *Model) { model.enterWizardValueObjects() }},
+		{name: "result", prepare: func(model *Model) {
+			model.mode = modeWizard
+			model.wizardScreen = wizardResult
+			model.status = statusGenerated
+			model.result = application.GenerateResult{OutputDir: plan.OutputDir, Plan: plan}
+		}},
+		{name: "route shell", prepare: func(model *Model) { model.openScreen(screenPreview) }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+			tt.prepare(&model)
+			view := strings.ToLower(stripANSI(model.View()))
+			for _, forbidden := range []string{"advanced", "workspace", "guided setup"} {
+				if strings.Contains(view, forbidden) {
+					t.Fatalf("expected view not to contain %q, got %q", forbidden, view)
+				}
+			}
+		})
+	}
+}
+
+func TestWorkspaceViewClampsHeightAcrossRoutes(t *testing.T) {
+	plan := plannedFilesPlan(40)
+	for index := range plan.Files {
+		plan.Files[index].Path = fmt.Sprintf("src/VeryLongGeneratedPathSegment%02d/AnotherLongSegment/Feature/ControllerWithVeryLongName%02d.cs", index, index)
+	}
+	model := workspaceModel(plan, application.GenerateRequest{OutputDir: "/tmp/generated"}, nil, nil, nil)
+	updated, cmd := model.Update(tea.WindowSizeMsg{Width: 96, Height: 24})
+	if cmd != nil {
+		t.Fatal("expected no command from window size")
+	}
+	model = updated.(Model)
+
+	for _, screen := range []workspaceScreen{screenOverview, screenProject, screenServices, screenEntities, screenValueObjects, screenPreview, screenGenerate, screenResult} {
+		t.Run(screen.label(), func(t *testing.T) {
+			model.openScreen(screen)
+			view := stripANSI(model.View())
+			if rows := renderedTestLineCount(view); rows > model.windowHeight {
+				t.Fatalf("expected %s view to stay within %d rows, got %d rows in %q", screen.label(), model.windowHeight, rows, view)
+			}
+		})
+	}
+}
+
+func TestPreviewClipsLongGeneratedPaths(t *testing.T) {
+	longPath := strings.Repeat("very-long-segment/", 20) + "GeneratedController.cs"
+	plan := plannedFilesPlan(2)
+	plan.Files[0].Path = longPath
+	plan.Files[1].Path = longPath + ".backup"
+	model := workspaceModel(plan, application.GenerateRequest{OutputDir: "/tmp/generated"}, nil, nil, nil)
+	model.openScreen(screenPreview)
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 80, Height: 18})
+	model = updated.(Model)
+
+	view := stripANSI(model.View())
+	if strings.Count(view, "very-long-segment") > 12 {
+		t.Fatalf("expected long generated paths to be clipped, got view %q", view)
+	}
+	assertContains(t, view, "...")
+}
+
+func TestRouteSelectorRendersAsModal(t *testing.T) {
+	model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+	model.openScreen(screenServices)
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	model = updated.(Model)
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	model = updated.(Model)
+	if cmd != nil {
+		t.Fatal("expected selector open without command")
+	}
+
+	view := stripANSI(model.View())
+	assertContains(t, view, "+")
+	assertContains(t, view, "Routes")
+	assertContains(t, view, "active Services  target Services")
+	assertContains(t, view, "enter switch | esc cancel | up/down move")
+	for lineIndex, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "active Services") && len([]rune(strings.TrimSpace(line))) >= 90 {
+			t.Fatalf("expected bounded modal line, got line %d with %d modal columns: %q", lineIndex+1, len([]rune(strings.TrimSpace(line))), line)
+		}
+	}
+}
+
+func TestModelViewDistinguishesActiveSelectedAndPaneRegions(t *testing.T) {
+	model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{ConfigPath: "config.json"}, nil, nil, nil)
+	updated, cmd := model.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	model = updated.(Model)
+	if cmd != nil {
+		t.Fatalf("expected resize without command, got %v", cmd)
+	}
+	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	if cmd != nil {
+		t.Fatalf("expected route selection without command, got %v", cmd)
+	}
+
+	view := stripANSI(model.View())
+	assertContains(t, view, "Route Overview/Project")
+	assertContains(t, view, "Routes")
+	assertNotContains(t, view, "Main detail")
+	assertNotContains(t, view, "Command / status")
+	assertContains(t, view, "ctrl+p routes")
+	assertContains(t, view, "? help")
+}
+
+func TestModelViewResponsivePaneContextStaysReadable(t *testing.T) {
+	for _, width := range []int{90, 48} {
+		t.Run(fmt.Sprintf("width %d", width), func(t *testing.T) {
+			model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{ConfigPath: "config.json"}, nil, nil, nil)
+			updated, cmd := model.Update(tea.WindowSizeMsg{Width: width})
+			model = updated.(Model)
+			if cmd != nil {
+				t.Fatalf("expected resize without command, got %v", cmd)
+			}
+			view := stripANSI(model.View())
+			assertContains(t, view, "Routes")
+			assertContains(t, view, "route Overview/Overview")
+			assertNotContains(t, view, "Active Overview")
+			assertNotContains(t, view, "Command / status")
+			assertContains(t, view, "ctrl+p routes")
+			assertContains(t, view, "? help")
+		})
+	}
+}
+
+func TestModelViewSelectorKeepsCriticalStatusRecoverable(t *testing.T) {
+	tests := []struct {
+		name       string
+		configure  func(*Model)
+		wantStatus string
+	}{
+		{name: "stale plan", configure: func(m *Model) { m.status = statusFailed; m.errContext = "Refresh after save" }, wantStatus: "Safety: stale plan locked; press r to retry refresh"},
+		{name: "force required", configure: func(m *Model) { m.plan.ForceRequired = true; m.request.OutputDir = "/tmp/generated" }, wantStatus: "Safety: force required before writing to /tmp/generated"},
+		{name: "overwrite output", configure: func(m *Model) {
+			m.plan.OutputAction = "replace"
+			m.plan.DeletedFiles = []string{"old.cs"}
+			m.request.OutputDir = "/tmp/generated"
+		}, wantStatus: "Safety: replace output may delete 1 file(s) in /tmp/generated"},
+		{name: "generation busy", configure: func(m *Model) { m.status = statusGenerating }, wantStatus: "Safety: GENERATING in progress; route selector is locked"},
+		{name: "callback failure", configure: func(m *Model) { m.status = statusFailed; m.errContext = "Generation" }, wantStatus: "Safety: Generation status is visible; route switching does not run callbacks"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := workspaceModel(plannedFilesPlan(1), application.GenerateRequest{}, nil, nil, nil)
+			model.openScreen(screenGenerate)
+			tt.configure(&model)
+			if !model.busy() && !model.postSaveRefreshFailed() {
+				updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+				model = updated.(Model)
+				if cmd != nil {
+					t.Fatalf("expected selector open without command, got %v", cmd)
+				}
+			}
+			view := stripANSI(model.View())
+			assertContains(t, view, tt.wantStatus)
+		})
+	}
+}
+
 func TestModelViewServicesWorkspaceUsesResponsiveResourceLayout(t *testing.T) {
 	plan := plannedFilesPlan(1)
 	plan.Config = application.ConfigSummary{Services: []application.ServiceSummary{{
@@ -1566,13 +2258,13 @@ func TestModelViewServicesWorkspaceUsesResponsiveResourceLayout(t *testing.T) {
 	for _, width := range []int{120, 90, 60} {
 		t.Run(fmt.Sprintf("width %d", width), func(t *testing.T) {
 			model := modelOnStep(plan, stepServices)
-			updated, cmd := model.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+			updated, cmd := model.Update(tea.WindowSizeMsg{Width: width})
 			model = updated.(Model)
 			if cmd != nil {
 				t.Fatal("expected no command from window size")
 			}
 			view := stripANSI(model.View())
-			assertContains(t, view, "Services workspace")
+			assertContains(t, view, "Services")
 			assertContains(t, view, "Selected service: ProductService")
 			assertContains(t, view, "Context: [Services]  Entities  Value Objects")
 			assertContains(t, view, "Entities: 1")
@@ -1600,7 +2292,7 @@ func TestModelViewDedicatedResourceRoutesUseResponsiveListDetailLayout(t *testin
 		t.Run(fmt.Sprintf("entities width %d", width), func(t *testing.T) {
 			model := workspaceModel(plan, application.GenerateRequest{}, nil, nil, nil)
 			model.openScreen(screenEntities)
-			updated, cmd := model.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+			updated, cmd := model.Update(tea.WindowSizeMsg{Width: width})
 			model = updated.(Model)
 			if cmd != nil {
 				t.Fatal("expected no command from window size")
@@ -1617,7 +2309,7 @@ func TestModelViewDedicatedResourceRoutesUseResponsiveListDetailLayout(t *testin
 		t.Run(fmt.Sprintf("value objects width %d", width), func(t *testing.T) {
 			model := workspaceModel(plan, application.GenerateRequest{}, nil, nil, nil)
 			model.openScreen(screenValueObjects)
-			updated, cmd := model.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+			updated, cmd := model.Update(tea.WindowSizeMsg{Width: width})
 			model = updated.(Model)
 			if cmd != nil {
 				t.Fatal("expected no command from window size")
@@ -1781,10 +2473,11 @@ func TestModelViewTruncatesDeletedFilePreview(t *testing.T) {
 func TestModelViewShowsPlannedFileRangeAndCursor(t *testing.T) {
 	view := modelOnStep(plannedFilesPlan(6), stepPreview).View()
 
-	assertContains(t, view, "Files 1-5 of 6 (filter: all)")
-	assertContains(t, view, "Selected: 1/6 [CREATE] file-01.txt")
-	assertContains(t, view, "> [1/6] [CREATE] file-01.txt")
-	assertContains(t, view, "  [5/6] [CREATE] file-05.txt")
+	assertContains(t, view, "Rows 1-5/6 filter=all")
+	assertContains(t, view, "Focus 1/6 [CREATE] file-01.txt")
+	assertContains(t, view, "#   Action     Path")
+	assertContains(t, view, ">  1 CREATE")
+	assertContains(t, view, "   5 CREATE")
 	assertNotContains(t, view, "file-06.txt")
 }
 
@@ -1796,8 +2489,8 @@ func TestModelUpdateMovesPlannedFileCursorAndWindow(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("expected no command")
 	}
-	assertContains(t, model.View(), "Files 1-5 of 7 (filter: all)")
-	assertContains(t, model.View(), "> [2/7] [CREATE] file-02.txt")
+	assertContains(t, model.View(), "Rows 1-5/7 filter=all")
+	assertContains(t, model.View(), ">  2 CREATE")
 
 	for range 4 {
 		updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
@@ -1807,8 +2500,8 @@ func TestModelUpdateMovesPlannedFileCursorAndWindow(t *testing.T) {
 		}
 	}
 	view := model.View()
-	assertContains(t, view, "Files 2-6 of 7 (filter: all)")
-	assertContains(t, view, "> [6/7] [CREATE] file-06.txt")
+	assertContains(t, view, "Rows 2-6/7 filter=all")
+	assertContains(t, view, ">  6 CREATE")
 	assertNotContains(t, view, "file-01.txt")
 
 	updated, cmd = model.Update(tea.KeyMsg{Type: tea.KeyUp})
@@ -1817,8 +2510,8 @@ func TestModelUpdateMovesPlannedFileCursorAndWindow(t *testing.T) {
 		t.Fatal("expected no command")
 	}
 	view = model.View()
-	assertContains(t, view, "Files 2-6 of 7 (filter: all)")
-	assertContains(t, view, "> [5/7] [CREATE] file-05.txt")
+	assertContains(t, view, "Rows 2-6/7 filter=all")
+	assertContains(t, view, ">  5 CREATE")
 }
 
 func TestModelUpdateClampsPlannedFileNavigationBounds(t *testing.T) {
@@ -1827,16 +2520,16 @@ func TestModelUpdateClampsPlannedFileNavigationBounds(t *testing.T) {
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyUp})
 	model = updated.(Model)
 	view := model.View()
-	assertContains(t, view, "Files 1-3 of 3 (filter: all)")
-	assertContains(t, view, "> [1/3] [CREATE] file-01.txt")
+	assertContains(t, view, "Rows 1-3/3 filter=all")
+	assertContains(t, view, ">  1 CREATE")
 
 	for range 5 {
 		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
 		model = updated.(Model)
 	}
 	view = model.View()
-	assertContains(t, view, "Files 1-3 of 3 (filter: all)")
-	assertContains(t, view, "> [3/3] [CREATE] file-03.txt")
+	assertContains(t, view, "Rows 1-3/3 filter=all")
+	assertContains(t, view, ">  3 CREATE")
 }
 
 func TestModelUpdateSupportsPlannedFileHomeEndAndPageKeys(t *testing.T) {
@@ -1845,26 +2538,26 @@ func TestModelUpdateSupportsPlannedFileHomeEndAndPageKeys(t *testing.T) {
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyPgDown})
 	model = updated.(Model)
 	view := model.View()
-	assertContains(t, view, "Files 2-6 of 12 (filter: all)")
-	assertContains(t, view, "> [6/12] [CREATE] file-06.txt")
+	assertContains(t, view, "Rows 2-6/12 filter=all")
+	assertContains(t, view, ">  6 CREATE")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
 	model = updated.(Model)
 	view = model.View()
-	assertContains(t, view, "Files 1-5 of 12 (filter: all)")
-	assertContains(t, view, "> [1/12] [CREATE] file-01.txt")
+	assertContains(t, view, "Rows 1-5/12 filter=all")
+	assertContains(t, view, ">  1 CREATE")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnd})
 	model = updated.(Model)
 	view = model.View()
-	assertContains(t, view, "Files 8-12 of 12 (filter: all)")
-	assertContains(t, view, "> [12/12] [CREATE] file-12.txt")
+	assertContains(t, view, "Rows 8-12/12 filter=all")
+	assertContains(t, view, "> 12 CREATE")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyHome})
 	model = updated.(Model)
 	view = model.View()
-	assertContains(t, view, "Files 1-5 of 12 (filter: all)")
-	assertContains(t, view, "> [1/12] [CREATE] file-01.txt")
+	assertContains(t, view, "Rows 1-5/12 filter=all")
+	assertContains(t, view, ">  1 CREATE")
 }
 
 func TestModelUpdateWindowSizeChangesVisibleFileRange(t *testing.T) {
@@ -1876,8 +2569,7 @@ func TestModelUpdateWindowSizeChangesVisibleFileRange(t *testing.T) {
 		t.Fatal("expected no command")
 	}
 	view := model.View()
-	assertContains(t, view, "Files 1-6 of 20 (filter: all)")
-	assertContains(t, view, "  [6/20] [CREATE] file-06.txt")
+	assertContains(t, view, "Rows 1-6/20 filter=all")
 	assertNotContains(t, view, "file-07.txt")
 
 	updated, cmd = model.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
@@ -1886,8 +2578,8 @@ func TestModelUpdateWindowSizeChangesVisibleFileRange(t *testing.T) {
 		t.Fatal("expected no command")
 	}
 	view = model.View()
-	assertContains(t, view, "Files 1-12 of 20 (filter: all)")
-	assertContains(t, view, "  [12/20] [CREATE] file-12.txt")
+	assertContains(t, view, "Rows 1-12/20 filter=all")
+	assertContains(t, view, "  12 CREATE")
 	assertNotContains(t, view, "file-13.txt")
 
 	updated, cmd = model.Update(tea.WindowSizeMsg{Width: 80, Height: 19})
@@ -1896,8 +2588,9 @@ func TestModelUpdateWindowSizeChangesVisibleFileRange(t *testing.T) {
 		t.Fatal("expected no command")
 	}
 	view = model.View()
-	assertContains(t, view, "Files 1-3 of 20 (filter: all)")
-	assertContains(t, view, "  [3/20] [CREATE] file-03.txt")
+	if model.windowRows != 3 {
+		t.Fatalf("expected 3 visible file rows at height 19, got %d", model.windowRows)
+	}
 	assertNotContains(t, view, "file-04.txt")
 }
 
@@ -1907,17 +2600,18 @@ func TestModelUpdateClampsNavigationAfterResize(t *testing.T) {
 	model = updated.(Model)
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnd})
 	model = updated.(Model)
-	assertContains(t, model.View(), "Files 9-20 of 20 (filter: all)")
-	assertContains(t, model.View(), "> [20/20] [CREATE] file-20.txt")
+	assertContains(t, model.View(), "Rows 9-20/20 filter=all")
+	assertContains(t, model.View(), "> 20 CREATE")
 
 	updated, cmd := model.Update(tea.WindowSizeMsg{Width: 80, Height: 19})
 	model = updated.(Model)
 	if cmd != nil {
 		t.Fatal("expected no command")
 	}
+	if model.fileCursor != 19 || model.fileOffset != 17 {
+		t.Fatalf("expected resized file window to keep cursor 19 and offset 17, got cursor=%d offset=%d", model.fileCursor, model.fileOffset)
+	}
 	view := model.View()
-	assertContains(t, view, "Files 18-20 of 20 (filter: all)")
-	assertContains(t, view, "> [20/20] [CREATE] file-20.txt")
 	assertNotContains(t, view, "file-17.txt")
 }
 
@@ -1958,34 +2652,34 @@ func TestModelUpdateCyclesActionFilterAndNavigatesFilteredFiles(t *testing.T) {
 		t.Fatal("expected no command")
 	}
 	view := model.View()
-	assertContains(t, view, "Files 1-2 of 2 (filter: create)")
-	assertContains(t, view, "Filter Press a to cycle filters back to all.")
-	assertContains(t, view, "Selected: 1/2 [CREATE] create-1.txt")
-	assertContains(t, view, "> [1/2] [CREATE] create-1.txt")
+	assertContains(t, view, "Rows 1-2/2 filter=create")
+	assertContains(t, view, "Filter a cycles filters")
+	assertContains(t, view, "Focus 1/2 [CREATE] create-1.txt")
+	assertContains(t, view, ">  1 CREATE")
 	assertNotContains(t, view, "replace-1.txt")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
 	model = updated.(Model)
 	view = model.View()
-	assertContains(t, view, "Selected: 2/2 [CREATE] create-2.txt")
-	assertContains(t, view, "> [2/2] [CREATE] create-2.txt")
+	assertContains(t, view, "Focus 2/2 [CREATE] create-2.txt")
+	assertContains(t, view, ">  2 CREATE")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	model = updated.(Model)
 	view = model.View()
-	assertContains(t, view, "Files 1-2 of 2 (filter: replace)")
-	assertContains(t, view, "Selected: 1/2 [REPLACE] replace-1.txt")
+	assertContains(t, view, "Rows 1-2/2 filter=replace")
+	assertContains(t, view, "Focus 1/2 [REPLACE] replace-1.txt")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	model = updated.(Model)
 	view = model.View()
-	assertContains(t, view, "Files 1-1 of 1 (filter: unchanged)")
-	assertContains(t, view, "Selected: 1/1 [UNCHANGED] unchanged-1.txt")
+	assertContains(t, view, "Rows 1-1/1 filter=unchanged")
+	assertContains(t, view, "Focus 1/1 [UNCHANGED] unchanged-1.txt")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	model = updated.(Model)
-	assertContains(t, model.View(), "Files 1-5 of 5 (filter: all)")
-	assertNotContains(t, model.View(), "Filter Press a to cycle filters back to all.")
+	assertContains(t, model.View(), "Rows 1-5/5 filter=all")
+	assertNotContains(t, model.View(), "Filter a cycles filters")
 }
 
 func TestModelViewReassuresWhenAllPlannedFilesAreUnchanged(t *testing.T) {
@@ -2120,9 +2814,9 @@ func TestModelViewShowsRefreshWaitHelpOnly(t *testing.T) {
 
 	view := model.View()
 
-	assertContains(t, view, "Status REFRESHING")
-	assertContains(t, view, "Primary action Refreshing plan")
-	assertContains(t, view, "Refreshing plan. Please wait; editing, filtering, and generation are paused.")
+	assertContains(t, view, "Microgen REFRESHING")
+	assertContains(t, view, "Refreshing plan")
+	assertContains(t, view, "refreshing plan | controls paused")
 	assertNotContains(t, view, readyHelp)
 	assertNotContains(t, view, generatedHelp)
 	assertNotContains(t, view, "Press r to refresh the plan")
@@ -2196,9 +2890,9 @@ func TestModelUpdateStartsGenerationOnConfirmedKey(t *testing.T) {
 	}
 
 	view := updatedModel.View()
-	assertContains(t, view, "Status GENERATING")
-	assertContains(t, view, "Primary action Generating files")
-	assertContains(t, view, "Generating files. Please wait; exit is available after generation finishes.")
+	assertContains(t, view, "Microgen GENERATING")
+	assertContains(t, view, "Generating files")
+	assertContains(t, view, "generating files | controls paused")
 	assertNotContains(t, view, readyHelp)
 	assertNotContains(t, view, "Exit: q/esc/ctrl+c")
 }
@@ -2230,9 +2924,9 @@ func TestModelUpdateStartsRefreshOnRefreshKey(t *testing.T) {
 		t.Fatalf("expected successful refresh message, got %#v", finished)
 	}
 	view := updatedModel.View()
-	assertContains(t, view, "Status REFRESHING")
-	assertContains(t, view, "Primary action Refreshing plan")
-	assertContains(t, view, "Refreshing plan. Please wait; editing, filtering, and generation are paused.")
+	assertContains(t, view, "Microgen REFRESHING")
+	assertContains(t, view, "Refreshing plan")
+	assertContains(t, view, "refreshing plan | controls paused")
 	assertNotContains(t, view, readyHelp)
 	assertNotContains(t, view, "g to generate")
 }
@@ -2262,8 +2956,8 @@ func TestModelUpdateRecordsRefreshSuccess(t *testing.T) {
 	updatedModel.currentStep = stepPreview
 	view = updatedModel.View()
 	assertContains(t, view, "Directory /tmp/refreshed")
-	assertContains(t, view, "Files 1-2 of 2 (filter: all)")
-	assertContains(t, view, "> [2/2] [CREATE] file-02.txt")
+	assertContains(t, view, "Rows 1-2/2 filter=all")
+	assertContains(t, view, ">  2 CREATE")
 }
 
 func TestModelUpdateRecordsRefreshFailureAndAllowsRetry(t *testing.T) {
@@ -2284,8 +2978,8 @@ func TestModelUpdateRecordsRefreshFailureAndAllowsRetry(t *testing.T) {
 		t.Fatalf("expected refresh failed state, got %#v", failedModel)
 	}
 	view := failedModel.View()
-	assertContains(t, view, "Status FAILED")
-	assertContains(t, view, "Primary action g Retry generation")
+	assertContains(t, view, "Microgen FAILED")
+	assertContains(t, view, "g Retry generation")
 	assertContains(t, view, "FAILED Refresh failed: plan failed")
 	assertContains(t, view, "g Retry generation, or r refresh the plan first.")
 
@@ -2399,8 +3093,8 @@ func TestModelUpdateEditsSolutionSettingsAndSaves(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected save command")
 	}
-	assertContains(t, model.View(), "Status SAVING")
-	assertContains(t, model.View(), "Primary action Saving settings")
+	assertContains(t, model.View(), "Microgen SAVING")
+	assertContains(t, model.View(), "Saving settings")
 	assertContains(t, model.View(), "Saving settings...")
 	assertNotContains(t, model.View(), readyHelp)
 	msg := cmd()
@@ -2577,8 +3271,8 @@ func TestModelUpdateSaveSuccessWithRefreshFailureAllowsRetry(t *testing.T) {
 		t.Fatalf("expected refresh-after-save failure state, got %#v", model)
 	}
 	view := model.View()
-	assertContains(t, view, "Status FAILED")
-	assertContains(t, view, "Primary action r Retry refresh")
+	assertContains(t, view, "Microgen FAILED")
+	assertContains(t, view, "r Retry refresh")
 	assertContains(t, view, "Solution CatalogPlatform")
 	assertContains(t, view, "Description New description")
 	assertContains(t, view, "Target net9.0")
@@ -2586,7 +3280,7 @@ func TestModelUpdateSaveSuccessWithRefreshFailureAllowsRetry(t *testing.T) {
 	assertContains(t, view, "FAILED Refresh after save failed: plan failed")
 	assertContains(t, view, "Readiness is stale. Saved settings need a successful plan refresh before generation.")
 	assertContains(t, view, "r Retry plan refresh. Other actions stay locked until refresh succeeds.")
-	assertContains(t, view, "Locked: r retry refresh | q/esc/ctrl+c quit")
+	assertContains(t, view, "locked | r retry refresh | q quit")
 	assertNotContains(t, view, "Readiness project=yes")
 	assertNotContains(t, view, "Save failed")
 	assertNotContains(t, view, "Esc cancels")
@@ -3732,12 +4426,12 @@ func TestModelUpdateRecordsGenerationSuccess(t *testing.T) {
 		t.Fatalf("expected generated state, got %#v", updatedModel)
 	}
 	view := updatedModel.View()
-	assertContains(t, view, "Status GENERATED")
-	assertContains(t, view, "Primary action r Refresh")
+	assertContains(t, view, "Microgen GENERATED")
+	assertContains(t, view, "r Refresh")
 	assertContains(t, view, "Generated 3 files written to /tmp/generated.")
 	assertContains(t, view, "Next cd /tmp/generated && dotnet build")
 	assertContains(t, view, "WARNING existing warning")
-	assertContains(t, view, "Result: r refresh | esc Generate")
+	assertContains(t, view, "result r refresh esc generate")
 	assertNotContains(t, view, readyHelp)
 	assertNotContains(t, view, "g to generate")
 }
@@ -3760,11 +4454,11 @@ func TestModelUpdateRecordsGenerationFailureAndAllowsRetry(t *testing.T) {
 		t.Fatalf("expected failed state, got %#v", failedModel)
 	}
 	view := failedModel.View()
-	assertContains(t, view, "Status FAILED")
-	assertContains(t, view, "Primary action g Retry generation")
+	assertContains(t, view, "Microgen FAILED")
+	assertContains(t, view, "g Retry generation")
 	assertContains(t, view, "FAILED Generation failed: write failed")
 	assertContains(t, view, "g Retry generation, or r refresh the plan first.")
-	assertContains(t, view, "Result: g retry generation | esc Generate | r refresh")
+	assertContains(t, view, "result g retry esc generate r refresh")
 
 	retrying, retryCmd := failedModel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
 	if retrying.(Model).status != statusGenerating {
@@ -3969,7 +4663,7 @@ func TestModelViewWorkflowScreensShowResponsiveContent(t *testing.T) {
 	model := workspaceModel(plan, application.GenerateRequest{OutputDir: plan.OutputDir}, nil, nil, nil)
 
 	model.openScreen(screenPreview)
-	updated, _ := model.Update(tea.WindowSizeMsg{Width: 60, Height: 24})
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 60})
 	model = updated.(Model)
 	view := stripANSI(model.View())
 	assertContains(t, view, "Readiness")
@@ -4006,12 +4700,57 @@ func stripANSI(value string) string {
 	return ansiRegexp.ReplaceAllString(value, "")
 }
 
+func renderedTestLineCount(value string) int {
+	value = strings.TrimRight(value, "\n")
+	if value == "" {
+		return 0
+	}
+	return len(strings.Split(value, "\n"))
+}
+
+func lineIndexContaining(lines []string, expected string) int {
+	for index, line := range lines {
+		if strings.Contains(line, expected) {
+			return index
+		}
+	}
+	return -1
+}
+
+func assertViewportSize(t *testing.T, view string, width, height int) {
+	t.Helper()
+	lines := strings.Split(strings.TrimRight(view, "\n"), "\n")
+	if len(lines) != height {
+		t.Fatalf("expected %d lines, got %d in %q", height, len(lines), view)
+	}
+	for index, line := range lines {
+		if got := len([]rune(line)); got != width {
+			t.Fatalf("expected line %d to be %d columns, got %d in %q", index+1, width, got, line)
+		}
+	}
+}
+
 func plannedFilesPlan(count int) application.GenerationPlan {
 	files := make([]application.PlannedFile, count)
 	for index := range files {
 		files[index] = application.PlannedFile{Path: fmt.Sprintf("file-%02d.txt", index+1), Action: "create"}
 	}
 	return application.GenerationPlan{FileCount: count, Files: files}
+}
+
+func longPreviewPlan() application.GenerationPlan {
+	longPath := "src/ExtremelyLongServiceNameThatWouldPreviouslyWrapAcrossTerminalRows/ExtremelyLongServiceNameThatWouldPreviouslyWrapAcrossTerminalRows.WebApi/Controllers/ExtremelyLongControllerNameThatNeedsEllipsis.cs"
+	plan := plannedFilesPlan(8)
+	plan.Config = wizardPlan().Config
+	plan.OutputDir = "/tmp/generated"
+	plan.OutputAction = "replace"
+	plan.ExtraFileCount = 1
+	plan.DeletedFiles = []string{longPath}
+	for index := range plan.Files {
+		plan.Files[index] = application.PlannedFile{Path: fmt.Sprintf("%s/file-%02d.cs", longPath, index+1), Action: "create"}
+	}
+	plan.FileCount = len(plan.Files)
+	return plan
 }
 
 func wizardPlan() application.GenerationPlan {
@@ -4078,6 +4817,12 @@ func modelOnStep(plan application.GenerationPlan, step tuiStep) Model {
 func workspaceModel(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, targetFrameworkSuggestions ...[]string) Model {
 	model := NewModel(plan, request, planFunc, generate, update, targetFrameworkSuggestions...)
 	model.mode = modeWorkspace
+	return model
+}
+
+func wizardModel(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, targetFrameworkSuggestions ...[]string) Model {
+	model := NewModel(plan, request, planFunc, generate, update, targetFrameworkSuggestions...)
+	model.mode = modeWizard
 	return model
 }
 

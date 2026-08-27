@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -37,7 +38,8 @@ var (
 	}
 
 	appTitleStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63"))
-	cardStyle         = lipgloss.NewStyle().Border(border).BorderForeground(lipgloss.Color("240")).Padding(0, 1)
+	cardStyle         = lipgloss.NewStyle().Padding(0, 1)
+	modalStyle        = lipgloss.NewStyle().Border(border).Padding(0, 1)
 	sectionTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("99"))
 	labelStyle        = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245"))
 	dimStyle          = lipgloss.NewStyle().Faint(true)
@@ -298,6 +300,8 @@ type Model struct {
 	serviceContext              serviceResourceContext
 	screen                      workspaceScreen
 	selectedScreen              workspaceScreen
+	routeSelectorOpen           bool
+	routeSelectorScreen         workspaceScreen
 	helpOpen                    bool
 	mode                        tuiMode
 	returnToWizard              bool
@@ -323,7 +327,7 @@ func NewModel(plan application.GenerationPlan, request application.GenerateReque
 	if len(targetFrameworkSuggestions) > 0 {
 		suggestions = append([]string(nil), targetFrameworkSuggestions[0]...)
 	}
-	return Model{plan: plan, request: request, planFunc: planFunc, generate: generate, update: update, status: statusReady, targetFrameworkSuggestions: suggestions, windowRows: defaultFileWindowRows, layout: layoutModeForWidth(0), currentStep: stepSource, screen: screenOverview, selectedScreen: screenOverview, mode: modeWizard, wizardScreen: wizardMenu}
+	return Model{plan: plan, request: request, planFunc: planFunc, generate: generate, update: update, status: statusReady, targetFrameworkSuggestions: suggestions, windowRows: defaultFileWindowRows, layout: layoutModeForWidth(0), currentStep: stepSource, screen: screenOverview, selectedScreen: screenOverview, mode: modeWorkspace, wizardScreen: wizardMenu}
 }
 
 func Run(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, updateServices UpdateServicesFunc, updateEntities UpdateEntitiesFunc, updateFields UpdateFieldsFunc, updateValueObjects UpdateValueObjectsFunc, targetFrameworkSuggestions []string) error {
@@ -353,11 +357,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == modeWizard {
 			return m.updateWizard(msg)
 		}
+		key := msg.String()
 		if m.helpOpen {
-			if msg.String() == "esc" || msg.String() == "?" {
+			if key == "esc" || key == "?" {
 				m.helpOpen = false
 			}
 			return m, nil
+		}
+		if m.routeSelectorOpen {
+			return m.updateRouteSelector(key)
 		}
 		if m.status == statusEditing {
 			if m.edit.mode == editModeValueObjects {
@@ -374,7 +382,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m.updateEdit(msg)
 		}
-		key := msg.String()
+		if key == "ctrl+p" {
+			if m.busy() || m.postSaveRefreshFailed() {
+				return m, nil
+			}
+			m.routeSelectorOpen = true
+			m.routeSelectorScreen = m.activeScreen()
+			return m, nil
+		}
 		if m.postSaveRefreshFailed() {
 			switch key {
 			case "q", "ctrl+c":
@@ -676,12 +691,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "f":
+			if m.busy() {
+				return m, nil
+			}
 			if m.activeScreen() == screenEntities {
 				m.startEntitiesEditing()
 				m.startFieldsEditing()
 			}
 			return m, nil
 		case "o":
+			if m.busy() {
+				return m, nil
+			}
 			if m.activeScreen() == screenValueObjects {
 				m.startValueObjectsEditing()
 				if len(m.valueObjectsEdit.valueObjects) > 0 {
@@ -1513,7 +1534,7 @@ func (m Model) generationBlockMessage() string {
 	if m.postSaveRefreshFailed() {
 		return "Generation is locked until the plan refresh succeeds."
 	}
-	return "Generation is locked until --force is confirmed for this existing output."
+	return "Generation is locked until --force is confirmed for this existing output. Confirm --force or change the output directory."
 }
 
 func (m *Model) moveStep(delta int) {
@@ -1617,10 +1638,34 @@ func (m Model) activeScreen() workspaceScreen {
 	return m.screen
 }
 
+func (m Model) updateRouteSelector(key string) (tea.Model, tea.Cmd) {
+	if m.busy() || m.postSaveRefreshFailed() {
+		m.routeSelectorOpen = false
+		return m, nil
+	}
+	switch key {
+	case "up", "k":
+		m.moveRouteSelector(-1)
+	case "down", "j":
+		m.moveRouteSelector(1)
+	case "enter":
+		m.openScreen(m.routeSelectorScreen)
+		m.routeSelectorOpen = false
+	case "esc", "ctrl+p":
+		m.routeSelectorOpen = false
+	}
+	return m, nil
+}
+
+func (m *Model) moveRouteSelector(delta int) {
+	m.routeSelectorScreen = workspaceScreen(clampInt(int(m.routeSelectorScreen)+delta, int(screenOverview), int(screenCount)-1))
+}
+
 func (m *Model) openScreen(screen workspaceScreen) {
 	screen = workspaceScreen(clampInt(int(screen), int(screenOverview), int(screenCount)-1))
 	m.screen = screen
 	m.selectedScreen = screen
+	m.routeSelectorScreen = screen
 	m.currentStep = stepForScreen(screen)
 	switch screen {
 	case screenServices:
@@ -3069,30 +3114,125 @@ func (m Model) View() string {
 	if m.mode == modeWizard {
 		return m.wizardView()
 	}
-	if m.guidedWorkspace {
-		return m.guidedWorkspaceView()
+	if m.windowWidth > 0 && m.windowHeight > 0 {
+		return m.fixedWorkspaceView()
 	}
-	if m.helpOpen {
-		return m.workspaceHeader() + "\n\n" + m.helpOverlay()
-	}
+	modal := m.activeModal()
+	mainRows := m.workspaceBodyRows()
 	var builder strings.Builder
 	fmt.Fprintln(&builder, m.workspaceHeader())
+	if rule := m.workspaceRule(); rule != "" {
+		fmt.Fprintln(&builder, rule)
+	}
+	var body strings.Builder
 	if m.layout == layoutWide {
-		rail := cardStyle.Width(22).Render(m.navigationRail())
-		content := m.workspaceContent()
-		fmt.Fprintln(&builder, lipgloss.JoinHorizontal(lipgloss.Top, rail, "  ", content))
+		fmt.Fprintln(&body, m.wideWorkspacePanes(mainRows))
 	} else {
-		fmt.Fprintln(&builder, m.compactNavigation())
-		fmt.Fprintln(&builder)
-		fmt.Fprintln(&builder, m.workspaceContent())
+		navigation := m.compactNavigation()
+		fmt.Fprintln(&body, navigation)
+		fmt.Fprintln(&body)
+		content := m.workspaceContent()
+		if mainRows > 0 {
+			contentRows := mainRows - renderedLineCount(navigation) - 1
+			if contentRows < 1 {
+				contentRows = 1
+			}
+			content = limitRenderedLines(content, contentRows)
+		}
+		fmt.Fprintln(&body, content)
 	}
 	if m.message != "" {
+		fmt.Fprintln(&body)
+		message := m.message
+		if mainRows > 0 {
+			message = truncatePlainText(message, m.mainPaneWidth())
+		}
+		fmt.Fprintln(&body, successStyle.Render(message))
+	}
+	bodyValue := limitRenderedLines(strings.TrimRight(body.String(), "\n"), mainRows)
+	if modal != "" && mainRows > 0 {
+		width := m.windowWidth
+		if width <= 0 {
+			width = m.modalWidth()
+		}
+		bodyValue = strings.Join(overlayViewportLines(normalizeViewportLines(bodyValue, width, mainRows), modal, width), "\n")
+	}
+	fmt.Fprint(&builder, bodyValue)
+	if modal != "" && mainRows <= 0 {
 		fmt.Fprintln(&builder)
-		fmt.Fprintln(&builder, successStyle.Render(m.message))
+		fmt.Fprintln(&builder, modal)
 	}
 	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, m.footerCard())
+	footer := m.commandStatusBar()
+	if m.workspaceBodyRows() > 0 {
+		footer = truncatePlainText(singleLine(footer), m.footerWidth())
+	}
+	fmt.Fprintln(&builder, footer)
 	return builder.String()
+}
+
+func (m Model) fixedWorkspaceView() string {
+	modal := m.activeModal()
+
+	footer := truncatePlainText(singleLine(m.commandStatusBar()), m.footerWidth())
+	lines := []string{m.workspaceHeader()}
+	if rule := m.workspaceRule(); rule != "" {
+		lines = append(lines, rule)
+	}
+
+	bodyRows := m.windowHeight - len(lines) - 1
+	if bodyRows < 0 {
+		bodyRows = 0
+	}
+	mainRows := bodyRows
+
+	body := m.workspaceBody(mainRows)
+	if m.message != "" {
+		message := truncatePlainText(m.message, m.mainPaneWidth())
+		body = strings.TrimRight(body, "\n") + "\n\n" + successStyle.Render(message)
+	}
+	bodyLines := normalizeViewportLines(body, m.windowWidth, mainRows)
+	if modal != "" && mainRows > 0 {
+		bodyLines = overlayViewportLines(bodyLines, modal, m.windowWidth)
+	}
+	lines = append(lines, bodyLines...)
+	for len(lines) < m.windowHeight-1 {
+		lines = append(lines, "")
+	}
+	lines = append(lines[:m.windowHeight-1], footer)
+	return strings.Join(normalizeViewportLines(strings.Join(lines, "\n"), m.windowWidth, m.windowHeight), "\n")
+}
+
+func (m Model) workspaceBody(mainRows int) string {
+	var body strings.Builder
+	if m.layout == layoutWide {
+		fmt.Fprintln(&body, m.wideWorkspacePanes(mainRows))
+	} else {
+		navigation := m.compactNavigation()
+		fmt.Fprintln(&body, navigation)
+		fmt.Fprintln(&body)
+		content := m.workspaceContent()
+		if mainRows > 0 {
+			contentRows := mainRows - renderedLineCount(navigation) - 1
+			if contentRows < 1 {
+				contentRows = 1
+			}
+			content = limitRenderedLines(content, contentRows)
+		}
+		fmt.Fprintln(&body, content)
+	}
+	return strings.TrimRight(body.String(), "\n")
+}
+
+func (m Model) workspaceBodyRows() int {
+	if m.windowHeight <= 0 {
+		return 0
+	}
+	rows := m.windowHeight - 3
+	if rows < 1 {
+		return 1
+	}
+	return rows
 }
 
 func (m Model) wizardView() string {
@@ -3125,7 +3265,7 @@ func (m Model) wizardView() string {
 		}
 		fmt.Fprintln(&builder)
 		fmt.Fprintln(&builder, m.wizardResultOption(0, "Back to menu"))
-		fmt.Fprintln(&builder, m.wizardResultOption(1, "Advanced workspace"))
+		fmt.Fprintln(&builder, m.wizardResultOption(1, "Open route editor"))
 		fmt.Fprintln(&builder)
 		fmt.Fprintln(&builder, dimStyle.Render("Footer: up/down or j/k move | enter select | esc menu | q quit"))
 		return strings.TrimRight(builder.String(), "\n")
@@ -3343,7 +3483,7 @@ func (m Model) wizardValueObjectsView() string {
 		return strings.TrimRight(builder.String(), "\n")
 	}
 	if !m.wizardValueObjectConfigured {
-		for option, label := range []string{"Configure value objects", "Skip to entities", "Advanced configuration"} {
+		for option, label := range []string{"Configure value objects", "Skip to entities", "Open route editor"} {
 			fmt.Fprintln(&builder, m.wizardOptionAt(option, m.wizardValueObjectSelection, label))
 		}
 		fmt.Fprintln(&builder)
@@ -3381,7 +3521,7 @@ func (m Model) wizardReviewView() string {
 	fmt.Fprintln(&builder)
 	m.renderWizardReviewChecklist(&builder)
 	fmt.Fprintln(&builder)
-	for option, label := range []string{"Generate solution", "Inspect advanced preview", "Back to fields"} {
+	for option, label := range []string{"Generate solution", "Inspect route preview", "Back to fields"} {
 		fmt.Fprintln(&builder, m.wizardOptionAt(option, m.wizardSelection, label))
 	}
 	fmt.Fprintln(&builder)
@@ -3400,7 +3540,7 @@ func (m Model) wizardServiceOption(option int) string {
 	case option == m.wizardServiceEditOption():
 		label = "Edit services"
 	default:
-		label = "Advanced configuration"
+		label = "Open route editor"
 	}
 	return m.wizardOptionAt(option, m.wizardServiceSelection, label)
 }
@@ -3432,7 +3572,7 @@ func (m Model) wizardEntityOption(option int) string {
 	case option == m.wizardEntityEditOption():
 		label = "Edit entities"
 	default:
-		label = "Advanced configuration"
+		label = "Open route editor"
 	}
 	return m.wizardOptionAt(option, m.wizardEntitySelection, label)
 }
@@ -3450,7 +3590,7 @@ func (m Model) wizardFieldOption(option int) string {
 	case option == m.wizardFieldEditOption():
 		label = "Edit fields"
 	default:
-		label = "Advanced configuration"
+		label = "Open route editor"
 	}
 	return m.wizardOptionAt(option, m.wizardFieldSelection, label)
 }
@@ -3469,7 +3609,7 @@ func (m Model) wizardValueObjectOption(option int) string {
 	case option == m.wizardValueObjectReviewOption():
 		label = "Continue to review"
 	default:
-		label = "Advanced configuration"
+		label = "Open route editor"
 	}
 	return m.wizardOptionAt(option, m.wizardValueObjectSelection, label)
 }
@@ -3492,7 +3632,7 @@ func (m Model) wizardServiceDetail() string {
 		case m.wizardServiceEditOption():
 			fmt.Fprintln(&builder, "Rename or remove services using the existing editor.")
 		default:
-			fmt.Fprintln(&builder, "Open the full route workspace for entities, fields, and value objects.")
+			fmt.Fprintln(&builder, "Open the full route editor for entities, fields, and value objects.")
 		}
 		return strings.TrimRight(builder.String(), "\n")
 	}
@@ -3517,7 +3657,7 @@ func (m Model) wizardEntityDetail() string {
 		case m.wizardEntityEditOption():
 			fmt.Fprintln(&builder, "Rename or remove entities using the existing editor.")
 		default:
-			fmt.Fprintln(&builder, "Open the Advanced workspace for the full entity and field routes.")
+			fmt.Fprintln(&builder, "Open the full entity and field routes.")
 		}
 		return strings.TrimRight(builder.String(), "\n")
 	}
@@ -3552,7 +3692,7 @@ func (m Model) wizardFieldDetail() string {
 		case m.wizardFieldEditOption():
 			fmt.Fprintln(&builder, "Open the existing field editor for this entity.")
 		default:
-			fmt.Fprintln(&builder, "Open the Advanced workspace for fields and Value Objects.")
+			fmt.Fprintln(&builder, "Open the route editor for fields and Value Objects.")
 		}
 		return strings.TrimRight(builder.String(), "\n")
 	}
@@ -3589,7 +3729,7 @@ func (m Model) wizardValueObjectDetail() string {
 		case m.wizardValueObjectReviewOption():
 			fmt.Fprintln(&builder, "Continue to entities and fields.")
 		default:
-			fmt.Fprintln(&builder, "Open the Advanced workspace for the full value-object route and rules editor.")
+			fmt.Fprintln(&builder, "Open the full value-object route and rules editor.")
 		}
 		return strings.TrimRight(builder.String(), "\n")
 	}
@@ -3729,6 +3869,145 @@ func truncateWizardText(value string, width int) string {
 	return string(runes[:width-3]) + "..."
 }
 
+func truncatePlainText(value string, width int) string {
+	if width <= 0 {
+		return value
+	}
+	runes := []rune(value)
+	if len(runes) <= width {
+		return value
+	}
+	if width <= 3 {
+		return string(runes[:width])
+	}
+	return string(runes[:width-3]) + "..."
+}
+
+func limitRenderedLines(value string, maxRows int) string {
+	value = strings.TrimRight(value, "\n")
+	if maxRows <= 0 || value == "" {
+		return value
+	}
+	lines := strings.Split(value, "\n")
+	if len(lines) <= maxRows {
+		return value
+	}
+	if maxRows == 1 {
+		return dimStyle.Render(fmt.Sprintf("... %d more line(s)", len(lines)))
+	}
+	visible := append([]string(nil), lines[:maxRows-1]...)
+	visible = append(visible, dimStyle.Render(fmt.Sprintf("... %d more line(s)", len(lines)-maxRows+1)))
+	return strings.Join(visible, "\n")
+}
+
+func normalizeViewportLines(value string, width, height int) []string {
+	if height <= 0 {
+		return nil
+	}
+	lines := strings.Split(strings.TrimRight(value, "\n"), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		lines = nil
+	}
+	normalized := make([]string, 0, height)
+	for index := 0; index < height; index++ {
+		line := ""
+		if index < len(lines) {
+			line = lines[index]
+		}
+		normalized = append(normalized, clipAndPadANSI(line, width))
+	}
+	return normalized
+}
+
+func overlayViewportLines(base []string, modal string, width int) []string {
+	if len(base) == 0 {
+		return nil
+	}
+	if strings.TrimSpace(modal) == "" {
+		return append([]string(nil), base...)
+	}
+	if width <= 0 {
+		width = lipgloss.Width(base[0])
+	}
+	if width <= 0 {
+		width = 1
+	}
+
+	result := make([]string, len(base))
+	for index, line := range base {
+		result[index] = clipAndPadANSI(line, width)
+	}
+	modalHeight := renderedLineCount(modal)
+	if modalHeight > len(base) {
+		modalHeight = len(base)
+	}
+	if modalHeight <= 0 {
+		return result
+	}
+	modalLines := strings.Split(strings.TrimRight(modal, "\n"), "\n")
+	start := (len(base) - modalHeight) / 2
+	for index := 0; index < modalHeight; index++ {
+		line := ""
+		if index < len(modalLines) {
+			line = modalLines[index]
+		}
+		if lipgloss.Width(line) < width {
+			line = lipgloss.PlaceHorizontal(width, lipgloss.Center, line)
+		}
+		result[start+index] = clipAndPadANSI(line, width)
+	}
+	return result
+}
+
+func clipAndPadANSI(value string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	var builder strings.Builder
+	visible := 0
+	truncated := false
+	for index := 0; index < len(value) && visible < width; {
+		if value[index] == '\x1b' && index+1 < len(value) && value[index+1] == '[' {
+			end := index + 2
+			for end < len(value) && (value[end] < '@' || value[end] > '~') {
+				end++
+			}
+			if end < len(value) {
+				builder.WriteString(value[index : end+1])
+				index = end + 1
+				continue
+			}
+		}
+		r, size := utf8.DecodeRuneInString(value[index:])
+		if r == utf8.RuneError && size == 0 {
+			break
+		}
+		builder.WriteRune(r)
+		visible++
+		index += size
+		truncated = index < len(value) && visible == width
+	}
+	if truncated {
+		builder.WriteString("\x1b[0m")
+	}
+	if visible < width {
+		builder.WriteString(strings.Repeat(" ", width-visible))
+	}
+	return builder.String()
+}
+
+func renderedLineCount(value string) int {
+	value = strings.TrimRight(value, "\n")
+	if value == "" {
+		return 0
+	}
+	return len(strings.Split(value, "\n"))
+}
+
+func singleLine(value string) string {
+	return strings.Join(strings.Fields(strings.ReplaceAll(value, "\n", " | ")), " ")
+}
+
 func (m Model) wizardOption(option int, label string) string {
 	if option == m.wizardSelection {
 		return m.wizardSelectedStyle().Render("> " + label)
@@ -3789,7 +4068,7 @@ func wizardOptionLabel(option int) string {
 	case wizardGenerateSolution:
 		return "Generate solution"
 	case wizardAdvancedWorkspace:
-		return "Advanced workspace"
+		return "Open route editor"
 	default:
 		return "Quit"
 	}
@@ -3835,51 +4114,74 @@ func (m Model) guidedWorkspaceFooter() string {
 func (m Model) workspaceHeader() string {
 	project := m.plan.Config.SolutionName
 	if project == "" {
-		project = "Unconfigured project"
+		project = "unconfigured"
 	}
-	workspace := "Workspace"
+	context := "routes"
 	if m.returnToWizard {
-		workspace = "Advanced workspace | esc back to wizard"
+		context = "routes | esc back"
 	}
-	return fmt.Sprintf("%s  %s %s  %s\n%s %s\n%s", appTitleStyle.Render("Microgen Workspace"), labelStyle.Render("Status"), m.statusBadge(), dimStyle.Render(workspace), labelStyle.Render("Project"), project, m.primaryActionStyle().Render("Primary action "+m.primaryAction()))
+	return fmt.Sprintf("%s %s  %s  %s %s  %s %s/%s  %s", appTitleStyle.Render("Microgen"), m.statusBadge(), dimStyle.Render(context), labelStyle.Render("Project"), project, labelStyle.Render("Route"), m.activeScreen().label(), m.selectedScreen.label(), m.primaryActionStyle().Render(m.primaryAction()))
+}
+
+func (m Model) workspaceRule() string {
+	return ""
+}
+
+func (m Model) wideWorkspacePanes(maxRows int) string {
+	sidebarWidth := 26
+	mainWidth := m.windowWidth - sidebarWidth - 3
+	if mainWidth < 40 {
+		mainWidth = 40
+	}
+	if maxRows <= 0 {
+		sidebar := lipgloss.NewStyle().Width(sidebarWidth).Render(m.navigationRail())
+		main := lipgloss.NewStyle().Width(mainWidth).Render(m.workspaceContent())
+		separator := dimStyle.Render(" | ")
+		return lipgloss.JoinHorizontal(lipgloss.Top, sidebar, separator, main)
+	}
+	sidebarRows := normalizeViewportLines(m.navigationRail(), sidebarWidth, maxRows)
+	mainRows := normalizeViewportLines(limitRenderedLines(m.workspaceContent(), maxRows), mainWidth, maxRows)
+	sidebar := lipgloss.NewStyle().Width(sidebarWidth).Render(strings.Join(sidebarRows, "\n"))
+	main := lipgloss.NewStyle().Width(mainWidth).Render(strings.Join(mainRows, "\n"))
+	separator := dimStyle.Render(" | ")
+	return lipgloss.JoinHorizontal(lipgloss.Top, sidebar, separator, main)
 }
 
 func (m Model) navigationRail() string {
 	var builder strings.Builder
-	fmt.Fprintln(&builder, sectionTitleStyle.Render("Route map"))
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Routes"))
 	for screen := screenOverview; screen < screenCount; screen++ {
 		cursor := "○"
 		style := dimStyle
 		if screen == m.activeScreen() {
-			cursor = "●"
-			style = readyStyle
+			cursor = ">"
+			style = selectedRowStyle
 		} else if screen == m.selectedScreen {
 			cursor = "◌"
 			style = labelStyle
 		}
-		fmt.Fprintf(&builder, "%s %d %s\n", style.Render(cursor), screen+1, style.Render(screen.label()))
+		fmt.Fprintf(&builder, "%s\n", style.Render(fmt.Sprintf("%s %d %s", cursor, screen+1, screen.label())))
 	}
 	fmt.Fprintln(&builder)
-	fmt.Fprintln(&builder, dimStyle.Render("Enter opens selected route"))
+	fmt.Fprintln(&builder, dimStyle.Render("enter open | ctrl+p routes | ? help"))
 	return strings.TrimRight(builder.String(), "\n")
 }
 
 func (m Model) compactNavigation() string {
-	prefix := "Route map "
+	prefix := "Routes "
 	lines := []string{prefix}
 	for screen := screenOverview; screen < screenCount; screen++ {
-		marker := "○"
+		marker := "-"
 		style := dimStyle
 		if screen == m.activeScreen() {
-			marker = "●"
-			style = readyStyle
+			marker = ">"
+			style = selectedRowStyle
 		} else if screen == m.selectedScreen {
-			marker = "◌"
+			marker = "*"
 			style = labelStyle
 		}
 		plainLabel := fmt.Sprintf("%s %d %s", marker, screen+1, screen.label())
-		label := plainLabel
-		label = style.Render(label)
+		label := style.Render(plainLabel)
 		separator := ""
 		if lines[len(lines)-1] != prefix {
 			separator = "  "
@@ -3891,51 +4193,151 @@ func (m Model) compactNavigation() string {
 		}
 		lines[len(lines)-1] = candidate
 	}
-	return dimStyle.Render(strings.Join(lines, "\n"))
+	context := fmt.Sprintf("route %s/%s | enter open | ctrl+p routes | ? help", m.activeScreen().label(), m.selectedScreen.label())
+	return dimStyle.Render(strings.Join(append(lines, context), "\n"))
+}
+
+func (m Model) activeModal() string {
+	if m.helpOpen {
+		return m.helpOverlay()
+	}
+	if m.routeSelectorOpen {
+		return m.routeSelectorModal()
+	}
+	return ""
+}
+
+func (m Model) routeSelectorModal() string {
+	var builder strings.Builder
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Routes"))
+	fmt.Fprintf(&builder, "%s %s  %s %s\n", labelStyle.Render("active"), m.activeScreen().label(), labelStyle.Render("target"), m.routeSelectorScreen.label())
+	fmt.Fprintln(&builder)
+	for screen := screenOverview; screen < screenCount; screen++ {
+		marker := "  "
+		style := dimStyle
+		if screen == m.routeSelectorScreen {
+			marker = "> "
+			style = selectedRowStyle
+		} else if screen == m.activeScreen() {
+			marker = "* "
+			style = readyStyle
+		}
+		fmt.Fprintf(&builder, "%s%d %s\n", marker, screen+1, style.Render(screen.label()))
+	}
+	if safety := m.routeSelectorSafetyMessage(); safety != "" {
+		fmt.Fprintln(&builder)
+		fmt.Fprintln(&builder, dangerStyle.Render(safety))
+	}
+	fmt.Fprintln(&builder)
+	fmt.Fprintln(&builder, dimStyle.Render("enter switch | esc cancel | up/down move"))
+	return m.centerModal(modalStyle.Width(m.modalWidth()).Render(strings.TrimRight(builder.String(), "\n")))
+}
+
+func (m Model) routeSelectorSafetyMessage() string {
+	outputDir := m.plan.OutputDir
+	if outputDir == "" {
+		outputDir = m.request.OutputDir
+	}
+	if outputDir == "" {
+		outputDir = "configured output"
+	}
+	if m.postSaveRefreshFailed() {
+		return "Safety: stale plan locked; press r to retry refresh; route selector unavailable until refresh succeeds"
+	}
+	if m.busy() {
+		return fmt.Sprintf("Safety: %s in progress; route selector is locked", m.statusLabel())
+	}
+	if m.status == statusFailed && m.errContext != "" {
+		return fmt.Sprintf("Safety: %s status is visible; route switching does not run callbacks", m.errContext)
+	}
+	if m.plan.ForceRequired || m.plan.Readiness.OutputForceRequired {
+		return "Safety: force required before writing to " + outputDir
+	}
+	if strings.EqualFold(m.plan.OutputAction, "replace") && len(m.plan.DeletedFiles) > 0 {
+		return fmt.Sprintf("Safety: replace output may delete %d file(s) in %s", len(m.plan.DeletedFiles), outputDir)
+	}
+	return ""
 }
 
 func (m Model) workspaceContent() string {
 	if m.postSaveRefreshFailed() {
 		return strings.Join([]string{m.projectStepCard(), m.generateStepCard()}, "\n\n")
 	}
+	var content string
 	switch m.activeScreen() {
 	case screenProject:
-		return m.projectStepCard()
+		content = m.projectStepCard()
 	case screenServices:
-		return m.servicesStepCard()
+		content = m.servicesStepCard()
 	case screenEntities:
-		return m.entitiesWorkspace()
+		content = m.entitiesWorkspace()
 	case screenValueObjects:
-		return m.valueObjectsWorkspace()
+		content = m.valueObjectsWorkspace()
 	case screenPreview:
-		return m.previewWorkspace()
+		content = m.previewWorkspace()
 	case screenGenerate:
-		return m.generateStepCard()
+		content = m.generateStepCard()
 	case screenResult:
-		return m.resultWorkspace()
+		content = m.resultWorkspace()
 	default:
-		return m.overviewCard()
+		content = m.overviewCard()
 	}
+	return content
 }
 
 func (m Model) helpOverlay() string {
-	var builder strings.Builder
-	fmt.Fprintln(&builder, cardStyle.Render(strings.Join([]string{
-		sectionTitleStyle.Render("Help"),
-		"Global: 1-7 open screens | up/down select route/resource | enter open | h/l or left/right switch",
-		"Global: ? close help | esc back | q/ctrl+c quit",
-		"Overview: r refresh | g generate",
-		"Project: e edit settings | r refresh",
-		"Services: tab or left/right switch Services/Entities/Value Objects | up/down select | enter open",
-		"Entities: up/down select | enter/e edit | f fields | a/r/d in editor",
-		"Value Objects: up/down select | enter/e edit | o rules | a/r/d in editor",
-		"Services actions: e service list | enter Entities/Value Objects context | v value objects",
-		"Preview: arrows/k/j inspect files | a filter | r refresh | g continue",
-		"Generate: g confirm generation | r refresh",
-		"Result: esc back to Generate | g retry after failure | r refresh",
+	return m.centerModal(modalStyle.Width(m.modalWidth()).Render(strings.Join([]string{
+		sectionTitleStyle.Render("Keys"),
+		"1-8 routes | up/down select | enter open | h/l switch",
+		"ctrl+p routes | ? close help | esc back | q quit",
+		"Preview: arrows/k/j files | a filter | r refresh | g generate",
+		"Edit: e open | a/r/d change items | f fields | o rules",
 	}, "\n")))
-	fmt.Fprintln(&builder, dimStyle.Render("Press ? or esc to close help."))
-	return builder.String()
+}
+
+func (m Model) centerModal(value string) string {
+	if m.windowWidth <= 0 || lipgloss.Width(value) >= m.windowWidth {
+		return value
+	}
+	return lipgloss.PlaceHorizontal(m.windowWidth, lipgloss.Center, value)
+}
+
+func (m Model) modalWidth() int {
+	width := m.windowWidth - 8
+	if width <= 0 {
+		return 72
+	}
+	if width < 40 {
+		return width
+	}
+	if width > 76 {
+		return 76
+	}
+	return width
+}
+
+func (m Model) mainPaneWidth() int {
+	if m.windowWidth <= 0 {
+		return 80
+	}
+	if m.layout == layoutWide {
+		width := m.windowWidth - 31
+		if width < 40 {
+			return 40
+		}
+		return width
+	}
+	if m.windowWidth < 20 {
+		return 20
+	}
+	return m.windowWidth
+}
+
+func (m Model) footerWidth() int {
+	if m.windowWidth <= 0 {
+		return 0
+	}
+	return maxInt(m.windowWidth, 1)
 }
 
 func (m Model) overviewCard() string {
@@ -4077,7 +4479,7 @@ func (m Model) servicesStepCard() string {
 
 func (m Model) servicesWorkspace() string {
 	var builder strings.Builder
-	fmt.Fprintln(&builder, sectionTitleStyle.Render("Services workspace"))
+	fmt.Fprintln(&builder, sectionTitleStyle.Render("Services"))
 	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Selected service:"), m.selectedServiceSummary().Name)
 	fmt.Fprintf(&builder, "%s\n", m.serviceContextTabs())
 
@@ -4504,16 +4906,28 @@ func (m Model) resultWorkspace() string {
 	if len(m.result.Plan.DeletedFiles) > 0 {
 		fmt.Fprintln(&builder, labelStyle.Render("Deleted files"))
 		for _, path := range m.result.Plan.DeletedFiles {
-			fmt.Fprintf(&builder, "  %s\n", path)
+			fmt.Fprintf(&builder, "  %s\n", truncatePlainText(path, m.mainPaneWidth()-2))
 		}
 	}
 	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 }
 
 func (m Model) previewWorkspace() string {
+	summaryWidth := m.mainPaneWidth()
+	filesWidth := m.mainPaneWidth()
+	detailWidth := m.mainPaneWidth()
+	if m.layout == layoutWide {
+		available := m.mainPaneWidth()
+		leftWidth := available / 3
+		rightWidth := available - leftWidth - 2
+		summaryWidth = maxInt(leftWidth-2, 1)
+		filesWidth = maxInt(rightWidth-2, 1)
+		detailWidth = filesWidth
+	}
+
 	var summary strings.Builder
 	fmt.Fprintln(&summary, sectionTitleStyle.Render("Output Preview"))
-	fmt.Fprintf(&summary, "%s %s\n", labelStyle.Render("Directory"), m.outputDirectory())
+	fmt.Fprintf(&summary, "%s %s\n", labelStyle.Render("Directory"), truncatePlainText(m.outputDirectory(), summaryWidth-10))
 	fmt.Fprintf(&summary, "%s %s\n", labelStyle.Render("Write mode"), m.writeMode())
 	readinessLabel := "ready"
 	if m.postSaveRefreshFailed() {
@@ -4540,16 +4954,13 @@ func (m Model) previewWorkspace() string {
 	}
 	if m.plan.ExtraFileCount > 0 || len(m.plan.DeletedFiles) > 0 {
 		fmt.Fprintf(&summary, "%s replacement removes %d previous generated file(s)\n", dangerStyle.Render("DANGER"), len(m.plan.DeletedFiles))
-		fmt.Fprintf(&summary, "%s\n", dangerStyle.Render(deletedFilePreview(m.plan.DeletedFiles)))
+		fmt.Fprintf(&summary, "%s\n", dangerStyle.Render(truncatePlainText(deletedFilePreview(m.plan.DeletedFiles), summaryWidth)))
 	}
 
-	files := m.plannedFilesCard()
-	detail := m.plannedFileDetail()
+	files := m.plannedFilesCard(filesWidth)
+	detail := m.plannedFileDetail(detailWidth)
 	if m.layout == layoutWide {
-		available := m.windowWidth - 30
-		if available < 72 {
-			available = 72
-		}
+		available := m.mainPaneWidth()
 		leftWidth := available / 3
 		rightWidth := available - leftWidth - 2
 		left := cardStyle.Width(leftWidth).Render(summary.String())
@@ -4559,7 +4970,10 @@ func (m Model) previewWorkspace() string {
 	return strings.Join([]string{summary.String(), files, detail}, "\n\n")
 }
 
-func (m Model) plannedFileDetail() string {
+func (m Model) plannedFileDetail(width int) string {
+	if width <= 0 {
+		width = m.mainPaneWidth()
+	}
 	var builder strings.Builder
 	fmt.Fprintln(&builder, sectionTitleStyle.Render("File detail"))
 	indices := m.filteredFileIndices()
@@ -4569,7 +4983,7 @@ func (m Model) plannedFileDetail() string {
 		return strings.TrimRight(builder.String(), "\n")
 	}
 	file := m.plan.Files[indices[position]]
-	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Path"), file.Path)
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Path"), truncatePlainText(file.Path, width-7))
 	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Action"), actionBadge(file.Action))
 	fmt.Fprintf(&builder, "%s %d of %d\n", labelStyle.Render("Position"), position+1, len(indices))
 	return strings.TrimRight(builder.String(), "\n")
@@ -4632,47 +5046,54 @@ func (m Model) renderReadinessSummary(builder *strings.Builder) {
 }
 
 func (m Model) footerCard() string {
+	return m.commandStatusBar()
+}
+
+func (m Model) commandStatusBar() string {
 	var builder strings.Builder
 	if m.status == statusRefreshing {
-		return busyStyle.Render("Refreshing plan. Please wait; editing, filtering, and generation are paused.")
+		return busyStyle.Render("refreshing plan | controls paused\n" + m.routeSelectorSafetyMessage())
 	}
 	if m.status == statusGenerating {
-		return busyStyle.Render("Generating files. Please wait; exit is available after generation finishes.")
+		return busyStyle.Render("generating files | controls paused\n" + m.routeSelectorSafetyMessage())
 	}
 	if m.status == statusSaving {
-		return busyStyle.Render("Saving settings. Please wait; exit is available after save finishes.")
+		return busyStyle.Render("saving settings | controls paused\n" + m.routeSelectorSafetyMessage())
 	}
 	if m.postSaveRefreshFailed() {
-		return "Locked: r retry refresh | q/esc/ctrl+c quit"
+		return "locked | r retry refresh | q quit\n" + m.routeSelectorSafetyMessage()
 	}
-	fmt.Fprintln(&builder, "Keys: ↑/↓ route | enter open | ? help")
+	fmt.Fprint(&builder, "up/down route | enter open | ? help | ctrl+p routes")
 	switch m.activeScreen() {
 	case screenProject:
-		fmt.Fprintln(&builder, "Project: e edit | r refresh")
+		fmt.Fprint(&builder, " | project e edit r refresh")
 	case screenServices:
-		fmt.Fprintln(&builder, "Services: tab context | enter open | e edit | r refresh")
+		fmt.Fprint(&builder, " | services tab context e edit r refresh")
 	case screenEntities:
-		fmt.Fprintln(&builder, "Entities: enter/e edit | f fields | r refresh")
+		fmt.Fprint(&builder, " | entities enter/e edit f fields r refresh")
 	case screenValueObjects:
-		fmt.Fprintln(&builder, "Value Objects: enter/e edit | o rules | r refresh")
+		fmt.Fprint(&builder, " | value objects enter/e edit o rules r refresh")
 	case screenPreview:
-		fmt.Fprintln(&builder, "Preview: files ↑/↓/pg/home/end | a filter | r refresh | g generate")
+		fmt.Fprint(&builder, " | files up/down/pg/home/end | a filter | r refresh | g generate")
 		if m.plan.ForceRequired || m.plan.Readiness.OutputForceRequired {
-			fmt.Fprintln(&builder, dangerStyle.Render("Force required: review output safety before generating"))
+			fmt.Fprint(&builder, " | "+dangerStyle.Render("force required"))
 		}
 	case screenGenerate:
-		fmt.Fprintln(&builder, "Generate: g confirm write | r refresh")
+		fmt.Fprint(&builder, " | generate g confirm r refresh")
 	case screenResult:
 		if m.status == statusFailed {
-			fmt.Fprintln(&builder, "Result: g retry generation | esc Generate | r refresh")
+			fmt.Fprint(&builder, " | result g retry esc generate r refresh")
 		} else {
-			fmt.Fprintln(&builder, "Result: r refresh | esc Generate")
+			fmt.Fprint(&builder, " | result r refresh esc generate")
 		}
 	default:
-		fmt.Fprintln(&builder, "Overview: r refresh | g generate")
+		fmt.Fprint(&builder, " | overview r refresh g generate")
 	}
-	fmt.Fprintln(&builder, "Back esc | Quit q/ctrl+c")
-	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+	if safety := m.routeSelectorSafetyMessage(); safety != "" {
+		fmt.Fprint(&builder, " | "+safety)
+	}
+	fmt.Fprint(&builder, " | esc back | q quit")
+	return strings.TrimRight(builder.String(), "\n")
 }
 
 func (m Model) configCard() string {
@@ -4700,7 +5121,7 @@ func (m Model) configCard() string {
 func (m Model) outputPreviewCard() string {
 	var builder strings.Builder
 	fmt.Fprintln(&builder, sectionTitleStyle.Render("Output Preview"))
-	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Directory"), m.plan.OutputDir)
+	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Directory"), truncatePlainText(m.plan.OutputDir, m.mainPaneWidth()-10))
 	fmt.Fprintf(&builder, "%s %s\n", labelStyle.Render("Write mode"), m.plan.OutputAction)
 	forceStyle := dimStyle
 	if m.plan.ForceRequired && !m.plan.ForceUsed {
@@ -4717,12 +5138,15 @@ func (m Model) outputPreviewCard() string {
 	}
 	if m.plan.ExtraFileCount > 0 {
 		fmt.Fprintf(&builder, "%s replacement removes %d previous generated file(s)\n", dangerStyle.Render("DANGER"), m.plan.ExtraFileCount)
-		fmt.Fprintf(&builder, "%s\n", dangerStyle.Render(deletedFilePreview(m.plan.DeletedFiles)))
+		fmt.Fprintf(&builder, "%s\n", dangerStyle.Render(truncatePlainText(deletedFilePreview(m.plan.DeletedFiles), m.mainPaneWidth()-2)))
 	}
 	return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 }
 
-func (m Model) plannedFilesCard() string {
+func (m Model) plannedFilesCard(width int) string {
+	if width <= 0 {
+		width = m.mainPaneWidth()
+	}
 	var builder strings.Builder
 	fmt.Fprintln(&builder, sectionTitleStyle.Render("Planned Files"))
 
@@ -4744,20 +5168,28 @@ func (m Model) plannedFilesCard() string {
 		if m.actionFilter != "" {
 			filter = m.actionFilter
 		}
-		fmt.Fprintf(&builder, "%s %d-%d of %d %s\n", labelStyle.Render("Files"), start+1, end, fileCount, dimStyle.Render("(filter: "+filter+")"))
+		fmt.Fprintf(&builder, "%s %d-%d/%d %s\n", labelStyle.Render("Rows"), start+1, end, fileCount, dimStyle.Render("filter="+filter))
 		if m.actionFilter != "" {
-			fmt.Fprintf(&builder, "%s Press a to cycle filters back to all.\n", labelStyle.Render("Filter"))
+			fmt.Fprintf(&builder, "%s a cycles filters\n", labelStyle.Render("Filter"))
 		}
 		selectedPosition := m.selectedFilteredPosition(indices)
 		if selectedPosition >= 0 {
 			selectedFile := m.plan.Files[indices[selectedPosition]]
-			fmt.Fprintf(&builder, "%s %d/%d %s %s\n", labelStyle.Render("Selected:"), selectedPosition+1, fileCount, actionBadge(selectedFile.Action), selectedFile.Path)
+			prefix := fmt.Sprintf("%d/%d %s ", selectedPosition+1, fileCount, actionBadge(selectedFile.Action))
+			plainPrefix := fmt.Sprintf("Focus %d/%d [%s] ", selectedPosition+1, fileCount, strings.ToUpper(selectedFile.Action))
+			fmt.Fprintf(&builder, "%s %s%s\n", labelStyle.Render("Focus"), prefix, truncatePlainText(selectedFile.Path, maxInt(width-len([]rune(plainPrefix)), 4)))
 		}
+		fmt.Fprintf(&builder, "%s\n", labelStyle.Render("#   Action     Path"))
 		for position, planIndex := range indices[start:end] {
 			file := m.plan.Files[planIndex]
-			row := fmt.Sprintf("  [%d/%d] %s %s", start+position+1, fileCount, actionBadge(file.Action), file.Path)
+			action := strings.ToUpper(file.Action)
+			plainPrefix := fmt.Sprintf("  %2d %-10s ", start+position+1, action)
+			path := truncatePlainText(file.Path, maxInt(width-len([]rune(plainPrefix)), 4))
+			row := fmt.Sprintf("  %2d %-10s %s", start+position+1, action, path)
 			if start+position == selectedPosition {
-				row = selectedRowStyle.Render(fmt.Sprintf("> [%d/%d] %s %s", start+position+1, fileCount, actionBadge(file.Action), file.Path))
+				plainPrefix = fmt.Sprintf("> %2d %-10s ", start+position+1, action)
+				path = truncatePlainText(file.Path, maxInt(width-len([]rune(plainPrefix)), 4))
+				row = selectedRowStyle.Render(fmt.Sprintf("> %2d %-10s %s", start+position+1, action, path))
 			}
 			fmt.Fprintln(&builder, row)
 		}
@@ -5111,7 +5543,7 @@ func (m Model) renderValueObjectRulesEditor(builder *strings.Builder) {
 	valueObject := m.valueObjectsEdit.valueObjects[m.valueObjectsEdit.selected]
 	fmt.Fprintln(builder, dimStyle.Render("Breadcrumb: Services > Value Objects > Rules"))
 	fmt.Fprintf(builder, "Editing rules for %s/%s\n", m.valueObjectsEdit.serviceName, valueObject.name.string())
-	fmt.Fprintln(builder, "Basic rules map directly to the current JSON spec; no advanced rule DSL is available.")
+	fmt.Fprintln(builder, "Basic rules map directly to the current JSON spec; no custom rule DSL is available.")
 	if m.err != nil {
 		fmt.Fprintf(builder, "Save failed: %v\n", m.err)
 	}
