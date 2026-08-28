@@ -672,6 +672,8 @@ func editableValueObjectType(typeName string) bool {
 	switch typeName {
 	case "string", "decimal", "int", "Guid", "bool":
 		return true
+	case "long", "double", "DateTime":
+		return true
 	default:
 		return false
 	}
