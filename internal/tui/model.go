@@ -2574,10 +2574,12 @@ func (m Model) visibleValueObjectRuleFields() []valueObjectRuleField {
 	switch m.valueObjectsEdit.valueObjects[m.valueObjectsEdit.selected].typeName.string() {
 	case "string":
 		fields = append(fields, valueObjectRuleFieldRequired, valueObjectRuleFieldMinLength, valueObjectRuleFieldMaxLength, valueObjectRuleFieldPattern, valueObjectRuleFieldValidExample, valueObjectRuleFieldInvalidExample)
-	case "int", "decimal":
+	case "int", "long", "double", "decimal":
 		fields = append(fields, valueObjectRuleFieldMinimum, valueObjectRuleFieldMaximum)
 	case "Guid":
 		fields = append(fields, valueObjectRuleFieldNotEmpty)
+	case "DateTime":
+		fields = append(fields, valueObjectRuleFieldNotDefault)
 	}
 	return fields
 }
@@ -3078,10 +3080,12 @@ func validationRuleSettingsFromEdit(valueObjectType string, rules valueObjectRul
 	switch valueObjectType {
 	case "string":
 		return application.ValidationRuleSettings{Required: boolPtr(rules.required), MinLength: intPtrFromText(rules.minLength), MaxLength: intPtrFromText(rules.maxLength), Pattern: stringPtrFromText(rules.pattern), ValidExample: stringPtrFromText(rules.validExample), InvalidExample: stringPtrFromText(rules.invalidExample)}
-	case "int", "decimal":
+	case "int", "long", "double", "decimal":
 		return application.ValidationRuleSettings{Minimum: stringPtrFromText(rules.minimum), Maximum: stringPtrFromText(rules.maximum)}
 	case "Guid":
 		return application.ValidationRuleSettings{NotEmpty: boolPtr(rules.notEmpty)}
+	case "DateTime":
+		return application.ValidationRuleSettings{NotDefault: boolPtr(rules.notDefault)}
 	default:
 		return application.ValidationRuleSettings{}
 	}
@@ -5562,7 +5566,7 @@ func (m Model) renderValueObjectRulesEditor(builder *strings.Builder) {
 		return
 	}
 	fmt.Fprintln(builder, "Keys: up/down select rule, e edit text, space toggle, enter save, b back, esc cancel.")
-	fmt.Fprintln(builder, "Types in this editor: string, decimal, int, Guid, bool. Validation runs before save.")
+	fmt.Fprintln(builder, "Types in this editor: string, decimal, int, long, double, Guid, DateTime, bool. Validation runs before save.")
 }
 
 func (m Model) valueObjectRuleLine(valueObject valueObjectEditItem, field valueObjectRuleField) string {
@@ -5614,7 +5618,7 @@ func rulesLabelForEdit(valueObjectType string, rules valueObjectRuleEditState) s
 		if rules.pattern.string() != "" {
 			parts = append(parts, "pattern")
 		}
-	case "int", "decimal":
+	case "int", "long", "double", "decimal":
 		if rules.minimum.string() != "" {
 			parts = append(parts, "minimum="+rules.minimum.string())
 		}
@@ -5624,6 +5628,10 @@ func rulesLabelForEdit(valueObjectType string, rules valueObjectRuleEditState) s
 	case "Guid":
 		if rules.notEmpty {
 			parts = append(parts, "notEmpty")
+		}
+	case "DateTime":
+		if rules.notDefault {
+			parts = append(parts, "notDefault")
 		}
 	}
 	if len(parts) == 0 {

@@ -5191,6 +5191,92 @@ func TestModelUpdateValueObjectRulesEditsNumericBounds(t *testing.T) {
 	}
 }
 
+func TestValidationRuleSettingsFromEditSerializesSupportedScalarRules(t *testing.T) {
+	tests := []struct {
+		name        string
+		typeName    string
+		rules       valueObjectRuleEditState
+		assertRules func(t *testing.T, settings application.ValidationRuleSettings)
+	}{
+		{
+			name:     "long bounds",
+			typeName: "long",
+			rules:    valueObjectRuleEditState{minimum: newTextField("0"), maximum: newTextField("9223372036854775807")},
+			assertRules: func(t *testing.T, settings application.ValidationRuleSettings) {
+				t.Helper()
+				if settings.Minimum == nil || *settings.Minimum != "0" || settings.Maximum == nil || *settings.Maximum != "9223372036854775807" {
+					t.Fatalf("expected long bounds, got %+v", settings)
+				}
+			},
+		},
+		{
+			name:     "double bounds",
+			typeName: "double",
+			rules:    valueObjectRuleEditState{minimum: newTextField("0"), maximum: newTextField("999999.99")},
+			assertRules: func(t *testing.T, settings application.ValidationRuleSettings) {
+				t.Helper()
+				if settings.Minimum == nil || *settings.Minimum != "0" || settings.Maximum == nil || *settings.Maximum != "999999.99" {
+					t.Fatalf("expected double bounds, got %+v", settings)
+				}
+			},
+		},
+		{
+			name:     "DateTime not default",
+			typeName: "DateTime",
+			rules:    valueObjectRuleEditState{notDefault: true},
+			assertRules: func(t *testing.T, settings application.ValidationRuleSettings) {
+				t.Helper()
+				if settings.NotDefault == nil || !*settings.NotDefault {
+					t.Fatalf("expected DateTime notDefault, got %+v", settings)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			settings := validationRuleSettingsFromEdit(tt.typeName, tt.rules)
+			tt.assertRules(t, settings)
+		})
+	}
+}
+
+func TestRulesLabelForEditDisplaysSupportedScalarRules(t *testing.T) {
+	tests := []struct {
+		name     string
+		typeName string
+		rules    valueObjectRuleEditState
+		want     string
+	}{
+		{
+			name:     "long bounds",
+			typeName: "long",
+			rules:    valueObjectRuleEditState{minimum: newTextField("0"), maximum: newTextField("9223372036854775807")},
+			want:     "minimum=0, maximum=9223372036854775807",
+		},
+		{
+			name:     "double bounds",
+			typeName: "double",
+			rules:    valueObjectRuleEditState{minimum: newTextField("0"), maximum: newTextField("999999.99")},
+			want:     "minimum=0, maximum=999999.99",
+		},
+		{
+			name:     "DateTime not default",
+			typeName: "DateTime",
+			rules:    valueObjectRuleEditState{notDefault: true},
+			want:     "notDefault",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := rulesLabelForEdit(tt.typeName, tt.rules); got != tt.want {
+				t.Fatalf("expected label %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
 func TestModelUpdateValueObjectRulesTogglesGuidNotEmpty(t *testing.T) {
 	plan := plannedFilesPlan(1)
 	plan.Config = application.ConfigSummary{ServiceCount: 1, ValueObjectCount: 1, Services: []application.ServiceSummary{{Name: "ProductService", ValueObjectNames: []string{"ProductId"}, ValueObjects: []application.ValueObjectSummary{{Name: "ProductId", Type: "Guid", RulesLabel: "no rules"}}}}}

@@ -921,20 +921,75 @@ func TestServiceUpdateValueObjectSettingsUpdatesStringRules(t *testing.T) {
 	}
 }
 
-func TestServiceUpdateValueObjectSettingsUpdatesNumericRules(t *testing.T) {
-	minimum := "0"
-	maximum := "999999.99"
-	saver := &fakeConfigSaver{}
-	service := NewService(Ports{ConfigLoader: &fakeConfigLoader{cfg: validConfigWithValueObjectsForEditing()}, ConfigSaver: saver, ConfigValidator: specValidator{}, Generator: &fakeGenerator{}, OutputPlanner: fakeOutputPlanner{}})
-
-	_, err := service.UpdateValueObjectSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ValueObjectSettings{ServiceName: "ProductService", ValueObjects: []ValueObjectNameSetting{{OriginalName: "ProductCode", Name: "ProductCode", Type: "decimal", Validations: ValidationRuleSettings{Minimum: &minimum, Maximum: &maximum}}, {OriginalName: "LegacyCode", Name: "LegacyCode"}}})
-
-	if err != nil {
-		t.Fatalf("expected numeric rule update success, got %v", err)
+func TestServiceUpdateValueObjectSettingsUpdatesScalarRules(t *testing.T) {
+	tests := []struct {
+		name        string
+		typeName    string
+		validations ValidationRuleSettings
+		assertRules func(t *testing.T, valueObject spec.ValueObject)
+	}{
+		{
+			name:        "decimal bounds",
+			typeName:    "decimal",
+			validations: ValidationRuleSettings{Minimum: stringPtr("0"), Maximum: stringPtr("999999.99")},
+			assertRules: func(t *testing.T, valueObject spec.ValueObject) {
+				t.Helper()
+				if valueObject.Validations.Minimum == nil || valueObject.Validations.Minimum.String() != "0" || valueObject.Validations.Maximum == nil || valueObject.Validations.Maximum.String() != "999999.99" {
+					t.Fatalf("expected decimal bounds, got %#v", valueObject.Validations)
+				}
+			},
+		},
+		{
+			name:        "long bounds",
+			typeName:    "long",
+			validations: ValidationRuleSettings{Minimum: stringPtr("0"), Maximum: stringPtr("9223372036854775807")},
+			assertRules: func(t *testing.T, valueObject spec.ValueObject) {
+				t.Helper()
+				if valueObject.Validations.Minimum == nil || valueObject.Validations.Minimum.String() != "0" || valueObject.Validations.Maximum == nil || valueObject.Validations.Maximum.String() != "9223372036854775807" {
+					t.Fatalf("expected long bounds, got %#v", valueObject.Validations)
+				}
+			},
+		},
+		{
+			name:        "double bounds",
+			typeName:    "double",
+			validations: ValidationRuleSettings{Minimum: stringPtr("0"), Maximum: stringPtr("999999.99")},
+			assertRules: func(t *testing.T, valueObject spec.ValueObject) {
+				t.Helper()
+				if valueObject.Validations.Minimum == nil || valueObject.Validations.Minimum.String() != "0" || valueObject.Validations.Maximum == nil || valueObject.Validations.Maximum.String() != "999999.99" {
+					t.Fatalf("expected double bounds, got %#v", valueObject.Validations)
+				}
+			},
+		},
+		{
+			name:        "DateTime not default",
+			typeName:    "DateTime",
+			validations: ValidationRuleSettings{NotDefault: boolPtr(true)},
+			assertRules: func(t *testing.T, valueObject spec.ValueObject) {
+				t.Helper()
+				if valueObject.Validations.NotDefault == nil || !*valueObject.Validations.NotDefault {
+					t.Fatalf("expected DateTime notDefault rule, got %#v", valueObject.Validations)
+				}
+			},
+		},
 	}
-	valueObject := saver.cfg.Services[0].ValueObjects[0]
-	if valueObject.Type != "decimal" || valueObject.Validations.Minimum == nil || valueObject.Validations.Minimum.String() != "0" || valueObject.Validations.Maximum == nil || valueObject.Validations.Maximum.String() != "999999.99" {
-		t.Fatalf("expected decimal rules, got %#v", valueObject)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			saver := &fakeConfigSaver{}
+			service := NewService(Ports{ConfigLoader: &fakeConfigLoader{cfg: validConfigWithValueObjectsForEditing()}, ConfigSaver: saver, ConfigValidator: specValidator{}, Generator: &fakeGenerator{}, OutputPlanner: fakeOutputPlanner{}})
+
+			_, err := service.UpdateValueObjectSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ValueObjectSettings{ServiceName: "ProductService", ValueObjects: []ValueObjectNameSetting{{OriginalName: "ProductCode", Name: "ProductCode", Type: tt.typeName, Validations: tt.validations}, {OriginalName: "LegacyCode", Name: "LegacyCode"}}})
+
+			if err != nil {
+				t.Fatalf("expected %s rule update success, got %v", tt.typeName, err)
+			}
+			valueObject := saver.cfg.Services[0].ValueObjects[0]
+			if valueObject.Type != tt.typeName {
+				t.Fatalf("expected type %q, got %#v", tt.typeName, valueObject)
+			}
+			tt.assertRules(t, valueObject)
+		})
 	}
 }
 
@@ -977,9 +1032,9 @@ func TestServiceUpdateValueObjectSettingsRejectsUnsupportedEditorTypeWithoutSavi
 	gen := &fakeGenerator{}
 	service := NewService(Ports{ConfigLoader: &fakeConfigLoader{cfg: validConfigWithValueObjectsForEditing()}, ConfigSaver: saver, ConfigValidator: specValidator{}, Generator: gen, OutputPlanner: fakeOutputPlanner{}})
 
-	_, err := service.UpdateValueObjectSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ValueObjectSettings{ServiceName: "ProductService", ValueObjects: []ValueObjectNameSetting{{OriginalName: "ProductCode", Name: "ProductCode", Type: "double"}, {OriginalName: "LegacyCode", Name: "LegacyCode"}}})
+	_, err := service.UpdateValueObjectSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, ValueObjectSettings{ServiceName: "ProductService", ValueObjects: []ValueObjectNameSetting{{OriginalName: "ProductCode", Name: "ProductCode", Type: "object"}, {OriginalName: "LegacyCode", Name: "LegacyCode"}}})
 
-	if err == nil || !strings.Contains(err.Error(), "type \"double\" is not editable in the basic rules editor") {
+	if err == nil || !strings.Contains(err.Error(), "type \"object\" is not editable in the basic rules editor") {
 		t.Fatalf("expected unsupported editor type failure, got %v", err)
 	}
 	if saver.called || gen.called {
@@ -1356,6 +1411,14 @@ func serviceNames(services []spec.Service) []string {
 		names[index] = service.Name
 	}
 	return names
+}
+
+func stringPtr(value string) *string {
+	return &value
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
 
 const validJSONConfig = `{
