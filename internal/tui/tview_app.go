@@ -60,6 +60,8 @@ type tviewUI struct {
 	request                    application.GenerateRequest
 	planFunc                   PlanFunc
 	generate                   GenerateFunc
+	queueUpdateDraw            func(func())
+	stopApp                    func()
 	updateSettings             UpdateSettingsFunc
 	updateServices             UpdateServicesFunc
 	updateEntities             UpdateEntitiesFunc
@@ -72,6 +74,7 @@ type tviewUI struct {
 	screen                     tviewScreen
 	focus                      tviewFocusPanel
 	editOpen                   bool
+	generating                 bool
 	modalFocus                 []tview.Primitive
 	modalFocusIndex            int
 	planStale                  bool
@@ -132,6 +135,8 @@ func newTViewUI(plan application.GenerationPlan, request application.GenerateReq
 		generate: generate,
 		screen:   tviewScreenOverview,
 	}
+	ui.queueUpdateDraw = func(fn func()) { ui.app.QueueUpdateDraw(fn) }
+	ui.stopApp = func() { ui.app.Stop() }
 	if len(callbacks) > 0 {
 		ui.updateSettings = tviewUpdateSettingsCallback(callbacks[0])
 	}
@@ -258,7 +263,7 @@ func (ui *tviewUI) build() *tview.Pages {
 func (ui *tviewUI) handleKey(event *tcell.EventKey) *tcell.EventKey {
 	if ui.editOpen {
 		if event.Key() == tcell.KeyCtrlC {
-			ui.app.Stop()
+			ui.requestQuit()
 			return nil
 		}
 		if ui.servicePickerReturnFocus != nil {
@@ -285,7 +290,7 @@ func (ui *tviewUI) handleKey(event *tcell.EventKey) *tcell.EventKey {
 
 	switch event.Key() {
 	case tcell.KeyCtrlC:
-		ui.app.Stop()
+		ui.requestQuit()
 		return nil
 	case tcell.KeyTAB:
 		ui.cycleFocus(1)
@@ -305,7 +310,7 @@ func (ui *tviewUI) handleKey(event *tcell.EventKey) *tcell.EventKey {
 	}
 	switch strings.ToLower(string(event.Rune())) {
 	case "q":
-		ui.app.Stop()
+		ui.requestQuit()
 		return nil
 	case "j":
 		ui.moveFocused(1)
@@ -328,6 +333,15 @@ func (ui *tviewUI) handleKey(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	}
 	return event
+}
+
+func (ui *tviewUI) requestQuit() {
+	if ui.generating {
+		ui.message = "Generation is running. Wait for completion before quitting."
+		ui.refresh()
+		return
+	}
+	ui.stopApp()
 }
 
 func (ui *tviewUI) cycleModalFocus(delta int) {
@@ -1797,6 +1811,11 @@ func (ui *tviewUI) generateFiles() {
 		ui.refresh()
 		return
 	}
+	if ui.generating {
+		ui.message = "Generation is already running."
+		ui.refresh()
+		return
+	}
 	if (ui.plan.ForceRequired || ui.plan.Readiness.OutputForceRequired) && !ui.request.Force {
 		ui.message = "Generation is locked until --force is confirmed for this existing output."
 		ui.open(tviewScreenGenerate)
@@ -1807,7 +1826,18 @@ func (ui *tviewUI) generateFiles() {
 		ui.open(tviewScreenGenerate)
 		return
 	}
-	result, err := ui.generate(ui.request)
+	ui.generating = true
+	request := ui.request
+	go func() {
+		result, err := ui.generate(request)
+		ui.queueUpdateDraw(func() {
+			ui.finishGeneration(result, err)
+		})
+	}()
+}
+
+func (ui *tviewUI) finishGeneration(result application.GenerateResult, err error) {
+	ui.generating = false
 	if err != nil {
 		ui.err = err
 		ui.message = "Generation failed."

@@ -6,7 +6,9 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gdamore/tcell/v2"
@@ -1764,22 +1766,177 @@ func TestTViewGenerateHonorsForceLock(t *testing.T) {
 	}
 }
 
+func TestTViewGenerateStartsAsynchronously(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	updates := make(chan func(), 1)
+	var calls atomic.Int32
+	plan := application.GenerationPlan{FileCount: 1}
+	ui := newTViewUI(plan, application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
+		calls.Add(1)
+		close(started)
+		<-release
+		return application.GenerateResult{Plan: plan, OutputDir: "out"}, nil
+	})
+	ui.queueUpdateDraw = func(fn func()) { updates <- fn }
+	ui.open(tviewScreenGenerate)
+
+	returned := make(chan struct{})
+	go func() {
+		ui.generateFiles()
+		close(returned)
+	}()
+
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		t.Fatal("generateFiles blocked while generation was running")
+	}
+	if !ui.generating {
+		t.Fatal("expected generation to be marked as running")
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("generate was not started")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("expected one generation call, got %d", calls.Load())
+	}
+
+	close(release)
+	select {
+	case update := <-updates:
+		update()
+	case <-time.After(time.Second):
+		t.Fatal("generation completion was not queued")
+	}
+	if ui.generating || ui.screen != tviewScreenResult {
+		t.Fatalf("expected generation completion to open Result, generating=%v screen=%d", ui.generating, ui.screen)
+	}
+}
+
+func TestTViewGenerateKeyDoesNotDoubleStartWhileRunning(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	updates := make(chan func(), 1)
+	var calls atomic.Int32
+	plan := application.GenerationPlan{FileCount: 1}
+	ui := newTViewUI(plan, application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
+		calls.Add(1)
+		close(started)
+		<-release
+		return application.GenerateResult{Plan: plan, OutputDir: "out"}, nil
+	})
+	ui.queueUpdateDraw = func(fn func()) { updates <- fn }
+	ui.open(tviewScreenGenerate)
+
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'g', tcell.ModNone))
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("generate was not started")
+	}
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'g', tcell.ModNone))
+	if calls.Load() != 1 {
+		t.Fatalf("expected one generation call while running, got %d", calls.Load())
+	}
+	if !strings.Contains(ui.message, "already running") {
+		t.Fatalf("expected running message, got %q", ui.message)
+	}
+
+	close(release)
+	select {
+	case update := <-updates:
+		update()
+	case <-time.After(time.Second):
+		t.Fatal("generation completion was not queued")
+	}
+	if calls.Load() != 1 || ui.screen != tviewScreenResult {
+		t.Fatalf("expected one completed generation, calls=%d screen=%d", calls.Load(), ui.screen)
+	}
+}
+
+func TestTViewQuitKeysWaitWhileGenerating(t *testing.T) {
+	tests := []struct {
+		name  string
+		event *tcell.EventKey
+	}{
+		{name: "q", event: tcell.NewEventKey(tcell.KeyRune, 'q', tcell.ModNone)},
+		{name: "ctrl+c", event: tcell.NewEventKey(tcell.KeyCtrlC, 0, tcell.ModNone)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stops atomic.Int32
+			ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil)
+			ui.stopApp = func() { stops.Add(1) }
+			ui.generating = true
+
+			if got := ui.handleKey(tt.event); got != nil {
+				t.Fatalf("expected quit key to be handled, got %#v", got)
+			}
+			if stops.Load() != 0 {
+				t.Fatalf("expected app not to stop while generating, got %d stops", stops.Load())
+			}
+			if !strings.Contains(ui.message, "Generation is running") || !strings.Contains(ui.message, "Wait for completion") {
+				t.Fatalf("expected wait message while generating, got %q", ui.message)
+			}
+		})
+	}
+}
+
+func TestTViewQuitKeysStopWhenNotGenerating(t *testing.T) {
+	tests := []struct {
+		name  string
+		event *tcell.EventKey
+	}{
+		{name: "q", event: tcell.NewEventKey(tcell.KeyRune, 'q', tcell.ModNone)},
+		{name: "ctrl+c", event: tcell.NewEventKey(tcell.KeyCtrlC, 0, tcell.ModNone)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stops atomic.Int32
+			ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil)
+			ui.stopApp = func() { stops.Add(1) }
+
+			if got := ui.handleKey(tt.event); got != nil {
+				t.Fatalf("expected quit key to be handled, got %#v", got)
+			}
+			if stops.Load() != 1 {
+				t.Fatalf("expected app to stop once, got %d stops", stops.Load())
+			}
+		})
+	}
+}
+
 func TestTViewGenerateKeyRoutesBeforeGenerating(t *testing.T) {
-	generated := 0
+	generated := make(chan struct{}, 1)
+	completed := make(chan struct{}, 1)
 	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
-		generated++
+		generated <- struct{}{}
 		return application.GenerateResult{Plan: application.GenerationPlan{FileCount: 1}, OutputDir: "out"}, nil
 	})
+	ui.queueUpdateDraw = func(fn func()) {
+		fn()
+		completed <- struct{}{}
+	}
 
 	ui.open(tviewScreenProject)
 	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'g', tcell.ModNone))
-	if generated != 0 || ui.screen != tviewScreenGenerate {
-		t.Fatalf("expected first g to route to Generate without generating, generated=%d screen=%d", generated, ui.screen)
+	if len(generated) != 0 || ui.screen != tviewScreenGenerate {
+		t.Fatalf("expected first g to route to Generate without generating, generated=%d screen=%d", len(generated), ui.screen)
 	}
 
 	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'g', tcell.ModNone))
-	if generated != 1 || ui.screen != tviewScreenResult {
-		t.Fatalf("expected second g to generate and show Result, generated=%d screen=%d", generated, ui.screen)
+	select {
+	case <-completed:
+	case <-time.After(time.Second):
+		t.Fatal("expected second g to complete generation")
+	}
+	if len(generated) != 1 || ui.screen != tviewScreenResult {
+		t.Fatalf("expected second g to generate and show Result, generated=%d screen=%d", len(generated), ui.screen)
 	}
 }
 
@@ -2599,7 +2756,8 @@ func TestTViewFieldsManagerStartsOnOperableTableAndSavesAddedField(t *testing.T)
 
 func TestTViewGenerateBlocksAfterSaveRefreshFailureUntilSuccessfulRefresh(t *testing.T) {
 	refreshes := 0
-	generated := 0
+	generated := make(chan struct{}, 1)
+	completed := make(chan struct{}, 1)
 	ui := newTViewUI(
 		application.GenerationPlan{Config: application.ConfigSummary{SolutionName: "Commerce"}},
 		application.GenerateRequest{},
@@ -2611,20 +2769,24 @@ func TestTViewGenerateBlocksAfterSaveRefreshFailureUntilSuccessfulRefresh(t *tes
 			return application.GenerationPlan{Config: application.ConfigSummary{SolutionName: "Commerce"}, FileCount: 3}, nil
 		},
 		func(application.GenerateRequest) (application.GenerateResult, error) {
-			generated++
+			generated <- struct{}{}
 			return application.GenerateResult{Plan: application.GenerationPlan{FileCount: 3}, OutputDir: "out"}, nil
 		},
 		func(application.GenerateRequest, application.SolutionSettings) (application.UpdateSolutionSettingsResult, error) {
 			return application.UpdateSolutionSettingsResult{Plan: application.GenerationPlan{Config: application.ConfigSummary{SolutionName: "Commerce"}}}, nil
 		},
 	)
+	ui.queueUpdateDraw = func(fn func()) {
+		fn()
+		completed <- struct{}{}
+	}
 
 	ui.open(tviewScreenProject)
 	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
 	sendKeyToTViewFocus(ui, tcell.NewEventKey(tcell.KeyCtrlS, 0, tcell.ModNone))
 	ui.generateFiles()
 
-	if generated != 0 {
+	if len(generated) != 0 {
 		t.Fatalf("expected generation to be blocked while plan is stale")
 	}
 	if !ui.planStale || !strings.Contains(ui.message, "blocked until the plan refreshes successfully") {
@@ -2634,8 +2796,13 @@ func TestTViewGenerateBlocksAfterSaveRefreshFailureUntilSuccessfulRefresh(t *tes
 	ui.refreshPlan()
 	ui.generateFiles()
 
-	if generated != 1 {
-		t.Fatalf("expected generation after successful refresh, got %d", generated)
+	select {
+	case <-completed:
+	case <-time.After(time.Second):
+		t.Fatal("expected generation after successful refresh")
+	}
+	if len(generated) != 1 {
+		t.Fatalf("expected generation after successful refresh, got %d", len(generated))
 	}
 }
 
