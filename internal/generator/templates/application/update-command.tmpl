@@ -8,5 +8,6 @@ public sealed record Update{{ .Entity.Name }}Command : IRequest<ErrorOr<{{ .Enti
 {
     public required Guid Id { get; init; }
 {{ range .Entity.NonIDFields }}    public {{ .ContractType }} {{ .Name }} { get; init; }{{ if eq .ContractType "string" }} = string.Empty;{{ end }}
+{{ end }}{{ range .Entity.RelationshipScalarFields }}    public {{ .ContractType }} {{ .Name }} { get; init; }
 {{ end }}    public string ConcurrencyToken { get; init; } = string.Empty;
 }

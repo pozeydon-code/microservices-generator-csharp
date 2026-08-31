@@ -49,6 +49,7 @@ public sealed class {{ .Entity.Name }}Controller(ISender sender) : ApiController
         var created = await sender.Send(new Create{{ .Entity.Name }}Command
         {
 {{ range .Entity.NonIDFields }}            {{ .Name }} = request.{{ .Name }},
+{{ end }}{{ range .Entity.RelationshipScalarFields }}            {{ .Name }} = request.{{ .Name }},
 {{ end }}        }, cancellationToken);
         if (created.IsError)
         {
@@ -64,6 +65,7 @@ public sealed class {{ .Entity.Name }}Controller(ISender sender) : ApiController
         {
             Id = id,
 {{ range .Entity.NonIDFields }}            {{ .Name }} = request.{{ .Name }},
+{{ end }}{{ range .Entity.RelationshipScalarFields }}            {{ .Name }} = request.{{ .Name }},
 {{ end }}            ConcurrencyToken = request.ConcurrencyToken,
         }, cancellationToken);
         return updated.IsError

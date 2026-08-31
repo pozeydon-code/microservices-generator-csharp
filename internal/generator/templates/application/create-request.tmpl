@@ -3,4 +3,5 @@ namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Dtos;
 public sealed record Create{{ .Entity.Name }}Request
 {
 {{ range .Entity.NonIDFields }}    public {{ .ContractType }} {{ .Name }} { get; init; }{{ if eq .ContractType "string" }} = string.Empty;{{ end }}
+{{ end }}{{ range .Entity.RelationshipScalarFields }}    public {{ .ContractType }} {{ .Name }} { get; init; }
 {{ end }}}
