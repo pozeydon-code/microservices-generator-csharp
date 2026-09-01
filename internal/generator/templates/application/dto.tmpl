@@ -2,5 +2,6 @@ namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Dtos;
 
 public sealed record {{ .Entity.Name }}Dto(
 {{ range $index, $field := .Entity.Fields }}{{ if $index }},
-{{ end }}    {{ $field.ContractType }} {{ $field.Name }}{{ end }},
+{{ end }}    {{ $field.ContractType }} {{ $field.Name }}{{ end }}{{ range .Entity.RelationshipScalarFields }},
+    {{ .ContractType }} {{ .Name }}{{ end }},
     string ConcurrencyToken);

@@ -20,6 +20,7 @@ public sealed class List{{ .Entity.Name }}QueryHandler(I{{ .Entity.Name }}Reposi
 
     private static {{ .Entity.Name }}Dto ToDto(EntitySnapshot<{{ .Entity.Name }}> snapshot) => new(
 {{ range $index, $field := .Entity.Fields }}{{ if $index }},
-{{ end }}        snapshot.Entity.{{ $field.ValueAccess }}{{ end }},
+{{ end }}        snapshot.Entity.{{ $field.ValueAccess }}{{ end }}{{ range .Entity.RelationshipScalarFields }},
+        snapshot.Entity.{{ .ValueAccess }}{{ end }},
         snapshot.ConcurrencyToken);
 }

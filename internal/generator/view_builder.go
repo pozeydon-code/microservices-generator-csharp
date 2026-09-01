@@ -131,14 +131,53 @@ type InvalidSampleView struct {
 }
 
 type EntityView struct {
-	Name                 string
-	PluralName           string
-	FeatureName          string
-	Route                string
-	Fields               []FieldView
-	NonIDFields          []FieldView
-	ValueObjectFields    []FieldView
-	HasValueObjectFields bool
+	Name                     string
+	PluralName               string
+	FeatureName              string
+	Route                    string
+	Fields                   []FieldView
+	NonIDFields              []FieldView
+	RelationshipScalarFields []RelationshipScalarFieldView
+	ReferenceNavigations     []ReferenceNavigationView
+	CollectionNavigations    []CollectionNavigationView
+	EFRelationships          []EFRelationshipView
+	ValueObjectFields        []FieldView
+	HasValueObjectFields     bool
+}
+
+type RelationshipScalarFieldView struct {
+	Name              string
+	CamelName         string
+	Type              string
+	ContractType      string
+	ValueAccess       string
+	Required          bool
+	SampleValue       string
+	UpdatedValue      string
+	DomainSampleValue string
+	Assertion         string
+}
+
+type ReferenceNavigationView struct {
+	Name         string
+	TargetEntity string
+	Nullable     bool
+	Initializer  string
+}
+
+type CollectionNavigationView struct {
+	Name         string
+	TargetEntity string
+}
+
+type EFRelationshipView struct {
+	PrincipalEntity     string
+	DependentEntity     string
+	ForeignKeyName      string
+	PrincipalNavigation string
+	DependentNavigation string
+	Required            bool
+	IsRequiredCall      string
 }
 
 type FieldView struct {
@@ -245,6 +284,7 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 			serviceView.Entities = append(serviceView.Entities, entityView)
 			serviceView.ExpectedSchemaItems += len(entityView.Fields) + 1
 		}
+		applyRelationshipViews(&serviceView, service.CanonicalRelationships())
 		view.Services = append(view.Services, serviceView)
 		for _, project := range serviceView.Projects {
 			view.Projects = append(view.Projects, rootSolutionProjectView(project))
@@ -257,6 +297,94 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 	sort.Slice(view.Projects, func(i, j int) bool { return view.Projects[i].Path < view.Projects[j].Path })
 	view.ScaffoldPlan = buildScaffoldPlan(view)
 	return view, nil
+}
+
+func applyRelationshipViews(serviceView *ServiceView, relationships []spec.CanonicalRelationship) {
+	if len(relationships) == 0 {
+		return
+	}
+	sort.Slice(relationships, func(i, j int) bool {
+		left := relationships[i]
+		right := relationships[j]
+		return left.PrincipalEntity+"/"+left.DependentEntity+"/"+left.ForeignKeyName < right.PrincipalEntity+"/"+right.DependentEntity+"/"+right.ForeignKeyName
+	})
+	entityIndexes := make(map[string]int, len(serviceView.Entities))
+	for index, entity := range serviceView.Entities {
+		entityIndexes[entity.Name] = index
+	}
+	for _, relationship := range relationships {
+		dependentIndex, hasDependent := entityIndexes[relationship.DependentEntity]
+		principalIndex, hasPrincipal := entityIndexes[relationship.PrincipalEntity]
+		if !hasDependent || !hasPrincipal {
+			continue
+		}
+		fieldType := relationship.ForeignKeyType
+		if relationship.Nullable() {
+			fieldType += "?"
+		}
+		sampleType := strings.TrimSuffix(fieldType, "?")
+		sampleValue := sampleValueFor(sampleType, relationship.ForeignKeyName)
+		removeExistingRelationshipScalarField(&serviceView.Entities[dependentIndex], relationship.ForeignKeyName)
+		serviceView.Entities[dependentIndex].RelationshipScalarFields = append(serviceView.Entities[dependentIndex].RelationshipScalarFields, RelationshipScalarFieldView{
+			Name:              relationship.ForeignKeyName,
+			CamelName:         camelName(relationship.ForeignKeyName),
+			Type:              fieldType,
+			ContractType:      fieldType,
+			ValueAccess:       relationship.ForeignKeyName,
+			Required:          relationship.Required,
+			SampleValue:       sampleValue,
+			UpdatedValue:      updatedValueFor(sampleType, relationship.ForeignKeyName),
+			DomainSampleValue: sampleValue,
+			Assertion:         assertionFor(sampleType, sampleValue, relationship.ForeignKeyName),
+		})
+		initializer := " = null!;"
+		if relationship.Nullable() {
+			initializer = ""
+		}
+		serviceView.Entities[dependentIndex].ReferenceNavigations = append(serviceView.Entities[dependentIndex].ReferenceNavigations, ReferenceNavigationView{
+			Name:         relationship.DependentNavigation,
+			TargetEntity: relationship.PrincipalEntity,
+			Nullable:     relationship.Nullable(),
+			Initializer:  initializer,
+		})
+		serviceView.Entities[dependentIndex].EFRelationships = append(serviceView.Entities[dependentIndex].EFRelationships, EFRelationshipView{
+			PrincipalEntity:     relationship.PrincipalEntity,
+			DependentEntity:     relationship.DependentEntity,
+			ForeignKeyName:      relationship.ForeignKeyName,
+			PrincipalNavigation: relationship.PrincipalNavigation,
+			DependentNavigation: relationship.DependentNavigation,
+			Required:            relationship.Required,
+			IsRequiredCall:      relationshipIsRequiredCall(relationship.Required),
+		})
+		serviceView.Entities[principalIndex].CollectionNavigations = append(serviceView.Entities[principalIndex].CollectionNavigations, CollectionNavigationView{
+			Name:         relationship.PrincipalNavigation,
+			TargetEntity: relationship.DependentEntity,
+		})
+	}
+}
+
+func removeExistingRelationshipScalarField(entityView *EntityView, fieldName string) {
+	entityView.Fields = fieldViewsExcept(entityView.Fields, fieldName)
+	entityView.NonIDFields = fieldViewsExcept(entityView.NonIDFields, fieldName)
+	entityView.ValueObjectFields = fieldViewsExcept(entityView.ValueObjectFields, fieldName)
+	entityView.HasValueObjectFields = len(entityView.ValueObjectFields) > 0
+}
+
+func fieldViewsExcept(fields []FieldView, fieldName string) []FieldView {
+	filtered := fields[:0]
+	for _, field := range fields {
+		if !strings.EqualFold(field.Name, fieldName) {
+			filtered = append(filtered, field)
+		}
+	}
+	return filtered
+}
+
+func relationshipIsRequiredCall(required bool) string {
+	if required {
+		return ".IsRequired()"
+	}
+	return ".IsRequired(false)"
 }
 
 func gatewayView(solutionName string, services []spec.Service) GatewayView {

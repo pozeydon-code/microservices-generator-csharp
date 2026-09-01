@@ -571,6 +571,206 @@ func TestConfigValidateRejectsOverMaximumEntityAndFieldCounts(t *testing.T) {
 	}
 }
 
+func TestConfigValidateAcceptsRelationshipsWithDefaultsAndCanonicalEdges(t *testing.T) {
+	tests := []struct {
+		name         string
+		multiplicity string
+	}{
+		{name: "one-to-many input", multiplicity: "one-to-many"},
+		{name: "many-to-one input", multiplicity: "many-to-one"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validRelationshipConfig()
+			cfg.Services[0].Relationships = []Relationship{{
+				Name:                "OrderItems",
+				Multiplicity:        tt.multiplicity,
+				PrincipalEntity:     "Order",
+				DependentEntity:     "OrderItem",
+				ForeignKeyName:      "OrderId",
+				PrincipalNavigation: "Items",
+				DependentNavigation: "Order",
+			}}
+
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("expected relationship config to validate, got %v", err)
+			}
+			got := cfg.Services[0].CanonicalRelationships()
+			if len(got) != 1 {
+				t.Fatalf("expected 1 canonical relationship, got %d", len(got))
+			}
+			want := CanonicalRelationship{
+				Name:                "OrderItems",
+				PrincipalEntity:     "Order",
+				DependentEntity:     "OrderItem",
+				ForeignKeyName:      "OrderId",
+				ForeignKeyType:      "Guid",
+				Required:            true,
+				PrincipalNavigation: "Items",
+				DependentNavigation: "Order",
+			}
+			if got[0] != want {
+				t.Fatalf("canonical relationship = %+v; want %+v", got[0], want)
+			}
+		})
+	}
+}
+
+func TestConfigValidateAcceptsFlatConfigsWithoutRelationshipsUnchanged(t *testing.T) {
+	cfg := validConfig()
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected flat config to validate, got %v", err)
+	}
+	if got := cfg.Services[0].CanonicalRelationships(); len(got) != 0 {
+		t.Fatalf("expected no canonical relationships for flat config, got %+v", got)
+	}
+}
+
+func TestConfigValidatePreservesOptionalRelationshipNullabilityPolicy(t *testing.T) {
+	cfg := validRelationshipConfig()
+	cfg.Services[0].Relationships = []Relationship{{
+		Multiplicity:        "one-to-many",
+		PrincipalEntity:     "Order",
+		DependentEntity:     "OrderItem",
+		ForeignKeyName:      "OrderId",
+		Required:            boolPtr(false),
+		PrincipalNavigation: "Items",
+		DependentNavigation: "Order",
+	}}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected optional relationship config to validate, got %v", err)
+	}
+	got := cfg.Services[0].CanonicalRelationships()
+	if len(got) != 1 {
+		t.Fatalf("expected 1 canonical relationship, got %d", len(got))
+	}
+	if got[0].Required || !got[0].Nullable() {
+		t.Fatalf("expected optional relationship to be represented as nullable, got %+v", got[0])
+	}
+}
+
+func TestConfigValidateRejectsReservedRelationshipForeignKeyNames(t *testing.T) {
+	tests := []struct {
+		name           string
+		foreignKeyName string
+		reservedName   string
+	}{
+		{name: "id", foreignKeyName: "Id", reservedName: "Id"},
+		{name: "id case-insensitive", foreignKeyName: "id", reservedName: "Id"},
+		{name: "row version", foreignKeyName: "RowVersion", reservedName: "RowVersion"},
+		{name: "row version case-insensitive", foreignKeyName: "rowversion", reservedName: "RowVersion"},
+		{name: "concurrency token", foreignKeyName: "ConcurrencyToken", reservedName: "ConcurrencyToken"},
+		{name: "concurrency token case-insensitive", foreignKeyName: "concurrencytoken", reservedName: "ConcurrencyToken"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validRelationshipConfig()
+			cfg.Services[0].Relationships = []Relationship{{
+				Multiplicity:        "one-to-many",
+				PrincipalEntity:     "Order",
+				DependentEntity:     "OrderItem",
+				ForeignKeyName:      tt.foreignKeyName,
+				PrincipalNavigation: "Items",
+				DependentNavigation: "Order",
+			}}
+
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			expected := fmt.Sprintf("relationships[0].foreignKeyName %s is reserved for generated %s members", tt.foreignKeyName, tt.reservedName)
+			if !strings.Contains(err.Error(), expected) {
+				t.Fatalf("expected error to contain %q, got %v", expected, err)
+			}
+		})
+	}
+}
+
+func TestConfigValidateRejectsInvalidRelationshipMetadata(t *testing.T) {
+	tests := []struct {
+		name        string
+		mutate      func(*Config)
+		expectedErr string
+	}{
+		{
+			name: "unsupported multiplicity",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].Multiplicity = "many-to-many"
+			},
+			expectedErr: "relationships[0].multiplicity must be one-to-many or many-to-one",
+		},
+		{
+			name: "missing endpoint",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].DependentEntity = "Invoice"
+			},
+			expectedErr: "relationships[0].dependentEntity must reference an entity in service ProductService",
+		},
+		{
+			name: "same endpoint",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].DependentEntity = "Order"
+			},
+			expectedErr: "relationships[0] principalEntity and dependentEntity must be different",
+		},
+		{
+			name: "duplicate inverse declaration",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships = append(cfg.Services[0].Relationships, Relationship{
+					Multiplicity:        "many-to-one",
+					PrincipalEntity:     "Order",
+					DependentEntity:     "OrderItem",
+					ForeignKeyName:      "OrderId",
+					PrincipalNavigation: "Lines",
+					DependentNavigation: "Order",
+				})
+			},
+			expectedErr: "relationships[1] duplicates canonical relationship Order-OrderItem-OrderId",
+		},
+		{
+			name: "foreign key type collision",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Entities[1].Fields[1].Type = "string"
+			},
+			expectedErr: "relationships[0].foreignKeyName OrderId must have type Guid",
+		},
+		{
+			name: "navigation collides with dependent field",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].DependentNavigation = "Sku"
+			},
+			expectedErr: "relationships[0].dependentNavigation must not collide with a field on OrderItem",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validRelationshipConfig()
+			cfg.Services[0].Relationships = []Relationship{{
+				Multiplicity:        "one-to-many",
+				PrincipalEntity:     "Order",
+				DependentEntity:     "OrderItem",
+				ForeignKeyName:      "OrderId",
+				PrincipalNavigation: "Items",
+				DependentNavigation: "Order",
+			}}
+			tt.mutate(&cfg)
+
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			if !strings.Contains(err.Error(), tt.expectedErr) {
+				t.Fatalf("expected error to contain %q, got %v", tt.expectedErr, err)
+			}
+		})
+	}
+}
+
 func validConfig() Config {
 	return Config{
 		Solution: Solution{Name: "CommercePlatform", Description: "Product management."},
@@ -588,6 +788,19 @@ func validConfig() Config {
 				},
 			},
 		},
+	}
+}
+
+func validRelationshipConfig() Config {
+	return Config{
+		Solution: Solution{Name: "CommercePlatform", Description: "Order management."},
+		Services: []Service{{
+			Name: "ProductService",
+			Entities: []Entity{
+				{Name: "Order", Fields: []Field{{Name: "Id", Type: "Guid"}, {Name: "Number", Type: "string"}}},
+				{Name: "OrderItem", Fields: []Field{{Name: "Id", Type: "Guid"}, {Name: "OrderId", Type: "Guid"}, {Name: "Sku", Type: "string"}}},
+			},
+		}},
 	}
 }
 

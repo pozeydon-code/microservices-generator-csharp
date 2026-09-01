@@ -21,6 +21,8 @@ const (
 	MaxFieldsPerEntity          = 100
 )
 
+var reservedRelationshipForeignKeyNames = []string{"Id", "RowVersion", "ConcurrencyToken"}
+
 type Config struct {
 	SchemaVersion int               `json:"schemaVersion,omitempty"`
 	Generation    GenerationOptions `json:"generation,omitempty"`
@@ -45,9 +47,10 @@ type Solution struct {
 }
 
 type Service struct {
-	Name         string        `json:"name"`
-	ValueObjects []ValueObject `json:"valueObjects"`
-	Entities     []Entity      `json:"entities"`
+	Name          string         `json:"name"`
+	ValueObjects  []ValueObject  `json:"valueObjects"`
+	Entities      []Entity       `json:"entities"`
+	Relationships []Relationship `json:"relationships,omitempty"`
 }
 
 type ValueObject struct {
@@ -77,6 +80,41 @@ type Entity struct {
 type Field struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
+}
+
+type Relationship struct {
+	Name                string `json:"name,omitempty"`
+	Multiplicity        string `json:"multiplicity"`
+	PrincipalEntity     string `json:"principalEntity"`
+	DependentEntity     string `json:"dependentEntity"`
+	ForeignKeyName      string `json:"foreignKeyName,omitempty"`
+	ForeignKeyType      string `json:"foreignKeyType,omitempty"`
+	Required            *bool  `json:"required,omitempty"`
+	PrincipalNavigation string `json:"principalNavigation,omitempty"`
+	DependentNavigation string `json:"dependentNavigation,omitempty"`
+}
+
+type CanonicalRelationship struct {
+	Name                string
+	PrincipalEntity     string
+	DependentEntity     string
+	ForeignKeyName      string
+	ForeignKeyType      string
+	Required            bool
+	PrincipalNavigation string
+	DependentNavigation string
+}
+
+func (r CanonicalRelationship) Nullable() bool {
+	return !r.Required
+}
+
+func (s Service) CanonicalRelationships() []CanonicalRelationship {
+	relationships := make([]CanonicalRelationship, 0, len(s.Relationships))
+	for _, relationship := range s.Relationships {
+		relationships = append(relationships, relationship.canonical())
+	}
+	return relationships
 }
 
 type ValidationError struct {
@@ -142,8 +180,12 @@ func (c Config) Validate() error {
 		validateCount(&problems, servicePath+".entities", len(service.Entities), 1, MaxEntitiesPerService)
 
 		entityNames := map[string]struct{}{}
+		entityExactNames := map[string]Entity{}
 		for _, entity := range service.Entities {
 			addUnique(&problems, entityNames, entity.Name, "entity in service "+service.Name)
+			if strings.TrimSpace(entity.Name) != "" {
+				entityExactNames[entity.Name] = entity
+			}
 		}
 
 		valueObjectNames := map[string]ValueObject{}
@@ -218,6 +260,7 @@ func (c Config) Validate() error {
 				problems = append(problems, entityPath+".fields must contain only one Id field")
 			}
 		}
+		validateRelationships(&problems, servicePath, service, entityExactNames)
 	}
 
 	if len(problems) > 0 {
@@ -328,6 +371,130 @@ func generatedTypeNamesFor(entityName string) map[string]struct{} {
 
 func generatedServiceTypeNames(serviceName string) []string {
 	return []string{"DomainError", "DomainResult", serviceName + "DbContext", serviceName + "ArchitectureTests", serviceName + "InfrastructureTests"}
+}
+
+func validateRelationships(problems *[]string, servicePath string, service Service, entities map[string]Entity) {
+	seenEdges := map[string]struct{}{}
+	seenPrincipalNavigations := map[string]struct{}{}
+	seenDependentNavigations := map[string]struct{}{}
+
+	for relationshipIndex, relationship := range service.Relationships {
+		relationshipPath := fmt.Sprintf("%s.relationships[%d]", servicePath, relationshipIndex)
+		canonical := relationship.canonical()
+
+		if strings.TrimSpace(relationship.Name) != "" {
+			validateRequiredIdentifier(problems, relationshipPath+".name", relationship.Name)
+		}
+		if relationship.Multiplicity != "one-to-many" && relationship.Multiplicity != "many-to-one" {
+			*problems = append(*problems, relationshipPath+".multiplicity must be one-to-many or many-to-one")
+		}
+		validateRequiredIdentifier(problems, relationshipPath+".principalEntity", relationship.PrincipalEntity)
+		validateRequiredIdentifier(problems, relationshipPath+".dependentEntity", relationship.DependentEntity)
+		if strings.TrimSpace(canonical.ForeignKeyName) != "" {
+			validateRequiredIdentifier(problems, relationshipPath+".foreignKeyName", canonical.ForeignKeyName)
+		}
+		if strings.TrimSpace(canonical.PrincipalNavigation) != "" {
+			validateRequiredIdentifier(problems, relationshipPath+".principalNavigation", canonical.PrincipalNavigation)
+		}
+		if strings.TrimSpace(canonical.DependentNavigation) != "" {
+			validateRequiredIdentifier(problems, relationshipPath+".dependentNavigation", canonical.DependentNavigation)
+		}
+
+		principal, principalOK := entities[relationship.PrincipalEntity]
+		if !principalOK && strings.TrimSpace(relationship.PrincipalEntity) != "" {
+			*problems = append(*problems, fmt.Sprintf("%s.principalEntity must reference an entity in service %s", relationshipPath, service.Name))
+		}
+		dependent, dependentOK := entities[relationship.DependentEntity]
+		if !dependentOK && strings.TrimSpace(relationship.DependentEntity) != "" {
+			*problems = append(*problems, fmt.Sprintf("%s.dependentEntity must reference an entity in service %s", relationshipPath, service.Name))
+		}
+		if relationship.PrincipalEntity != "" && strings.EqualFold(relationship.PrincipalEntity, relationship.DependentEntity) {
+			*problems = append(*problems, relationshipPath+" principalEntity and dependentEntity must be different")
+		}
+
+		edgeKey := strings.ToLower(canonical.PrincipalEntity + "\x00" + canonical.DependentEntity + "\x00" + canonical.ForeignKeyName)
+		if _, exists := seenEdges[edgeKey]; exists {
+			*problems = append(*problems, fmt.Sprintf("%s duplicates canonical relationship %s-%s-%s", relationshipPath, canonical.PrincipalEntity, canonical.DependentEntity, canonical.ForeignKeyName))
+		} else {
+			seenEdges[edgeKey] = struct{}{}
+		}
+
+		if _, ok := supportedFieldTypes[canonical.ForeignKeyType]; !ok {
+			*problems = append(*problems, fmt.Sprintf("%s.foreignKeyType must be a supported scalar primitive: %s", relationshipPath, strings.Join(SupportedFieldTypes(), ", ")))
+		}
+		if reservedName, reserved := reservedRelationshipForeignKeyName(canonical.ForeignKeyName); reserved {
+			*problems = append(*problems, fmt.Sprintf("%s.foreignKeyName %s is reserved for generated %s members", relationshipPath, canonical.ForeignKeyName, reservedName))
+		}
+		if dependentOK {
+			if field, exists := findField(dependent, canonical.ForeignKeyName); exists && field.Type != canonical.ForeignKeyType {
+				*problems = append(*problems, fmt.Sprintf("%s.foreignKeyName %s must have type %s", relationshipPath, canonical.ForeignKeyName, canonical.ForeignKeyType))
+			}
+			if fieldNameExists(dependent, canonical.DependentNavigation) {
+				*problems = append(*problems, fmt.Sprintf("%s.dependentNavigation must not collide with a field on %s", relationshipPath, dependent.Name))
+			}
+		}
+		if principalOK && fieldNameExists(principal, canonical.PrincipalNavigation) {
+			*problems = append(*problems, fmt.Sprintf("%s.principalNavigation must not collide with a field on %s", relationshipPath, principal.Name))
+		}
+		addUnique(problems, seenPrincipalNavigations, canonical.PrincipalEntity+"."+canonical.PrincipalNavigation, "principal navigation in service "+service.Name)
+		addUnique(problems, seenDependentNavigations, canonical.DependentEntity+"."+canonical.DependentNavigation, "dependent navigation in service "+service.Name)
+	}
+}
+
+func reservedRelationshipForeignKeyName(name string) (string, bool) {
+	for _, reservedName := range reservedRelationshipForeignKeyNames {
+		if strings.EqualFold(name, reservedName) {
+			return reservedName, true
+		}
+	}
+	return "", false
+}
+
+func (r Relationship) canonical() CanonicalRelationship {
+	foreignKeyName := strings.TrimSpace(r.ForeignKeyName)
+	if foreignKeyName == "" {
+		foreignKeyName = strings.TrimSpace(r.PrincipalEntity) + "Id"
+	}
+	foreignKeyType := strings.TrimSpace(r.ForeignKeyType)
+	if foreignKeyType == "" {
+		foreignKeyType = "Guid"
+	}
+	required := true
+	if r.Required != nil {
+		required = *r.Required
+	}
+	principalNavigation := strings.TrimSpace(r.PrincipalNavigation)
+	if principalNavigation == "" {
+		principalNavigation = strings.TrimSpace(r.DependentEntity) + "s"
+	}
+	dependentNavigation := strings.TrimSpace(r.DependentNavigation)
+	if dependentNavigation == "" {
+		dependentNavigation = strings.TrimSpace(r.PrincipalEntity)
+	}
+	return CanonicalRelationship{
+		Name:                strings.TrimSpace(r.Name),
+		PrincipalEntity:     strings.TrimSpace(r.PrincipalEntity),
+		DependentEntity:     strings.TrimSpace(r.DependentEntity),
+		ForeignKeyName:      foreignKeyName,
+		ForeignKeyType:      foreignKeyType,
+		Required:            required,
+		PrincipalNavigation: principalNavigation,
+		DependentNavigation: dependentNavigation,
+	}
+}
+
+func findField(entity Entity, name string) (Field, bool) {
+	for _, field := range entity.Fields {
+		if strings.EqualFold(field.Name, name) {
+			return field, true
+		}
+	}
+	return Field{}, false
+}
+
+func fieldNameExists(entity Entity, name string) bool {
+	_, exists := findField(entity, name)
+	return exists
 }
 
 func SupportedFieldTypes() []string {

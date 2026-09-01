@@ -230,6 +230,133 @@ func TestGenerateGatewayProducesDeterministicGoldenOutput(t *testing.T) {
 	}
 }
 
+func TestGenerateRelationshipsProducesDeterministicGoldenOutput(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	files, err := gen.Generate(relationshipGeneratorConfig())
+	if err != nil {
+		t.Fatalf("generate relationships: %v", err)
+	}
+
+	expectedFiles := []struct {
+		path       string
+		goldenName string
+	}{
+		{path: "OrderingService/src/OrderingService.Domain/Entities/Customer.cs", goldenName: filepath.Join("relationships", "Customer.cs")},
+		{path: "OrderingService/src/OrderingService.Domain/Entities/Order.cs", goldenName: filepath.Join("relationships", "Order.cs")},
+		{path: "OrderingService/src/OrderingService.Domain/Entities/OrderItem.cs", goldenName: filepath.Join("relationships", "OrderItem.cs")},
+		{path: "OrderingService/src/OrderingService.Application/Orders/Dtos/OrderDto.cs", goldenName: filepath.Join("relationships", "OrderDto.cs")},
+		{path: "OrderingService/src/OrderingService.Application/OrderItems/Dtos/CreateOrderItemRequest.cs", goldenName: filepath.Join("relationships", "CreateOrderItemRequest.cs")},
+		{path: "OrderingService/src/OrderingService.Application/OrderItems/Commands/Create/CreateOrderItemCommand.cs", goldenName: filepath.Join("relationships", "CreateOrderItemCommand.cs")},
+		{path: "OrderingService/src/OrderingService.Infrastructure/Persistence/Configurations/OrderConfiguration.cs", goldenName: filepath.Join("relationships", "OrderConfiguration.cs")},
+		{path: "OrderingService/src/OrderingService.Infrastructure/Persistence/Configurations/OrderItemConfiguration.cs", goldenName: filepath.Join("relationships", "OrderItemConfiguration.cs")},
+	}
+
+	for _, file := range expectedFiles {
+		assertGoldenFile(t, files, file.path, file.goldenName)
+	}
+	orderDto := string(generatedContent(t, files, "OrderingService/src/OrderingService.Application/Orders/Dtos/OrderDto.cs"))
+	assertContains(t, orderDto, "Guid? CustomerId")
+	assertNotContains(t, orderDto, "Customer Customer")
+	orderItemRequest := string(generatedContent(t, files, "OrderingService/src/OrderingService.Application/OrderItems/Dtos/CreateOrderItemRequest.cs"))
+	assertContains(t, orderItemRequest, "public Guid OrderId { get; init; }")
+	assertNotContains(t, orderItemRequest, "Order Order")
+	orderApplicationTests := string(generatedContent(t, files, "OrderingService/tests/OrderingService.Application.Tests/Features/Orders/OrderApplicationTests.cs"))
+	assertContains(t, orderApplicationTests, "CustomerId = Guid.Parse(\"00000000-0000-0000-0000-000000000001\")")
+	assertContains(t, orderApplicationTests, "CustomerId = Guid.Parse(\"00000000-0000-0000-0000-000000000002\")")
+	assertContains(t, orderApplicationTests, "new OrderState { Number = \"Number Value\", CustomerId = Guid.Parse(\"00000000-0000-0000-0000-000000000001\")")
+	assertNotContains(t, orderApplicationTests, "Customer =")
+	orderItemApplicationTests := string(generatedContent(t, files, "OrderingService/tests/OrderingService.Application.Tests/Features/OrderItems/OrderItemApplicationTests.cs"))
+	assertContains(t, orderItemApplicationTests, "OrderId = Guid.Parse(\"00000000-0000-0000-0000-000000000001\")")
+	assertContains(t, orderItemApplicationTests, "OrderId = Guid.Parse(\"00000000-0000-0000-0000-000000000002\")")
+	assertContains(t, orderItemApplicationTests, "new OrderItemState { Sku = \"Sku Value\", OrderId = Guid.Parse(\"00000000-0000-0000-0000-000000000001\")")
+	assertContains(t, orderItemApplicationTests, "Assert.True(EqualityComparer<Guid>.Default.Equals(Guid.Parse(\"00000000-0000-0000-0000-000000000002\"), result.Value.OrderId))")
+	assertNotContains(t, orderItemApplicationTests, "Order =")
+	assertNotContains(t, orderItemApplicationTests, "Customer =")
+}
+
+func TestGenerateRelationshipWithExplicitForeignKeyFieldEmitsSingleScalarMember(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := relationshipGeneratorConfig()
+	for serviceIndex := range cfg.Services {
+		for entityIndex := range cfg.Services[serviceIndex].Entities {
+			if cfg.Services[serviceIndex].Entities[entityIndex].Name == "OrderItem" {
+				cfg.Services[serviceIndex].Entities[entityIndex].Fields = append(cfg.Services[serviceIndex].Entities[entityIndex].Fields, spec.Field{Name: "OrderId", Type: "Guid"})
+			}
+		}
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate relationships with explicit FK field: %v", err)
+	}
+
+	orderItem := string(generatedContent(t, files, "OrderingService/src/OrderingService.Domain/Entities/OrderItem.cs"))
+	if got := strings.Count(orderItem, "public Guid OrderId { get; private set; }"); got != 1 {
+		t.Fatalf("expected one domain OrderId property, got %d\ncontent:\n%s", got, orderItem)
+	}
+	if got := strings.Count(orderItem, "public required Guid OrderId { get; init; }"); got != 1 {
+		t.Fatalf("expected one state OrderId property, got %d\ncontent:\n%s", got, orderItem)
+	}
+	createRequest := string(generatedContent(t, files, "OrderingService/src/OrderingService.Application/OrderItems/Dtos/CreateOrderItemRequest.cs"))
+	if got := strings.Count(createRequest, "public Guid OrderId { get; init; }"); got != 1 {
+		t.Fatalf("expected one create request OrderId property, got %d\ncontent:\n%s", got, createRequest)
+	}
+	createCommand := string(generatedContent(t, files, "OrderingService/src/OrderingService.Application/OrderItems/Commands/Create/CreateOrderItemCommand.cs"))
+	if got := strings.Count(createCommand, "public Guid OrderId { get; init; }"); got != 1 {
+		t.Fatalf("expected one create command OrderId property, got %d\ncontent:\n%s", got, createCommand)
+	}
+	configuration := string(generatedContent(t, files, "OrderingService/src/OrderingService.Infrastructure/Persistence/Configurations/OrderItemConfiguration.cs"))
+	if got := strings.Count(configuration, "builder.Property(item => item.OrderId).IsRequired();"); got != 1 {
+		t.Fatalf("expected one EF scalar OrderId mapping, got %d\ncontent:\n%s", got, configuration)
+	}
+	if got := strings.Count(configuration, ".HasForeignKey(item => item.OrderId)"); got != 1 {
+		t.Fatalf("expected one EF relationship OrderId mapping, got %d\ncontent:\n%s", got, configuration)
+	}
+}
+
+func TestGenerateGatewayAndRelationshipsTogether(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := relationshipGeneratorConfig()
+	cfg.Generation.Gateway.Enabled = true
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate gateway with relationships: %v", err)
+	}
+
+	gatewayProject := string(generatedContent(t, files, "Gateway/SalesPlatform.Gateway.csproj"))
+	assertContains(t, gatewayProject, "Yarp.ReverseProxy")
+	gatewaySettings := string(generatedContent(t, files, "Gateway/appsettings.json"))
+	assertContains(t, gatewaySettings, "\"ReverseProxy\"")
+	assertContains(t, gatewaySettings, "\"ordering-service-route\"")
+	assertContains(t, gatewaySettings, "\"ordering-service-cluster\"")
+	rootSolution := string(generatedContent(t, files, "SalesPlatform.sln"))
+	assertContains(t, rootSolution, "Gateway/SalesPlatform.Gateway.csproj")
+	assertContains(t, rootSolution, "OrderingService/src/OrderingService.Domain/OrderingService.Domain.csproj")
+
+	order := string(generatedContent(t, files, "OrderingService/src/OrderingService.Domain/Entities/Order.cs"))
+	assertContains(t, order, "public Guid? CustomerId { get; private set; }")
+	assertContains(t, order, "public Customer? Customer { get; private set; }")
+	orderItemConfiguration := string(generatedContent(t, files, "OrderingService/src/OrderingService.Infrastructure/Persistence/Configurations/OrderItemConfiguration.cs"))
+	assertContains(t, orderItemConfiguration, ".HasForeignKey(item => item.OrderId)")
+	assertContains(t, orderItemConfiguration, ".OnDelete(DeleteBehavior.Restrict)")
+
+	for _, file := range files {
+		if strings.HasPrefix(file.Path, "src/SalesPlatform.Gateway/") {
+			t.Fatalf("expected gateway to stay in root Gateway folder, got old path %s", file.Path)
+		}
+	}
+}
+
 func TestGenerateEmitsPortablePropsForEveryServiceAndKeepsRootProps(t *testing.T) {
 	gen, err := New()
 	if err != nil {
@@ -1695,6 +1822,10 @@ func optionalMaxLengthStringConfig() spec.Config {
 			}},
 		}},
 	}
+}
+
+func relationshipGeneratorConfig() spec.Config {
+	return relationshipTestConfig()
 }
 
 func boolPtr(value bool) *bool            { return &value }

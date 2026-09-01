@@ -2,6 +2,7 @@ package generator
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/pozeydon-code/microservices-generator-csharp/internal/spec"
@@ -97,6 +98,154 @@ func TestBuildSolutionViewGatewayDoesNotEnterServiceLayers(t *testing.T) {
 	}
 }
 
+func TestBuildSolutionViewProjectsRelationshipViews(t *testing.T) {
+	view, err := buildSolutionView(relationshipTestConfig())
+	if err != nil {
+		t.Fatalf("build solution view: %v", err)
+	}
+
+	service := view.Services[0]
+	entities := map[string]EntityView{}
+	for _, entity := range service.Entities {
+		entities[entity.Name] = entity
+	}
+
+	order := entities["Order"]
+	orderItem := entities["OrderItem"]
+	customer := entities["Customer"]
+
+	if !reflect.DeepEqual(orderItem.RelationshipScalarFields, []RelationshipScalarFieldView{expectedRelationshipScalarFieldView("OrderId", "Guid", true)}) {
+		t.Fatalf("unexpected required FK scalar view: %#v", orderItem.RelationshipScalarFields)
+	}
+	if !reflect.DeepEqual(orderItem.ReferenceNavigations, []ReferenceNavigationView{{Name: "Order", TargetEntity: "Order", Nullable: false, Initializer: " = null!;"}}) {
+		t.Fatalf("unexpected required reference navigation view: %#v", orderItem.ReferenceNavigations)
+	}
+	if !reflect.DeepEqual(order.CollectionNavigations, []CollectionNavigationView{{Name: "Items", TargetEntity: "OrderItem"}}) {
+		t.Fatalf("unexpected principal collection view: %#v", order.CollectionNavigations)
+	}
+	if !reflect.DeepEqual(order.RelationshipScalarFields, []RelationshipScalarFieldView{expectedRelationshipScalarFieldView("CustomerId", "Guid?", false)}) {
+		t.Fatalf("unexpected optional FK scalar view: %#v", order.RelationshipScalarFields)
+	}
+	if !reflect.DeepEqual(order.ReferenceNavigations, []ReferenceNavigationView{{Name: "Customer", TargetEntity: "Customer", Nullable: true, Initializer: ""}}) {
+		t.Fatalf("unexpected optional reference navigation view: %#v", order.ReferenceNavigations)
+	}
+	if !reflect.DeepEqual(customer.CollectionNavigations, []CollectionNavigationView{{Name: "Orders", TargetEntity: "Order"}}) {
+		t.Fatalf("unexpected optional principal collection view: %#v", customer.CollectionNavigations)
+	}
+	if !reflect.DeepEqual(orderItem.EFRelationships, []EFRelationshipView{{PrincipalEntity: "Order", DependentEntity: "OrderItem", ForeignKeyName: "OrderId", PrincipalNavigation: "Items", DependentNavigation: "Order", Required: true, IsRequiredCall: ".IsRequired()"}}) {
+		t.Fatalf("unexpected required EF relationship view: %#v", orderItem.EFRelationships)
+	}
+	if !reflect.DeepEqual(order.EFRelationships, []EFRelationshipView{{PrincipalEntity: "Customer", DependentEntity: "Order", ForeignKeyName: "CustomerId", PrincipalNavigation: "Orders", DependentNavigation: "Customer", Required: false, IsRequiredCall: ".IsRequired(false)"}}) {
+		t.Fatalf("unexpected optional EF relationship view: %#v", order.EFRelationships)
+	}
+}
+
+func TestBuildSolutionViewUsesExplicitForeignKeyFieldAsRelationshipScalar(t *testing.T) {
+	cfg := relationshipTestConfig()
+	for serviceIndex := range cfg.Services {
+		for entityIndex := range cfg.Services[serviceIndex].Entities {
+			if cfg.Services[serviceIndex].Entities[entityIndex].Name == "OrderItem" {
+				cfg.Services[serviceIndex].Entities[entityIndex].Fields = append(cfg.Services[serviceIndex].Entities[entityIndex].Fields, spec.Field{Name: "OrderId", Type: "Guid"})
+			}
+		}
+	}
+
+	view, err := buildSolutionView(cfg)
+	if err != nil {
+		t.Fatalf("build solution view: %v", err)
+	}
+
+	service := view.Services[0]
+	entities := map[string]EntityView{}
+	for _, entity := range service.Entities {
+		entities[entity.Name] = entity
+	}
+	orderItem := entities["OrderItem"]
+
+	if !reflect.DeepEqual(orderItem.RelationshipScalarFields, []RelationshipScalarFieldView{expectedRelationshipScalarFieldView("OrderId", "Guid", true)}) {
+		t.Fatalf("unexpected FK scalar metadata for explicit field: %#v", orderItem.RelationshipScalarFields)
+	}
+	if got := countFieldViewsNamed(orderItem.Fields, "OrderId"); got != 0 {
+		t.Fatalf("expected explicit FK field to be emitted only as relationship scalar metadata, got %d entity fields", got)
+	}
+	if got := countFieldViewsNamed(orderItem.NonIDFields, "OrderId"); got != 0 {
+		t.Fatalf("expected explicit FK field to be omitted from non-ID fields, got %d non-ID fields", got)
+	}
+	if !reflect.DeepEqual(orderItem.EFRelationships, []EFRelationshipView{{PrincipalEntity: "Order", DependentEntity: "OrderItem", ForeignKeyName: "OrderId", PrincipalNavigation: "Items", DependentNavigation: "Order", Required: true, IsRequiredCall: ".IsRequired()"}}) {
+		t.Fatalf("unexpected EF relationship metadata for explicit field: %#v", orderItem.EFRelationships)
+	}
+}
+
+func TestBuildSolutionViewRemovesExplicitForeignKeyFieldCaseInsensitive(t *testing.T) {
+	cfg := relationshipTestConfig()
+	for serviceIndex := range cfg.Services {
+		for entityIndex := range cfg.Services[serviceIndex].Entities {
+			if cfg.Services[serviceIndex].Entities[entityIndex].Name == "OrderItem" {
+				cfg.Services[serviceIndex].Entities[entityIndex].Fields = append(cfg.Services[serviceIndex].Entities[entityIndex].Fields, spec.Field{Name: "orderId", Type: "Guid"})
+			}
+		}
+	}
+
+	view, err := buildSolutionView(cfg)
+	if err != nil {
+		t.Fatalf("build solution view: %v", err)
+	}
+
+	service := view.Services[0]
+	entities := map[string]EntityView{}
+	for _, entity := range service.Entities {
+		entities[entity.Name] = entity
+	}
+	orderItem := entities["OrderItem"]
+
+	if !reflect.DeepEqual(orderItem.RelationshipScalarFields, []RelationshipScalarFieldView{expectedRelationshipScalarFieldView("OrderId", "Guid", true)}) {
+		t.Fatalf("unexpected FK scalar metadata for explicit field: %#v", orderItem.RelationshipScalarFields)
+	}
+	if got := countFieldViewsNamedFold(orderItem.Fields, "OrderId"); got != 0 {
+		t.Fatalf("expected case-insensitive explicit FK fields to be emitted only as relationship scalar metadata, got %d entity fields", got)
+	}
+	if got := countFieldViewsNamedFold(orderItem.NonIDFields, "OrderId"); got != 0 {
+		t.Fatalf("expected case-insensitive explicit FK fields to be omitted from non-ID fields, got %d non-ID fields", got)
+	}
+}
+
+func expectedRelationshipScalarFieldView(name, fieldType string, required bool) RelationshipScalarFieldView {
+	sampleType := strings.TrimSuffix(fieldType, "?")
+	sampleValue := sampleValueFor(sampleType, name)
+	return RelationshipScalarFieldView{
+		Name:              name,
+		CamelName:         camelName(name),
+		Type:              fieldType,
+		ContractType:      fieldType,
+		ValueAccess:       name,
+		Required:          required,
+		SampleValue:       sampleValue,
+		UpdatedValue:      updatedValueFor(sampleType, name),
+		DomainSampleValue: sampleValue,
+		Assertion:         assertionFor(sampleType, sampleValue, name),
+	}
+}
+
+func countFieldViewsNamed(fields []FieldView, name string) int {
+	count := 0
+	for _, field := range fields {
+		if field.Name == name {
+			count++
+		}
+	}
+	return count
+}
+
+func countFieldViewsNamedFold(fields []FieldView, name string) int {
+	count := 0
+	for _, field := range fields {
+		if strings.EqualFold(field.Name, name) {
+			count++
+		}
+	}
+	return count
+}
+
 func gatewayTestConfig() spec.Config {
 	return spec.Config{
 		Solution: spec.Solution{Name: "ShopPlatform", Description: "Shop platform."},
@@ -104,5 +253,24 @@ func gatewayTestConfig() spec.Config {
 			{Name: "ProductService", Entities: []spec.Entity{{Name: "Product", Fields: []spec.Field{{Name: "Id", Type: "Guid"}}}}},
 			{Name: "OrderFulfillmentService", Entities: []spec.Entity{{Name: "Order", Fields: []spec.Field{{Name: "Id", Type: "Guid"}}}}},
 		},
+	}
+}
+
+func relationshipTestConfig() spec.Config {
+	optional := false
+	return spec.Config{
+		Solution: spec.Solution{Name: "SalesPlatform", Description: "Relationship generation regression."},
+		Services: []spec.Service{{
+			Name: "OrderingService",
+			Entities: []spec.Entity{
+				{Name: "Customer", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}},
+				{Name: "Order", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Number", Type: "string"}}},
+				{Name: "OrderItem", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Sku", Type: "string"}}},
+			},
+			Relationships: []spec.Relationship{
+				{Multiplicity: "one-to-many", PrincipalEntity: "Order", DependentEntity: "OrderItem", ForeignKeyName: "OrderId", PrincipalNavigation: "Items", DependentNavigation: "Order"},
+				{Multiplicity: "many-to-one", PrincipalEntity: "Customer", DependentEntity: "Order", ForeignKeyName: "CustomerId", Required: &optional, PrincipalNavigation: "Orders", DependentNavigation: "Customer"},
+			},
+		}},
 	}
 }

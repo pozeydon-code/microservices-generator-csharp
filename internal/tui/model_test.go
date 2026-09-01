@@ -856,6 +856,148 @@ func TestWizardFieldSaveSuccessUsesExistingCallback(t *testing.T) {
 	}
 }
 
+func TestRelationshipEditorSavesBoundedRelationshipSettings(t *testing.T) {
+	plan := wizardPlanWithRelationships()
+	var captured application.RelationshipSettings
+	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+	model.updateRelationships = func(_ application.GenerateRequest, settings application.RelationshipSettings) (application.UpdateRelationshipSettingsResult, error) {
+		captured = settings
+		return application.UpdateRelationshipSettingsResult{Saved: true, Plan: plan}, nil
+	}
+	model.startRelationshipsEditing()
+	model.relationshipsEdit.focused = 4
+	model.relationshipsEdit.relationships[0].foreignKeyName = newTextField("CategoryId")
+	model.relationshipsEdit.relationships[0].required = false
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd == nil || model.status != statusSaving {
+		t.Fatalf("expected relationship save command, got status=%v cmd=%v", model.status, cmd)
+	}
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+
+	if model.status != statusReady || len(captured.Relationships) != 1 {
+		t.Fatalf("expected relationship save to complete, status=%v settings=%#v", model.status, captured)
+	}
+	relationship := captured.Relationships[0]
+	if relationship.Multiplicity != "one-to-many" || relationship.PrincipalEntity != "Category" || relationship.DependentEntity != "Product" || relationship.ForeignKeyName != "CategoryId" || relationship.Required == nil || *relationship.Required {
+		t.Fatalf("expected bounded relationship settings, got %#v", relationship)
+	}
+}
+
+func TestRelationshipEditorChangesEndpointsThroughBoundedKeyPathBeforeSaving(t *testing.T) {
+	plan := wizardPlanWithRelationships()
+	plan.Config.Services[0].Entities = append(plan.Config.Services[0].Entities, application.EntitySummary{Name: "Supplier"})
+	var captured application.RelationshipSettings
+	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+	model.updateRelationships = func(_ application.GenerateRequest, settings application.RelationshipSettings) (application.UpdateRelationshipSettingsResult, error) {
+		captured = settings
+		return application.UpdateRelationshipSettingsResult{Saved: true, Plan: plan}, nil
+	}
+	model.startRelationshipsEditing()
+
+	for _, key := range []tea.KeyMsg{
+		{Type: tea.KeyTab},               // multiplicity
+		{Type: tea.KeyTab},               // principal endpoint
+		{Type: tea.KeySpace},             // Category -> Product
+		{Type: tea.KeyTab},               // dependent endpoint
+		{Type: tea.KeySpace},             // Product -> Supplier
+		{Type: tea.KeyEnter, Alt: false}, // save
+	} {
+		updated, cmd := model.Update(key)
+		model = updated.(Model)
+		if cmd != nil {
+			updated, _ = model.Update(cmd())
+			model = updated.(Model)
+		}
+	}
+
+	if model.status != statusReady || len(captured.Relationships) != 1 {
+		t.Fatalf("expected endpoint edit save to complete, status=%v settings=%#v", model.status, captured)
+	}
+	relationship := captured.Relationships[0]
+	if relationship.PrincipalEntity != "Product" || relationship.DependentEntity != "Supplier" {
+		t.Fatalf("expected key path to save changed endpoints, got principal=%q dependent=%q", relationship.PrincipalEntity, relationship.DependentEntity)
+	}
+}
+
+func TestRelationshipEditorRejectsUnsupportedMultiplicityBeforeSaving(t *testing.T) {
+	model := NewModel(wizardPlanWithRelationships(), application.GenerateRequest{}, nil, nil, nil)
+	model.updateRelationships = func(application.GenerateRequest, application.RelationshipSettings) (application.UpdateRelationshipSettingsResult, error) {
+		return application.UpdateRelationshipSettingsResult{}, errors.New("relationship multiplicity \"many-to-many\" is not editable")
+	}
+	model.startRelationshipsEditing()
+	model.relationshipsEdit.relationships[0].multiplicity = "many-to-many"
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	updated, _ = model.Update(cmd())
+	model = updated.(Model)
+
+	if model.status != statusEditing || model.edit.mode != editModeRelationships || model.err == nil {
+		t.Fatalf("expected rejected relationship save to keep editor, status=%v mode=%v err=%v", model.status, model.edit.mode, model.err)
+	}
+	assertContains(t, stripANSI(model.View()), "many-to-many")
+}
+
+func TestTViewRelationshipStateMapsRowsToApplicationSettings(t *testing.T) {
+	state := tviewRelationshipsStateFromService(wizardPlanWithRelationships().Config.Services[0])
+	if len(state.rows) != 1 || state.rows[0].principalEntity != "Category" || state.rows[0].dependentEntity != "Product" {
+		t.Fatalf("expected relationship state from service summary, got %#v", state)
+	}
+	state.rows[0].required = false
+	settings := tviewRelationshipSettingsFromState(state)
+	if len(settings.Relationships) != 1 || settings.Relationships[0].Required == nil || *settings.Relationships[0].Required || settings.Relationships[0].PrincipalNavigation != "Products" {
+		t.Fatalf("expected tview relationship settings mapping, got %#v", settings)
+	}
+}
+
+func TestTViewEditKeyOpensRelationshipManagerFromRelationshipsRoute(t *testing.T) {
+	ui := newTViewUI(wizardPlanWithRelationships(), application.GenerateRequest{}, nil, nil, noopUpdateSettings, nil, nil, nil, nil, func(application.GenerateRequest, application.RelationshipSettings) (application.UpdateRelationshipSettingsResult, error) {
+		return application.UpdateRelationshipSettingsResult{}, nil
+	})
+	ui.open(tviewScreenRelationships)
+
+	ui.handleKey(tcell.NewEventKey(tcell.KeyRune, 'e', tcell.ModNone))
+
+	if !ui.editOpen {
+		t.Fatalf("expected relationship edit key to open native tview editing")
+	}
+	if !ui.root.HasPage(tviewEditModalPage) {
+		t.Fatalf("expected relationship edit to open as a modal page")
+	}
+	if _, ok := ui.app.GetFocus().(*tview.Table); !ok {
+		t.Fatalf("expected relationship edit focus to be inside a table manager, got %T", ui.app.GetFocus())
+	}
+}
+
+func TestTViewRelationshipManagerSavesEditedEndpoints(t *testing.T) {
+	plan := wizardPlanWithRelationships()
+	plan.Config.Services[0].Entities = append(plan.Config.Services[0].Entities, application.EntitySummary{Name: "Supplier"})
+	var captured application.RelationshipSettings
+	ui := newTViewUI(plan, application.GenerateRequest{}, nil, nil, noopUpdateSettings, nil, nil, nil, nil, func(_ application.GenerateRequest, settings application.RelationshipSettings) (application.UpdateRelationshipSettingsResult, error) {
+		captured = settings
+		return application.UpdateRelationshipSettingsResult{Saved: true, Plan: plan}, nil
+	})
+	state := tviewRelationshipsStateFromService(plan.Config.Services[0])
+	state.rows[0].principalEntity = "Product"
+	state.rows[0].dependentEntity = "Supplier"
+
+	ui.saveRelationshipsEdit(state)
+
+	if len(captured.Relationships) != 1 {
+		t.Fatalf("expected one saved relationship, got %#v", captured)
+	}
+	relationship := captured.Relationships[0]
+	if relationship.PrincipalEntity != "Product" || relationship.DependentEntity != "Supplier" {
+		t.Fatalf("expected tview relationship save to include edited endpoints, got principal=%q dependent=%q", relationship.PrincipalEntity, relationship.DependentEntity)
+	}
+	if !strings.Contains(ui.message, "Relationships saved") {
+		t.Fatalf("expected relationship save confirmation, got %q", ui.message)
+	}
+}
+
 func TestWizardFieldStaleRefreshLocksUntilRetry(t *testing.T) {
 	plan := wizardPlan()
 	model := NewModel(plan, application.GenerateRequest{}, func(application.GenerateRequest) (application.GenerationPlan, error) {
@@ -1715,7 +1857,7 @@ func TestRunUsesTViewApplication(t *testing.T) {
 		return nil
 	}
 
-	if err := Run(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil, nil, nil, nil, nil, nil); err != nil {
+	if err := Run(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil, nil, nil, nil, nil, nil, nil); err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
 	if !called {
@@ -1739,10 +1881,13 @@ func TestNewTViewUIWiresNativeEditCallbacks(t *testing.T) {
 	updateValueObjects := func(application.GenerateRequest, application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
 		return application.UpdateValueObjectSettingsResult{}, nil
 	}
+	updateRelationships := func(application.GenerateRequest, application.RelationshipSettings) (application.UpdateRelationshipSettingsResult, error) {
+		return application.UpdateRelationshipSettingsResult{}, nil
+	}
 
-	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, updateSettings, updateServices, updateEntities, updateFields, updateValueObjects, []string{"net10.0"})
+	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, updateSettings, updateServices, updateEntities, updateFields, updateValueObjects, updateRelationships, []string{"net10.0"})
 
-	if ui.updateSettings == nil || ui.updateServices == nil || ui.updateEntities == nil || ui.updateFields == nil || ui.updateValueObjects == nil {
+	if ui.updateSettings == nil || ui.updateServices == nil || ui.updateEntities == nil || ui.updateFields == nil || ui.updateValueObjects == nil || ui.updateRelationships == nil {
 		t.Fatalf("expected all native tview edit callbacks to be wired")
 	}
 	if len(ui.targetFrameworkSuggestions) != 1 || ui.targetFrameworkSuggestions[0] != "net10.0" {
@@ -2839,10 +2984,13 @@ func TestNewLegacyModelPreservesEditableCallbacks(t *testing.T) {
 	updateValueObjects := func(application.GenerateRequest, application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error) {
 		return application.UpdateValueObjectSettingsResult{}, nil
 	}
+	updateRelationships := func(application.GenerateRequest, application.RelationshipSettings) (application.UpdateRelationshipSettingsResult, error) {
+		return application.UpdateRelationshipSettingsResult{}, nil
+	}
 
-	model := newLegacyModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil, updateServices, updateEntities, updateFields, updateValueObjects, []string{"net10.0"})
+	model := newLegacyModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil, updateServices, updateEntities, updateFields, updateValueObjects, updateRelationships, []string{"net10.0"})
 
-	if model.updateServices == nil || model.updateEntities == nil || model.updateFields == nil || model.updateValueObjects == nil {
+	if model.updateServices == nil || model.updateEntities == nil || model.updateFields == nil || model.updateValueObjects == nil || model.updateRelationships == nil {
 		t.Fatalf("expected legacy workspace callbacks to be preserved")
 	}
 	if got := model.targetFrameworkSuggestions; len(got) != 1 || got[0] != "net10.0" {
@@ -5992,6 +6140,16 @@ func wizardPlan() application.GenerationPlan {
 			},
 		},
 	}
+}
+
+func wizardPlanWithRelationships() application.GenerationPlan {
+	plan := wizardPlan()
+	plan.Config.Services[0].Entities = []application.EntitySummary{
+		{Name: "Category", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}}},
+		{Name: "Product", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}},
+	}
+	plan.Config.Services[0].Relationships = []application.RelationshipSummary{{Name: "ProductCategory", Multiplicity: "one-to-many", PrincipalEntity: "Category", DependentEntity: "Product", ForeignKeyName: "CategoryId", ForeignKeyType: "Guid", Required: true, PrincipalNavigation: "Products", DependentNavigation: "Category", Summary: "Category 1-* Product via CategoryId (required)"}}
+	return plan
 }
 
 func serviceEditNames(services []textField) []string {

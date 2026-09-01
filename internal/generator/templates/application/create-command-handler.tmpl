@@ -27,6 +27,7 @@ public sealed class Create{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Re
         var entity = {{ .Entity.Name }}.Create(new {{ .Entity.Name }}State
         {
 {{ range .Entity.NonIDFields }}            {{ .Name }} = {{ if .IsValueObject }}{{ .CamelName }}Result.Value!{{ else }}request.{{ .Name }}{{ end }},
+{{ end }}{{ range .Entity.RelationshipScalarFields }}            {{ .Name }} = request.{{ .Name }},
 {{ end }}        });
         await repository.AddAsync(entity, cancellationToken);
         try
@@ -44,6 +45,7 @@ public sealed class Create{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Re
 
     private static {{ .Entity.Name }}Dto ToDto(EntitySnapshot<{{ .Entity.Name }}> snapshot) => new(
 {{ range $index, $field := .Entity.Fields }}{{ if $index }},
-{{ end }}        snapshot.Entity.{{ $field.ValueAccess }}{{ end }},
+{{ end }}        snapshot.Entity.{{ $field.ValueAccess }}{{ end }}{{ range .Entity.RelationshipScalarFields }},
+        snapshot.Entity.{{ .ValueAccess }}{{ end }},
         snapshot.ConcurrencyToken);
 }

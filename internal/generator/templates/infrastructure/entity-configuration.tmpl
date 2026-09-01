@@ -14,10 +14,20 @@ public sealed class {{ .Entity.Name }}Configuration : IEntityTypeConfiguration<{
         builder.Property(item => item.RowVersion).IsRowVersion();
 {{ range .Entity.NonIDFields }}{{ if not .IsValueObject }}        builder.Property(item => item.{{ .Name }}).IsRequired();
 {{ end }}{{ end }}
+{{- range .Entity.RelationshipScalarFields }}
+        builder.Property(item => item.{{ .Name }}){{ if .Required }}.IsRequired();{{ else }}.IsRequired(false);{{ end }}
+{{ end }}
 {{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        builder.Property(item => item.{{ .Name }})
             .HasConversion(value => value.Value, value => {{ $.Service.Name }}.Domain.ValueObjects.{{ .DomainType }}.Rehydrate(value)){{ if .ColumnMaxLength }}
             .HasMaxLength({{ .ColumnMaxLength }}){{ end }}
             .IsRequired();
 {{ end }}{{ end }}
+{{- range .Entity.EFRelationships }}
+        builder.HasOne(item => item.{{ .DependentNavigation }})
+            .WithMany(item => item.{{ .PrincipalNavigation }})
+            .HasForeignKey(item => item.{{ .ForeignKeyName }})
+            {{ .IsRequiredCall }}
+            .OnDelete(DeleteBehavior.Restrict);
+{{ end }}
     }
 }

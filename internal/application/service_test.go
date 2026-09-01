@@ -1152,6 +1152,56 @@ func TestServiceUpdateValueObjectSettingsRejectsReferencedRenameAndDeleteWithout
 	}
 }
 
+func TestServiceUpdateRelationshipSettingsSavesAndSummarizesRelationships(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validConfigWithRelationshipEntities()},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       &fakeGenerator{files: []GeneratedFile{{Path: "README.md", Content: []byte("readme")}}},
+		OutputPlanner:   fakeOutputPlanner{plan: OutputPlan{OutputDir: "/planned/generated", Action: "create", Files: []OutputPlannedFile{{Path: "README.md", Action: "create"}}}},
+	})
+	required := false
+
+	result, err := service.UpdateRelationshipSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, RelationshipSettings{ServiceName: "ProductService", Relationships: []RelationshipSetting{{Name: "ProductCategory", Multiplicity: "many-to-one", PrincipalEntity: "Category", DependentEntity: "Product", ForeignKeyName: "CategoryId", ForeignKeyType: "Guid", Required: &required, PrincipalNavigation: "Products", DependentNavigation: "Category"}}})
+
+	if err != nil {
+		t.Fatalf("expected relationship update success, got %v", err)
+	}
+	if !saver.called || saver.path != "microgen.json" {
+		t.Fatalf("expected config save at microgen.json, got called=%v path=%q", saver.called, saver.path)
+	}
+	relationships := saver.cfg.Services[0].Relationships
+	if len(relationships) != 1 || relationships[0].ForeignKeyName != "CategoryId" || relationships[0].Required == nil || *relationships[0].Required {
+		t.Fatalf("expected optional relationship to be saved, got %#v", relationships)
+	}
+	if !result.Saved || result.PlanError != nil || result.Plan.FileCount != 1 {
+		t.Fatalf("expected saved result with refreshed plan summary, got %#v", result)
+	}
+	wantSummary := []RelationshipSummary{{Name: "ProductCategory", Multiplicity: "many-to-one", PrincipalEntity: "Category", DependentEntity: "Product", ForeignKeyName: "CategoryId", ForeignKeyType: "Guid", Required: false, PrincipalNavigation: "Products", DependentNavigation: "Category", Summary: "Category 1-* Product via CategoryId (optional)"}}
+	if !reflect.DeepEqual(result.Config.Services[0].Relationships, wantSummary) {
+		t.Fatalf("expected relationship summary %#v, got %#v", wantSummary, result.Config.Services[0].Relationships)
+	}
+	if !containsString(result.Plan.Readiness.Hints, "Review 1 relationship navigation before generating.") {
+		t.Fatalf("expected relationship readiness hint, got %#v", result.Plan.Readiness.Hints)
+	}
+}
+
+func TestServiceUpdateRelationshipSettingsRejectsUnsupportedOptionsWithoutSaving(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	gen := &fakeGenerator{}
+	service := NewService(Ports{ConfigLoader: &fakeConfigLoader{cfg: validConfigWithRelationshipEntities()}, ConfigSaver: saver, ConfigValidator: specValidator{}, Generator: gen, OutputPlanner: fakeOutputPlanner{}})
+
+	_, err := service.UpdateRelationshipSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, RelationshipSettings{ServiceName: "ProductService", Relationships: []RelationshipSetting{{Name: "ProductTag", Multiplicity: "many-to-many", PrincipalEntity: "Category", DependentEntity: "Product", ForeignKeyName: "CategoryId", ForeignKeyType: "Guid", PrincipalNavigation: "Products", DependentNavigation: "Category"}}})
+
+	if err == nil || !strings.Contains(err.Error(), "relationship multiplicity \"many-to-many\" is not editable") {
+		t.Fatalf("expected unsupported multiplicity editor error, got %v", err)
+	}
+	if saver.called || gen.called {
+		t.Fatalf("expected unsupported relationship not to save or plan, saver=%v gen=%v", saver.called, gen.called)
+	}
+}
+
 func TestServiceUpdateValueObjectSettingsRejectsReplacingReferencedValueObjectIdentityWithoutSaving(t *testing.T) {
 	saver := &fakeConfigSaver{}
 	gen := &fakeGenerator{}
@@ -1405,6 +1455,15 @@ func validConfigWithValueObjectsForEditing() spec.Config {
 	return cfg
 }
 
+func validConfigWithRelationshipEntities() spec.Config {
+	cfg := validPersistableConfig()
+	cfg.Services[0].Entities = []spec.Entity{
+		{Name: "Product", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}},
+		{Name: "Category", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}},
+	}
+	return cfg
+}
+
 func serviceNames(services []spec.Service) []string {
 	names := make([]string, len(services))
 	for index, service := range services {
@@ -1419,6 +1478,15 @@ func stringPtr(value string) *string {
 
 func boolPtr(value bool) *bool {
 	return &value
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 const validJSONConfig = `{

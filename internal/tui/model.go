@@ -59,6 +59,7 @@ type UpdateServicesFunc func(application.GenerateRequest, application.ServiceSet
 type UpdateEntitiesFunc func(application.GenerateRequest, application.EntitySettings) (application.UpdateEntitySettingsResult, error)
 type UpdateFieldsFunc func(application.GenerateRequest, application.FieldSettings) (application.UpdateFieldSettingsResult, error)
 type UpdateValueObjectsFunc func(application.GenerateRequest, application.ValueObjectSettings) (application.UpdateValueObjectSettingsResult, error)
+type UpdateRelationshipsFunc func(application.GenerateRequest, application.RelationshipSettings) (application.UpdateRelationshipSettingsResult, error)
 
 type modelStatus int
 
@@ -149,6 +150,7 @@ const (
 	serviceResourceServices serviceResourceContext = iota
 	serviceResourceEntities
 	serviceResourceValueObjects
+	serviceResourceRelationships
 )
 
 type editField int
@@ -169,6 +171,7 @@ const (
 	editModeEntities
 	editModeFields
 	editModeValueObjects
+	editModeRelationships
 )
 
 type textField struct {
@@ -265,6 +268,40 @@ type valueObjectsEditState struct {
 	returnStatus modelStatus
 }
 
+type relationshipEditItem struct {
+	originalName        string
+	name                textField
+	multiplicity        string
+	principalEntity     string
+	dependentEntity     string
+	foreignKeyName      textField
+	foreignKeyType      textField
+	required            bool
+	principalNavigation textField
+	dependentNavigation textField
+}
+
+type relationshipsEditState struct {
+	serviceName   string
+	relationships []relationshipEditItem
+	selected      int
+	focused       int
+	editingText   bool
+	returnStatus  modelStatus
+}
+
+const (
+	relationshipEditFieldName = iota
+	relationshipEditFieldMultiplicity
+	relationshipEditFieldPrincipalEntity
+	relationshipEditFieldDependentEntity
+	relationshipEditFieldForeignKeyName
+	relationshipEditFieldForeignKeyType
+	relationshipEditFieldPrincipalNavigation
+	relationshipEditFieldDependentNavigation
+	relationshipEditFieldCount
+)
+
 type Model struct {
 	plan                        application.GenerationPlan
 	request                     application.GenerateRequest
@@ -275,6 +312,7 @@ type Model struct {
 	updateEntities              UpdateEntitiesFunc
 	updateFields                UpdateFieldsFunc
 	updateValueObjects          UpdateValueObjectsFunc
+	updateRelationships         UpdateRelationshipsFunc
 	status                      modelStatus
 	result                      application.GenerateResult
 	err                         error
@@ -285,6 +323,7 @@ type Model struct {
 	entitiesEdit                entitiesEditState
 	fieldsEdit                  fieldsEditState
 	valueObjectsEdit            valueObjectsEditState
+	relationshipsEdit           relationshipsEditState
 	targetFrameworkSuggestions  []string
 	fileCursor                  int
 	fileOffset                  int
@@ -330,17 +369,18 @@ func NewModel(plan application.GenerationPlan, request application.GenerateReque
 	return Model{plan: plan, request: request, planFunc: planFunc, generate: generate, update: update, status: statusReady, targetFrameworkSuggestions: suggestions, windowRows: defaultFileWindowRows, layout: layoutModeForWidth(0), currentStep: stepSource, screen: screenOverview, selectedScreen: screenOverview, mode: modeWorkspace, wizardScreen: wizardMenu}
 }
 
-func newLegacyModel(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, updateServices UpdateServicesFunc, updateEntities UpdateEntitiesFunc, updateFields UpdateFieldsFunc, updateValueObjects UpdateValueObjectsFunc, targetFrameworkSuggestions []string) Model {
+func newLegacyModel(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, updateServices UpdateServicesFunc, updateEntities UpdateEntitiesFunc, updateFields UpdateFieldsFunc, updateValueObjects UpdateValueObjectsFunc, updateRelationships UpdateRelationshipsFunc, targetFrameworkSuggestions []string) Model {
 	model := NewModel(plan, request, planFunc, generate, update, targetFrameworkSuggestions)
 	model.updateServices = updateServices
 	model.updateEntities = updateEntities
 	model.updateFields = updateFields
 	model.updateValueObjects = updateValueObjects
+	model.updateRelationships = updateRelationships
 	return model
 }
 
-func Run(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, updateServices UpdateServicesFunc, updateEntities UpdateEntitiesFunc, updateFields UpdateFieldsFunc, updateValueObjects UpdateValueObjectsFunc, targetFrameworkSuggestions []string) error {
-	ui := newTViewUI(plan, request, planFunc, generate, update, updateServices, updateEntities, updateFields, updateValueObjects, targetFrameworkSuggestions)
+func Run(plan application.GenerationPlan, request application.GenerateRequest, planFunc PlanFunc, generate GenerateFunc, update UpdateSettingsFunc, updateServices UpdateServicesFunc, updateEntities UpdateEntitiesFunc, updateFields UpdateFieldsFunc, updateValueObjects UpdateValueObjectsFunc, updateRelationships UpdateRelationshipsFunc, targetFrameworkSuggestions []string) error {
+	ui := newTViewUI(plan, request, planFunc, generate, update, updateServices, updateEntities, updateFields, updateValueObjects, updateRelationships, targetFrameworkSuggestions)
 	return runTViewApplication(ui.app, ui.root)
 }
 
@@ -372,6 +412,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateRouteSelector(key)
 		}
 		if m.status == statusEditing {
+			if m.edit.mode == editModeRelationships {
+				return m.updateRelationshipsEdit(msg)
+			}
 			if m.edit.mode == editModeValueObjects {
 				return m.updateValueObjectsEdit(msg)
 			}
@@ -668,6 +711,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.startEntitiesEditing()
 				case serviceResourceValueObjects:
 					m.startValueObjectsEditing()
+				case serviceResourceRelationships:
+					m.startRelationshipsEditing()
 				default:
 					// Keep the established service-selection flow: Enter opens the selected service's entities.
 					m.startEntitiesEditing()
@@ -692,6 +737,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.activeScreen() == screenServices {
 				m.startValueObjectsEditing()
+			}
+			return m, nil
+		case "y":
+			if m.status == statusRefreshing || m.status == statusGenerating || m.status == statusSaving {
+				return m, nil
+			}
+			if m.activeScreen() == screenServices {
+				m.startRelationshipsEditing()
 			}
 			return m, nil
 		case "f":
@@ -938,6 +991,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.enterWizardMenu()
 		}
 		return m, nil
+
+	case relationshipsFinishedMsg:
+		if msg.err != nil {
+			m.status = statusEditing
+			m.edit.mode = editModeRelationships
+			m.err = msg.err
+			m.errContext = "Save"
+			m.message = ""
+			return m, nil
+		}
+		if msg.result.Saved && msg.result.PlanError != nil {
+			m.plan.Config = msg.result.Config
+			m.status = statusFailed
+			m.err = msg.result.PlanError
+			m.errContext = "Refresh after save"
+			m.message = "Relationships saved, but the plan refresh failed. Press r to retry the refresh."
+			return m, nil
+		}
+		m.status = statusReady
+		m.plan = msg.result.Plan
+		m.result = application.GenerateResult{}
+		m.err = nil
+		m.errContext = ""
+		m.message = "Relationships saved. Plan refreshed. Review navigation before generating."
+		m.clampSelectedService()
+		m.clampFileCursor()
+		return m, nil
 	}
 	return m, nil
 }
@@ -997,6 +1077,8 @@ func (m Model) updateWizard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.updateFieldsEdit(msg)
 		case editModeValueObjects:
 			return m.updateValueObjectsEdit(msg)
+		case editModeRelationships:
+			return m.updateRelationshipsEdit(msg)
 		}
 		return m.updateEdit(msg)
 	}
@@ -1822,6 +1904,52 @@ func (m *Model) startValueObjectsEditing() {
 	m.valueObjectsEdit.selected = clampInt(m.selectedValueObject, 0, len(m.valueObjectsEdit.valueObjects)-1)
 }
 
+func (m *Model) startRelationshipsEditing() {
+	m.openScreen(screenServices)
+	returnStatus := m.status
+	service := m.selectedServiceSummary()
+	m.status = statusEditing
+	m.err = nil
+	m.errContext = ""
+	m.message = ""
+	m.edit = editState{mode: editModeRelationships}
+	m.relationshipsEdit = relationshipsEditState{returnStatus: returnStatus, serviceName: service.Name, relationships: make([]relationshipEditItem, 0, len(service.Relationships))}
+	for _, relationship := range service.Relationships {
+		m.relationshipsEdit.relationships = append(m.relationshipsEdit.relationships, relationshipEditItemFromSummary(relationship))
+	}
+	if len(m.relationshipsEdit.relationships) == 0 {
+		m.relationshipsEdit.relationships = append(m.relationshipsEdit.relationships, m.newRelationshipEditItem("", "Relationship1"))
+	}
+}
+
+func relationshipEditItemFromSummary(summary application.RelationshipSummary) relationshipEditItem {
+	return relationshipEditItem{
+		originalName:        summary.Name,
+		name:                newTextField(summary.Name),
+		multiplicity:        summary.Multiplicity,
+		principalEntity:     summary.PrincipalEntity,
+		dependentEntity:     summary.DependentEntity,
+		foreignKeyName:      newTextField(summary.ForeignKeyName),
+		foreignKeyType:      newTextField(summary.ForeignKeyType),
+		required:            summary.Required,
+		principalNavigation: newTextField(summary.PrincipalNavigation),
+		dependentNavigation: newTextField(summary.DependentNavigation),
+	}
+}
+
+func (m Model) newRelationshipEditItem(originalName, name string) relationshipEditItem {
+	entities := m.serviceEntitySummaries()
+	principal, dependent := "Principal", "Dependent"
+	if len(entities) > 0 {
+		principal = entities[0].Name
+		dependent = entities[0].Name
+	}
+	if len(entities) > 1 {
+		dependent = entities[1].Name
+	}
+	return relationshipEditItem{originalName: originalName, name: newTextField(name), multiplicity: "one-to-many", principalEntity: principal, dependentEntity: dependent, foreignKeyName: newTextField(principal + "Id"), foreignKeyType: newTextField("Guid"), required: true, principalNavigation: newTextField(dependent + "s"), dependentNavigation: newTextField(principal)}
+}
+
 func valueObjectEditItemFromSummary(summary application.ValueObjectSummary) valueObjectEditItem {
 	item := newValueObjectEditItem(summary.Name, summary.Name)
 	item.typeName = newTextField(summary.Type)
@@ -2209,6 +2337,156 @@ func (m Model) updateValueObjectRulesEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+func (m Model) updateRelationshipsEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyRunes && m.relationshipsEdit.editingText {
+		if field := m.selectedRelationshipTextField(); field != nil {
+			field.insert(msg.Runes)
+		}
+		return m, nil
+	}
+	switch msg.String() {
+	case "esc":
+		m.status = m.relationshipsEdit.returnStatus
+		m.err = nil
+		m.errContext = ""
+		m.openScreen(screenServices)
+		m.serviceContext = serviceResourceRelationships
+		return m, nil
+	case "enter":
+		if m.relationshipsEdit.editingText {
+			m.relationshipsEdit.editingText = false
+			return m, nil
+		}
+		m.status = statusSaving
+		m.err = nil
+		m.errContext = ""
+		return m, m.saveRelationshipsCmd()
+	case "up", "k":
+		if !m.relationshipsEdit.editingText {
+			m.moveRelationshipSelection(-1)
+		}
+		return m, nil
+	case "down", "j":
+		if !m.relationshipsEdit.editingText {
+			m.moveRelationshipSelection(1)
+		}
+		return m, nil
+	case "tab":
+		if !m.relationshipsEdit.editingText {
+			m.relationshipsEdit.focused = (m.relationshipsEdit.focused + 1) % relationshipEditFieldCount
+		}
+		return m, nil
+	case " ":
+		if !m.relationshipsEdit.editingText && len(m.relationshipsEdit.relationships) > 0 {
+			m.cycleSelectedRelationshipChoice()
+		}
+		return m, nil
+	case "m":
+		if !m.relationshipsEdit.editingText && len(m.relationshipsEdit.relationships) > 0 {
+			selected := &m.relationshipsEdit.relationships[m.relationshipsEdit.selected]
+			if selected.multiplicity == "one-to-many" {
+				selected.multiplicity = "many-to-one"
+			} else {
+				selected.multiplicity = "one-to-many"
+			}
+		}
+		return m, nil
+	case "e":
+		if !m.relationshipsEdit.editingText && m.selectedRelationshipTextField() != nil {
+			m.relationshipsEdit.editingText = true
+		}
+		return m, nil
+	case "a":
+		if !m.relationshipsEdit.editingText {
+			m.relationshipsEdit.relationships = append(m.relationshipsEdit.relationships, m.newRelationshipEditItem("", fmt.Sprintf("Relationship%d", len(m.relationshipsEdit.relationships)+1)))
+			m.relationshipsEdit.selected = len(m.relationshipsEdit.relationships) - 1
+		}
+		return m, nil
+	case "d":
+		if !m.relationshipsEdit.editingText && len(m.relationshipsEdit.relationships) > 0 {
+			selected := m.relationshipsEdit.selected
+			m.relationshipsEdit.relationships = append(m.relationshipsEdit.relationships[:selected], m.relationshipsEdit.relationships[selected+1:]...)
+			m.moveRelationshipSelection(0)
+		}
+		return m, nil
+	case "left":
+		if m.relationshipsEdit.editingText {
+			m.selectedRelationshipTextField().move(-1)
+		}
+		return m, nil
+	case "right":
+		if m.relationshipsEdit.editingText {
+			m.selectedRelationshipTextField().move(1)
+		}
+		return m, nil
+	case "backspace":
+		if m.relationshipsEdit.editingText {
+			m.selectedRelationshipTextField().backspace()
+		}
+		return m, nil
+	case "delete":
+		if m.relationshipsEdit.editingText {
+			m.selectedRelationshipTextField().delete()
+		}
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *Model) moveRelationshipSelection(delta int) {
+	if len(m.relationshipsEdit.relationships) == 0 {
+		m.relationshipsEdit.selected = 0
+		return
+	}
+	m.relationshipsEdit.selected = clampInt(m.relationshipsEdit.selected+delta, 0, len(m.relationshipsEdit.relationships)-1)
+}
+
+func (m *Model) cycleSelectedRelationshipChoice() {
+	selected := &m.relationshipsEdit.relationships[m.relationshipsEdit.selected]
+	switch m.relationshipsEdit.focused {
+	case relationshipEditFieldPrincipalEntity:
+		selected.principalEntity = m.nextRelationshipEntityName(selected.principalEntity)
+	case relationshipEditFieldDependentEntity:
+		selected.dependentEntity = m.nextRelationshipEntityName(selected.dependentEntity)
+	default:
+		selected.required = !selected.required
+	}
+}
+
+func (m Model) nextRelationshipEntityName(current string) string {
+	entities := m.serviceEntitySummaries()
+	if len(entities) == 0 {
+		return current
+	}
+	for index, entity := range entities {
+		if entity.Name == current {
+			return entities[(index+1)%len(entities)].Name
+		}
+	}
+	return entities[0].Name
+}
+
+func (m *Model) selectedRelationshipTextField() *textField {
+	if len(m.relationshipsEdit.relationships) == 0 {
+		return nil
+	}
+	selected := &m.relationshipsEdit.relationships[m.relationshipsEdit.selected]
+	switch m.relationshipsEdit.focused {
+	case relationshipEditFieldName:
+		return &selected.name
+	case relationshipEditFieldForeignKeyName:
+		return &selected.foreignKeyName
+	case relationshipEditFieldForeignKeyType:
+		return &selected.foreignKeyType
+	case relationshipEditFieldPrincipalNavigation:
+		return &selected.principalNavigation
+	case relationshipEditFieldDependentNavigation:
+		return &selected.dependentNavigation
+	default:
+		return nil
+	}
 }
 
 func (m Model) updateServicesEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -2995,6 +3273,11 @@ type valueObjectsFinishedMsg struct {
 	err    error
 }
 
+type relationshipsFinishedMsg struct {
+	result application.UpdateRelationshipSettingsResult
+	err    error
+}
+
 func (m Model) planCmd() tea.Cmd {
 	return func() tea.Msg {
 		plan, err := m.planFunc(m.request)
@@ -3073,6 +3356,18 @@ func (m Model) saveValueObjectsCmd() tea.Cmd {
 	return func() tea.Msg {
 		result, err := m.updateValueObjects(m.request, settings)
 		return valueObjectsFinishedMsg{result: result, err: err}
+	}
+}
+
+func (m Model) saveRelationshipsCmd() tea.Cmd {
+	settings := application.RelationshipSettings{ServiceName: m.relationshipsEdit.serviceName, Relationships: make([]application.RelationshipSetting, 0, len(m.relationshipsEdit.relationships))}
+	for _, relationship := range m.relationshipsEdit.relationships {
+		required := relationship.required
+		settings.Relationships = append(settings.Relationships, application.RelationshipSetting{OriginalName: relationship.originalName, Name: relationship.name.string(), Multiplicity: relationship.multiplicity, PrincipalEntity: relationship.principalEntity, DependentEntity: relationship.dependentEntity, ForeignKeyName: relationship.foreignKeyName.string(), ForeignKeyType: relationship.foreignKeyType.string(), Required: &required, PrincipalNavigation: relationship.principalNavigation.string(), DependentNavigation: relationship.dependentNavigation.string()})
+	}
+	return func() tea.Msg {
+		result, err := m.updateRelationships(m.request, settings)
+		return relationshipsFinishedMsg{result: result, err: err}
 	}
 }
 
@@ -4483,6 +4778,12 @@ func (m Model) servicesStepCard() string {
 		m.renderValueObjectsEditor(&builder)
 		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
 	}
+	if (m.status == statusEditing && m.edit.mode == editModeRelationships) || (m.status == statusSaving && m.edit.mode == editModeRelationships) {
+		var builder strings.Builder
+		fmt.Fprintln(&builder, sectionTitleStyle.Render("Services"))
+		m.renderRelationshipsEditor(&builder)
+		return cardStyle.Render(strings.TrimRight(builder.String(), "\n"))
+	}
 	return m.servicesWorkspace()
 }
 
@@ -4709,7 +5010,7 @@ func (m Model) valueObjectFieldReferences(valueObjectName string) []string {
 }
 
 func (m Model) serviceContextTabs() string {
-	labels := []string{"Services", "Entities", "Value Objects"}
+	labels := []string{"Services", "Entities", "Value Objects", "Relationships"}
 	parts := make([]string, 0, len(labels))
 	for index, label := range labels {
 		if serviceResourceContext(index) == m.serviceContext {
@@ -4760,6 +5061,7 @@ func (m Model) serviceDetail() string {
 	fmt.Fprintf(&builder, "  Entities: %d\n", len(entities))
 	fmt.Fprintf(&builder, "  Fields: %d\n", fieldCount)
 	fmt.Fprintf(&builder, "  Value objects: %d\n", len(valueObjects))
+	fmt.Fprintf(&builder, "  Relationships: %d\n", len(service.Relationships))
 	fmt.Fprintf(&builder, "  References: %d\n", len(service.ValueObjectReferences))
 	fmt.Fprintln(&builder)
 	fmt.Fprintln(&builder, labelStyle.Render("Entities"))
@@ -4792,12 +5094,18 @@ func (m Model) serviceDetail() string {
 			fmt.Fprintf(&builder, "  %s <- %s.%s\n", reference.ValueObjectName, reference.EntityName, reference.FieldName)
 		}
 	}
+	if len(service.Relationships) > 0 {
+		fmt.Fprintln(&builder, labelStyle.Render("Relationships"))
+		for _, relationship := range service.Relationships {
+			fmt.Fprintf(&builder, "  %s\n", relationship.Summary)
+		}
+	}
 	fmt.Fprintln(&builder)
 	if m.busy() || m.postSaveRefreshFailed() {
 		fmt.Fprintln(&builder, busyStyle.Render("Editing is paused until the current operation finishes or the stale plan is refreshed."))
 	} else {
 		fmt.Fprintln(&builder, successStyle.Render("Enter open selected resource/editor."))
-		fmt.Fprintln(&builder, dimStyle.Render("e services | f fields | v value objects | a/r/d in editors"))
+		fmt.Fprintln(&builder, dimStyle.Render("e services | f fields | v value objects | y relationships | a/r/d in editors"))
 	}
 	return strings.TrimRight(builder.String(), "\n")
 }
@@ -5541,6 +5849,41 @@ func (m Model) renderValueObjectsEditor(builder *strings.Builder) {
 	}
 	fmt.Fprintln(builder, "Keys: up/down select, a add, r rename, o rules, d delete, enter save, esc cancel.")
 	fmt.Fprintln(builder, "Final validation checks blank, duplicate, colliding, and referenced value-object changes before save.")
+}
+
+func (m Model) renderRelationshipsEditor(builder *strings.Builder) {
+	if m.status == statusSaving {
+		fmt.Fprintln(builder, "Saving relationships...")
+		fmt.Fprintln(builder, "Save is in progress. Exit will be available after it finishes.")
+		return
+	}
+	fmt.Fprintf(builder, "Editing relationships for %s\n", m.relationshipsEdit.serviceName)
+	fmt.Fprintln(builder, "Only one-to-many and many-to-one relationships are supported.")
+	if m.err != nil {
+		fmt.Fprintf(builder, "Save failed: %v\n", m.err)
+	}
+	if len(m.relationshipsEdit.relationships) == 0 {
+		fmt.Fprintln(builder, "No relationships selected for this service.")
+	}
+	for index, relationship := range m.relationshipsEdit.relationships {
+		cursor := " "
+		if index == m.relationshipsEdit.selected {
+			cursor = ">"
+		}
+		required := "required"
+		if !relationship.required {
+			required = "optional"
+		}
+		fmt.Fprintf(builder, "%s %d. %s: %s %s -> %s via %s:%s (%s, nav %s/%s)\n", cursor, index+1, relationship.name.string(), relationship.multiplicity, relationship.principalEntity, relationship.dependentEntity, relationship.foreignKeyName.string(), relationship.foreignKeyType.string(), required, relationship.principalNavigation.string(), relationship.dependentNavigation.string())
+	}
+	if m.relationshipsEdit.editingText {
+		fmt.Fprintln(builder, "Edit mode: type text. Enter confirms the local value. Esc cancels relationship editing.")
+		fmt.Fprintln(builder, "Left/right, backspace, and delete edit the selected text field.")
+		return
+	}
+	fmt.Fprintln(builder)
+	fmt.Fprintln(builder, "Keys: up/down select, tab field, e edit text, m toggle multiplicity, space cycles focused endpoint or toggles required, a add, d delete, enter save, esc cancel.")
+	fmt.Fprintln(builder, "Final validation rejects unsupported multiplicities, missing endpoints, FK conflicts, and navigation collisions before save.")
 }
 
 func (m Model) renderValueObjectRulesEditor(builder *strings.Builder) {

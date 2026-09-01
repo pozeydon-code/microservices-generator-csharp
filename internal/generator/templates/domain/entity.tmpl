@@ -6,6 +6,7 @@ namespace {{ .Service.Name }}.Domain.Entities;
 public sealed class {{ .Entity.Name }}State
 {
 {{ range .Entity.NonIDFields }}    public required {{ .DomainType }} {{ .Name }} { get; init; }
+{{ end }}{{ range .Entity.RelationshipScalarFields }}    public required {{ .Type }} {{ .Name }} { get; init; }
 {{ end }}}
 
 public sealed class {{ .Entity.Name }}
@@ -13,6 +14,9 @@ public sealed class {{ .Entity.Name }}
     private {{ .Entity.Name }}() { }
 
 {{ range .Entity.Fields }}    public {{ .DomainType }} {{ .Name }} { get; private set; }{{ .Initializer }}
+{{ end }}{{ range .Entity.RelationshipScalarFields }}    public {{ .Type }} {{ .Name }} { get; private set; }
+{{ end }}{{ range .Entity.ReferenceNavigations }}    public {{ .TargetEntity }}{{ if .Nullable }}?{{ end }} {{ .Name }} { get; private set; }{{ .Initializer }}
+{{ end }}{{ range .Entity.CollectionNavigations }}    public ICollection<{{ .TargetEntity }}> {{ .Name }} { get; private set; } = [];
 {{ end }}
     public byte[] RowVersion { get; private set; } = [];
 
@@ -20,11 +24,13 @@ public sealed class {{ .Entity.Name }}
     {
         Id = Guid.NewGuid(),
 {{ range .Entity.NonIDFields }}        {{ .Name }} = state.{{ .Name }},
+{{ end }}{{ range .Entity.RelationshipScalarFields }}        {{ .Name }} = state.{{ .Name }},
 {{ end }}    };
 
     public void Update({{ .Entity.Name }}State state)
     {
 {{ range .Entity.NonIDFields }}        {{ .Name }} = state.{{ .Name }};
-{{ end }}{{ if not .Entity.NonIDFields }}        _ = Id;
+{{ end }}{{ range .Entity.RelationshipScalarFields }}        {{ .Name }} = state.{{ .Name }};
+{{ end }}{{ if and (not .Entity.NonIDFields) (not .Entity.RelationshipScalarFields) }}        _ = Id;
 {{ end }}    }
 }
