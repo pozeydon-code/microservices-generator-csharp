@@ -146,12 +146,16 @@ type EntityView struct {
 }
 
 type RelationshipScalarFieldView struct {
-	Name         string
-	CamelName    string
-	Type         string
-	ContractType string
-	ValueAccess  string
-	Required     bool
+	Name              string
+	CamelName         string
+	Type              string
+	ContractType      string
+	ValueAccess       string
+	Required          bool
+	SampleValue       string
+	UpdatedValue      string
+	DomainSampleValue string
+	Assertion         string
 }
 
 type ReferenceNavigationView struct {
@@ -318,14 +322,20 @@ func applyRelationshipViews(serviceView *ServiceView, relationships []spec.Canon
 		if relationship.Nullable() {
 			fieldType += "?"
 		}
+		sampleType := strings.TrimSuffix(fieldType, "?")
+		sampleValue := sampleValueFor(sampleType, relationship.ForeignKeyName)
 		removeExistingRelationshipScalarField(&serviceView.Entities[dependentIndex], relationship.ForeignKeyName)
 		serviceView.Entities[dependentIndex].RelationshipScalarFields = append(serviceView.Entities[dependentIndex].RelationshipScalarFields, RelationshipScalarFieldView{
-			Name:         relationship.ForeignKeyName,
-			CamelName:    camelName(relationship.ForeignKeyName),
-			Type:         fieldType,
-			ContractType: fieldType,
-			ValueAccess:  relationship.ForeignKeyName,
-			Required:     relationship.Required,
+			Name:              relationship.ForeignKeyName,
+			CamelName:         camelName(relationship.ForeignKeyName),
+			Type:              fieldType,
+			ContractType:      fieldType,
+			ValueAccess:       relationship.ForeignKeyName,
+			Required:          relationship.Required,
+			SampleValue:       sampleValue,
+			UpdatedValue:      updatedValueFor(sampleType, relationship.ForeignKeyName),
+			DomainSampleValue: sampleValue,
+			Assertion:         assertionFor(sampleType, sampleValue, relationship.ForeignKeyName),
 		})
 		initializer := " = null!;"
 		if relationship.Nullable() {

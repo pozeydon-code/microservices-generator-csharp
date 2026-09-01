@@ -28,6 +28,7 @@ public sealed class {{ .Entity.Name }}ApplicationTests
         var result = await handler.Handle(new Create{{ .Entity.Name }}Command
         {
 {{ range .Entity.NonIDFields }}            {{ .Name }} = {{ .SampleValue }},
+{{ end }}{{ range .Entity.RelationshipScalarFields }}            {{ .Name }} = {{ .SampleValue }},
 {{ end }}        }, CancellationToken.None);
 
         Assert.False(result.IsError);
@@ -36,6 +37,7 @@ public sealed class {{ .Entity.Name }}ApplicationTests
         var created = result.Value;
         Assert.NotEqual(Guid.Empty, created.Id);
 {{ range .Entity.NonIDFields }}        {{ .Assertion }}
+{{ end }}{{ range .Entity.RelationshipScalarFields }}        {{ .Assertion }}
 {{ end }}        Assert.Equal("token-v1", created.ConcurrencyToken);
     }
 
@@ -45,6 +47,7 @@ public sealed class {{ .Entity.Name }}ApplicationTests
         var result = await new Create{{ .Entity.Name }}CommandValidator().ValidateAsync(new Create{{ .Entity.Name }}Command
         {
 {{ range .Entity.NonIDFields }}            {{ .Name }} = {{ .SampleValue }},
+{{ end }}{{ range .Entity.RelationshipScalarFields }}            {{ .Name }} = {{ .SampleValue }},
 {{ end }}        });
 
         Assert.True(result.IsValid);
@@ -60,10 +63,11 @@ public sealed class {{ .Entity.Name }}ApplicationTests
         var result = await behavior.Handle(new Create{{ .Entity.Name }}Command
         {
 {{ range .Entity.NonIDFields }}            {{ .Name }} = {{ if .IsValueObject }}{{ .InvalidValue }}{{ else }}{{ .SampleValue }}{{ end }},
+{{ end }}{{ range .Entity.RelationshipScalarFields }}            {{ .Name }} = {{ .SampleValue }},
 {{ end }}        }, _ =>
         {
             handlerCalled = true;
-            return Task.FromResult<ErrorOr<{{ .Entity.Name }}Dto>>(new {{ .Entity.Name }}Dto({{ range .Entity.Fields }}{{ if eq .Name "Id" }}Guid.NewGuid(){{ else }}{{ .SampleValue }}{{ end }}, {{ end }}"token-v1"));
+            return Task.FromResult<ErrorOr<{{ .Entity.Name }}Dto>>(new {{ .Entity.Name }}Dto({{ range .Entity.Fields }}{{ if eq .Name "Id" }}Guid.NewGuid(){{ else }}{{ .SampleValue }}{{ end }}, {{ end }}{{ range .Entity.RelationshipScalarFields }}{{ .SampleValue }}, {{ end }}"token-v1"));
         }, CancellationToken.None);
 
         Assert.False(handlerCalled);
@@ -77,7 +81,7 @@ public sealed class {{ .Entity.Name }}ApplicationTests
         var behavior = new ValidationBehavior<Create{{ .Entity.Name }}Command, ErrorOr<{{ .Entity.Name }}Dto>>([]);
 
         var result = await behavior.Handle(new Create{{ .Entity.Name }}Command(), _ =>
-            Task.FromResult<ErrorOr<{{ .Entity.Name }}Dto>>(new {{ .Entity.Name }}Dto({{ range .Entity.Fields }}{{ if eq .Name "Id" }}Guid.NewGuid(){{ else }}{{ .SampleValue }}{{ end }}, {{ end }}"token-v1")), CancellationToken.None);
+            Task.FromResult<ErrorOr<{{ .Entity.Name }}Dto>>(new {{ .Entity.Name }}Dto({{ range .Entity.Fields }}{{ if eq .Name "Id" }}Guid.NewGuid(){{ else }}{{ .SampleValue }}{{ end }}, {{ end }}{{ range .Entity.RelationshipScalarFields }}{{ .SampleValue }}, {{ end }}"token-v1")), CancellationToken.None);
 
         Assert.False(result.IsError);
     }
@@ -88,11 +92,13 @@ public sealed class {{ .Entity.Name }}ApplicationTests
         var create = await new Create{{ .Entity.Name }}CommandValidator().ValidateAsync(new Create{{ .Entity.Name }}Command
         {
 {{ range .Entity.NonIDFields }}            {{ .Name }} = {{ if .IsValueObject }}{{ .InvalidValue }}{{ else }}{{ .SampleValue }}{{ end }},
+{{ end }}{{ range .Entity.RelationshipScalarFields }}            {{ .Name }} = {{ .SampleValue }},
 {{ end }}        });
         var update = await new Update{{ .Entity.Name }}CommandValidator().ValidateAsync(new Update{{ .Entity.Name }}Command
         {
             Id = Guid.NewGuid(),
 {{ range .Entity.NonIDFields }}            {{ .Name }} = {{ if .IsValueObject }}{{ .InvalidValue }}{{ else }}{{ .SampleValue }}{{ end }},
+{{ end }}{{ range .Entity.RelationshipScalarFields }}            {{ .Name }} = {{ .SampleValue }},
 {{ end }}            ConcurrencyToken = "token-v1",
         });
 
@@ -107,6 +113,7 @@ public sealed class {{ .Entity.Name }}ApplicationTests
         {
             Id = Guid.NewGuid(),
 {{ range .Entity.NonIDFields }}            {{ .Name }} = {{ .SampleValue }},
+{{ end }}{{ range .Entity.RelationshipScalarFields }}            {{ .Name }} = {{ .SampleValue }},
 {{ end }}            ConcurrencyToken = "",
         });
 
@@ -117,7 +124,7 @@ public sealed class {{ .Entity.Name }}ApplicationTests
     public async Task UpdateCommandHandlerPreservesIdentityValuesAndConcurrencyToken()
     {
         var repository = new Fake{{ .Entity.Name }}Repository();
-        var entity = Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
+        var entity = Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }}{{ range .Entity.RelationshipScalarFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
         repository.Items.Add(entity);
         var unitOfWork = new FakeUnitOfWork(repository);
         var handler = new Update{{ .Entity.Name }}CommandHandler(repository, unitOfWork);
@@ -126,6 +133,7 @@ public sealed class {{ .Entity.Name }}ApplicationTests
         {
             Id = entity.Id,
 {{ range .Entity.NonIDFields }}            {{ .Name }} = {{ .UpdatedValue }},
+{{ end }}{{ range .Entity.RelationshipScalarFields }}            {{ .Name }} = {{ .UpdatedValue }},
 {{ end }}            ConcurrencyToken = "token-v1",
         }, CancellationToken.None);
 
@@ -133,6 +141,7 @@ public sealed class {{ .Entity.Name }}ApplicationTests
         Assert.Equal(1, unitOfWork.SaveCalls);
         Assert.Equal(entity.Id, result.Value.Id);
 {{ range .Entity.NonIDFields }}        Assert.True(EqualityComparer<{{ .ContractType }}>.Default.Equals({{ .UpdatedValue }}, result.Value.{{ .Name }}));
+{{ end }}{{ range .Entity.RelationshipScalarFields }}        Assert.True(EqualityComparer<{{ .ContractType }}>.Default.Equals({{ .UpdatedValue }}, result.Value.{{ .Name }}));
 {{ end }}        Assert.Equal("token-v2", result.Value.ConcurrencyToken);
     }
 
@@ -140,15 +149,15 @@ public sealed class {{ .Entity.Name }}ApplicationTests
     public async Task UpdateCommandHandlerMapsNotFoundConflictAndInvalidToken()
     {
         var repository = new Fake{{ .Entity.Name }}Repository();
-        var entity = Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
+        var entity = Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }}{{ range .Entity.RelationshipScalarFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
         repository.Items.Add(entity);
         var unitOfWork = new FakeUnitOfWork(repository);
         var handler = new Update{{ .Entity.Name }}CommandHandler(repository, unitOfWork);
 
-        var missing = await handler.Handle(new Update{{ .Entity.Name }}Command { Id = Guid.NewGuid(), {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .SampleValue }}, {{ end }} ConcurrencyToken = "token-v1" }, CancellationToken.None);
+        var missing = await handler.Handle(new Update{{ .Entity.Name }}Command { Id = Guid.NewGuid(), {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .SampleValue }}, {{ end }}{{ range .Entity.RelationshipScalarFields }}{{ .Name }} = {{ .SampleValue }}, {{ end }} ConcurrencyToken = "token-v1" }, CancellationToken.None);
         unitOfWork.ConflictOnNextSave = true;
-        var conflict = await handler.Handle(new Update{{ .Entity.Name }}Command { Id = entity.Id, {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }} ConcurrencyToken = "token-v1" }, CancellationToken.None);
-        var invalid = await handler.Handle(new Update{{ .Entity.Name }}Command { Id = entity.Id, {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }} ConcurrencyToken = "unknown-token" }, CancellationToken.None);
+        var conflict = await handler.Handle(new Update{{ .Entity.Name }}Command { Id = entity.Id, {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }}{{ range .Entity.RelationshipScalarFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }} ConcurrencyToken = "token-v1" }, CancellationToken.None);
+        var invalid = await handler.Handle(new Update{{ .Entity.Name }}Command { Id = entity.Id, {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }}{{ range .Entity.RelationshipScalarFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }} ConcurrencyToken = "unknown-token" }, CancellationToken.None);
 
         Assert.Equal(ErrorType.NotFound, missing.FirstError.Type);
         Assert.Equal(ErrorType.Conflict, conflict.FirstError.Type);
@@ -168,7 +177,7 @@ public sealed class {{ .Entity.Name }}ApplicationTests
     public async Task DeleteCommandHandlerMapsNotFoundConflictInvalidTokenAndSuccess()
     {
         var repository = new Fake{{ .Entity.Name }}Repository();
-        var entity = Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
+        var entity = Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }}{{ range .Entity.RelationshipScalarFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
         repository.Items.Add(entity);
         var unitOfWork = new FakeUnitOfWork(repository);
         var handler = new Delete{{ .Entity.Name }}CommandHandler(repository, unitOfWork);
@@ -193,7 +202,7 @@ public sealed class {{ .Entity.Name }}ApplicationTests
     public async Task ListAndGetByIdHandlersMapRepositorySnapshots()
     {
         var repository = new Fake{{ .Entity.Name }}Repository();
-        var entity = Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
+        var entity = Domain{{ .Entity.Name }}.Create(new {{ .Entity.Name }}State { {{ range .Entity.NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }}{{ range .Entity.RelationshipScalarFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
         repository.Items.Add(entity);
 
         var page = await new List{{ .Entity.Name }}QueryHandler(repository).Handle(new List{{ .Entity.Name }}Query(1, 20), CancellationToken.None);

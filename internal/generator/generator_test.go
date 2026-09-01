@@ -263,6 +263,18 @@ func TestGenerateRelationshipsProducesDeterministicGoldenOutput(t *testing.T) {
 	orderItemRequest := string(generatedContent(t, files, "OrderingService/src/OrderingService.Application/OrderItems/Dtos/CreateOrderItemRequest.cs"))
 	assertContains(t, orderItemRequest, "public Guid OrderId { get; init; }")
 	assertNotContains(t, orderItemRequest, "Order Order")
+	orderApplicationTests := string(generatedContent(t, files, "OrderingService/tests/OrderingService.Application.Tests/Features/Orders/OrderApplicationTests.cs"))
+	assertContains(t, orderApplicationTests, "CustomerId = Guid.Parse(\"00000000-0000-0000-0000-000000000001\")")
+	assertContains(t, orderApplicationTests, "CustomerId = Guid.Parse(\"00000000-0000-0000-0000-000000000002\")")
+	assertContains(t, orderApplicationTests, "new OrderState { Number = \"Number Value\", CustomerId = Guid.Parse(\"00000000-0000-0000-0000-000000000001\")")
+	assertNotContains(t, orderApplicationTests, "Customer =")
+	orderItemApplicationTests := string(generatedContent(t, files, "OrderingService/tests/OrderingService.Application.Tests/Features/OrderItems/OrderItemApplicationTests.cs"))
+	assertContains(t, orderItemApplicationTests, "OrderId = Guid.Parse(\"00000000-0000-0000-0000-000000000001\")")
+	assertContains(t, orderItemApplicationTests, "OrderId = Guid.Parse(\"00000000-0000-0000-0000-000000000002\")")
+	assertContains(t, orderItemApplicationTests, "new OrderItemState { Sku = \"Sku Value\", OrderId = Guid.Parse(\"00000000-0000-0000-0000-000000000001\")")
+	assertContains(t, orderItemApplicationTests, "Assert.True(EqualityComparer<Guid>.Default.Equals(Guid.Parse(\"00000000-0000-0000-0000-000000000002\"), result.Value.OrderId))")
+	assertNotContains(t, orderItemApplicationTests, "Order =")
+	assertNotContains(t, orderItemApplicationTests, "Customer =")
 }
 
 func TestGenerateRelationshipWithExplicitForeignKeyFieldEmitsSingleScalarMember(t *testing.T) {

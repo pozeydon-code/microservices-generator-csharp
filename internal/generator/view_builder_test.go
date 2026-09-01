@@ -2,6 +2,7 @@ package generator
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/pozeydon-code/microservices-generator-csharp/internal/spec"
@@ -113,7 +114,7 @@ func TestBuildSolutionViewProjectsRelationshipViews(t *testing.T) {
 	orderItem := entities["OrderItem"]
 	customer := entities["Customer"]
 
-	if !reflect.DeepEqual(orderItem.RelationshipScalarFields, []RelationshipScalarFieldView{{Name: "OrderId", CamelName: "orderId", Type: "Guid", ContractType: "Guid", ValueAccess: "OrderId", Required: true}}) {
+	if !reflect.DeepEqual(orderItem.RelationshipScalarFields, []RelationshipScalarFieldView{expectedRelationshipScalarFieldView("OrderId", "Guid", true)}) {
 		t.Fatalf("unexpected required FK scalar view: %#v", orderItem.RelationshipScalarFields)
 	}
 	if !reflect.DeepEqual(orderItem.ReferenceNavigations, []ReferenceNavigationView{{Name: "Order", TargetEntity: "Order", Nullable: false, Initializer: " = null!;"}}) {
@@ -122,7 +123,7 @@ func TestBuildSolutionViewProjectsRelationshipViews(t *testing.T) {
 	if !reflect.DeepEqual(order.CollectionNavigations, []CollectionNavigationView{{Name: "Items", TargetEntity: "OrderItem"}}) {
 		t.Fatalf("unexpected principal collection view: %#v", order.CollectionNavigations)
 	}
-	if !reflect.DeepEqual(order.RelationshipScalarFields, []RelationshipScalarFieldView{{Name: "CustomerId", CamelName: "customerId", Type: "Guid?", ContractType: "Guid?", ValueAccess: "CustomerId", Required: false}}) {
+	if !reflect.DeepEqual(order.RelationshipScalarFields, []RelationshipScalarFieldView{expectedRelationshipScalarFieldView("CustomerId", "Guid?", false)}) {
 		t.Fatalf("unexpected optional FK scalar view: %#v", order.RelationshipScalarFields)
 	}
 	if !reflect.DeepEqual(order.ReferenceNavigations, []ReferenceNavigationView{{Name: "Customer", TargetEntity: "Customer", Nullable: true, Initializer: ""}}) {
@@ -161,7 +162,7 @@ func TestBuildSolutionViewUsesExplicitForeignKeyFieldAsRelationshipScalar(t *tes
 	}
 	orderItem := entities["OrderItem"]
 
-	if !reflect.DeepEqual(orderItem.RelationshipScalarFields, []RelationshipScalarFieldView{{Name: "OrderId", CamelName: "orderId", Type: "Guid", ContractType: "Guid", ValueAccess: "OrderId", Required: true}}) {
+	if !reflect.DeepEqual(orderItem.RelationshipScalarFields, []RelationshipScalarFieldView{expectedRelationshipScalarFieldView("OrderId", "Guid", true)}) {
 		t.Fatalf("unexpected FK scalar metadata for explicit field: %#v", orderItem.RelationshipScalarFields)
 	}
 	if got := countFieldViewsNamed(orderItem.Fields, "OrderId"); got != 0 {
@@ -172,6 +173,23 @@ func TestBuildSolutionViewUsesExplicitForeignKeyFieldAsRelationshipScalar(t *tes
 	}
 	if !reflect.DeepEqual(orderItem.EFRelationships, []EFRelationshipView{{PrincipalEntity: "Order", DependentEntity: "OrderItem", ForeignKeyName: "OrderId", PrincipalNavigation: "Items", DependentNavigation: "Order", Required: true, IsRequiredCall: ".IsRequired()"}}) {
 		t.Fatalf("unexpected EF relationship metadata for explicit field: %#v", orderItem.EFRelationships)
+	}
+}
+
+func expectedRelationshipScalarFieldView(name, fieldType string, required bool) RelationshipScalarFieldView {
+	sampleType := strings.TrimSuffix(fieldType, "?")
+	sampleValue := sampleValueFor(sampleType, name)
+	return RelationshipScalarFieldView{
+		Name:              name,
+		CamelName:         camelName(name),
+		Type:              fieldType,
+		ContractType:      fieldType,
+		ValueAccess:       name,
+		Required:          required,
+		SampleValue:       sampleValue,
+		UpdatedValue:      updatedValueFor(sampleType, name),
+		DomainSampleValue: sampleValue,
+		Assertion:         assertionFor(sampleType, sampleValue, name),
 	}
 }
 
