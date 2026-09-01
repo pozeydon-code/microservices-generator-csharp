@@ -308,6 +308,43 @@ func TestGenerateRelationshipWithExplicitForeignKeyFieldEmitsSingleScalarMember(
 	}
 }
 
+func TestGenerateGatewayAndRelationshipsTogether(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := relationshipGeneratorConfig()
+	cfg.Generation.Gateway.Enabled = true
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate gateway with relationships: %v", err)
+	}
+
+	gatewayProject := string(generatedContent(t, files, "Gateway/SalesPlatform.Gateway.csproj"))
+	assertContains(t, gatewayProject, "Yarp.ReverseProxy")
+	gatewaySettings := string(generatedContent(t, files, "Gateway/appsettings.json"))
+	assertContains(t, gatewaySettings, "\"ReverseProxy\"")
+	assertContains(t, gatewaySettings, "\"ordering-service-route\"")
+	assertContains(t, gatewaySettings, "\"ordering-service-cluster\"")
+	rootSolution := string(generatedContent(t, files, "SalesPlatform.sln"))
+	assertContains(t, rootSolution, "Gateway/SalesPlatform.Gateway.csproj")
+	assertContains(t, rootSolution, "OrderingService/src/OrderingService.Domain/OrderingService.Domain.csproj")
+
+	order := string(generatedContent(t, files, "OrderingService/src/OrderingService.Domain/Entities/Order.cs"))
+	assertContains(t, order, "public Guid? CustomerId { get; private set; }")
+	assertContains(t, order, "public Customer? Customer { get; private set; }")
+	orderItemConfiguration := string(generatedContent(t, files, "OrderingService/src/OrderingService.Infrastructure/Persistence/Configurations/OrderItemConfiguration.cs"))
+	assertContains(t, orderItemConfiguration, ".HasForeignKey(item => item.OrderId)")
+	assertContains(t, orderItemConfiguration, ".OnDelete(DeleteBehavior.Restrict)")
+
+	for _, file := range files {
+		if strings.HasPrefix(file.Path, "src/SalesPlatform.Gateway/") {
+			t.Fatalf("expected gateway to stay in root Gateway folder, got old path %s", file.Path)
+		}
+	}
+}
+
 func TestGenerateEmitsPortablePropsForEveryServiceAndKeepsRootProps(t *testing.T) {
 	gen, err := New()
 	if err != nil {
