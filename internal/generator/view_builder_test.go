@@ -176,6 +176,39 @@ func TestBuildSolutionViewUsesExplicitForeignKeyFieldAsRelationshipScalar(t *tes
 	}
 }
 
+func TestBuildSolutionViewRemovesExplicitForeignKeyFieldCaseInsensitive(t *testing.T) {
+	cfg := relationshipTestConfig()
+	for serviceIndex := range cfg.Services {
+		for entityIndex := range cfg.Services[serviceIndex].Entities {
+			if cfg.Services[serviceIndex].Entities[entityIndex].Name == "OrderItem" {
+				cfg.Services[serviceIndex].Entities[entityIndex].Fields = append(cfg.Services[serviceIndex].Entities[entityIndex].Fields, spec.Field{Name: "orderId", Type: "Guid"})
+			}
+		}
+	}
+
+	view, err := buildSolutionView(cfg)
+	if err != nil {
+		t.Fatalf("build solution view: %v", err)
+	}
+
+	service := view.Services[0]
+	entities := map[string]EntityView{}
+	for _, entity := range service.Entities {
+		entities[entity.Name] = entity
+	}
+	orderItem := entities["OrderItem"]
+
+	if !reflect.DeepEqual(orderItem.RelationshipScalarFields, []RelationshipScalarFieldView{expectedRelationshipScalarFieldView("OrderId", "Guid", true)}) {
+		t.Fatalf("unexpected FK scalar metadata for explicit field: %#v", orderItem.RelationshipScalarFields)
+	}
+	if got := countFieldViewsNamedFold(orderItem.Fields, "OrderId"); got != 0 {
+		t.Fatalf("expected case-insensitive explicit FK fields to be emitted only as relationship scalar metadata, got %d entity fields", got)
+	}
+	if got := countFieldViewsNamedFold(orderItem.NonIDFields, "OrderId"); got != 0 {
+		t.Fatalf("expected case-insensitive explicit FK fields to be omitted from non-ID fields, got %d non-ID fields", got)
+	}
+}
+
 func expectedRelationshipScalarFieldView(name, fieldType string, required bool) RelationshipScalarFieldView {
 	sampleType := strings.TrimSuffix(fieldType, "?")
 	sampleValue := sampleValueFor(sampleType, name)
@@ -197,6 +230,16 @@ func countFieldViewsNamed(fields []FieldView, name string) int {
 	count := 0
 	for _, field := range fields {
 		if field.Name == name {
+			count++
+		}
+	}
+	return count
+}
+
+func countFieldViewsNamedFold(fields []FieldView, name string) int {
+	count := 0
+	for _, field := range fields {
+		if strings.EqualFold(field.Name, name) {
 			count++
 		}
 	}

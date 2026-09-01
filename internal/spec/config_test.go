@@ -652,6 +652,44 @@ func TestConfigValidatePreservesOptionalRelationshipNullabilityPolicy(t *testing
 	}
 }
 
+func TestConfigValidateRejectsReservedRelationshipForeignKeyNames(t *testing.T) {
+	tests := []struct {
+		name           string
+		foreignKeyName string
+		reservedName   string
+	}{
+		{name: "id", foreignKeyName: "Id", reservedName: "Id"},
+		{name: "id case-insensitive", foreignKeyName: "id", reservedName: "Id"},
+		{name: "row version", foreignKeyName: "RowVersion", reservedName: "RowVersion"},
+		{name: "row version case-insensitive", foreignKeyName: "rowversion", reservedName: "RowVersion"},
+		{name: "concurrency token", foreignKeyName: "ConcurrencyToken", reservedName: "ConcurrencyToken"},
+		{name: "concurrency token case-insensitive", foreignKeyName: "concurrencytoken", reservedName: "ConcurrencyToken"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validRelationshipConfig()
+			cfg.Services[0].Relationships = []Relationship{{
+				Multiplicity:        "one-to-many",
+				PrincipalEntity:     "Order",
+				DependentEntity:     "OrderItem",
+				ForeignKeyName:      tt.foreignKeyName,
+				PrincipalNavigation: "Items",
+				DependentNavigation: "Order",
+			}}
+
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			expected := fmt.Sprintf("relationships[0].foreignKeyName %s is reserved for generated %s members", tt.foreignKeyName, tt.reservedName)
+			if !strings.Contains(err.Error(), expected) {
+				t.Fatalf("expected error to contain %q, got %v", expected, err)
+			}
+		})
+	}
+}
+
 func TestConfigValidateRejectsInvalidRelationshipMetadata(t *testing.T) {
 	tests := []struct {
 		name        string

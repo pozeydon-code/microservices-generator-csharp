@@ -21,6 +21,8 @@ const (
 	MaxFieldsPerEntity          = 100
 )
 
+var reservedRelationshipForeignKeyNames = []string{"Id", "RowVersion", "ConcurrencyToken"}
+
 type Config struct {
 	SchemaVersion int               `json:"schemaVersion,omitempty"`
 	Generation    GenerationOptions `json:"generation,omitempty"`
@@ -420,6 +422,9 @@ func validateRelationships(problems *[]string, servicePath string, service Servi
 		if _, ok := supportedFieldTypes[canonical.ForeignKeyType]; !ok {
 			*problems = append(*problems, fmt.Sprintf("%s.foreignKeyType must be a supported scalar primitive: %s", relationshipPath, strings.Join(SupportedFieldTypes(), ", ")))
 		}
+		if reservedName, reserved := reservedRelationshipForeignKeyName(canonical.ForeignKeyName); reserved {
+			*problems = append(*problems, fmt.Sprintf("%s.foreignKeyName %s is reserved for generated %s members", relationshipPath, canonical.ForeignKeyName, reservedName))
+		}
 		if dependentOK {
 			if field, exists := findField(dependent, canonical.ForeignKeyName); exists && field.Type != canonical.ForeignKeyType {
 				*problems = append(*problems, fmt.Sprintf("%s.foreignKeyName %s must have type %s", relationshipPath, canonical.ForeignKeyName, canonical.ForeignKeyType))
@@ -434,6 +439,15 @@ func validateRelationships(problems *[]string, servicePath string, service Servi
 		addUnique(problems, seenPrincipalNavigations, canonical.PrincipalEntity+"."+canonical.PrincipalNavigation, "principal navigation in service "+service.Name)
 		addUnique(problems, seenDependentNavigations, canonical.DependentEntity+"."+canonical.DependentNavigation, "dependent navigation in service "+service.Name)
 	}
+}
+
+func reservedRelationshipForeignKeyName(name string) (string, bool) {
+	for _, reservedName := range reservedRelationshipForeignKeyNames {
+		if strings.EqualFold(name, reservedName) {
+			return reservedName, true
+		}
+	}
+	return "", false
 }
 
 func (r Relationship) canonical() CanonicalRelationship {

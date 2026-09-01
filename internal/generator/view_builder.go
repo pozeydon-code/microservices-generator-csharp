@@ -373,7 +373,7 @@ func removeExistingRelationshipScalarField(entityView *EntityView, fieldName str
 func fieldViewsExcept(fields []FieldView, fieldName string) []FieldView {
 	filtered := fields[:0]
 	for _, field := range fields {
-		if field.Name != fieldName {
+		if !strings.EqualFold(field.Name, fieldName) {
 			filtered = append(filtered, field)
 		}
 	}
