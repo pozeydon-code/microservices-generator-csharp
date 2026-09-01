@@ -18,6 +18,7 @@ const (
 	tviewScreenServices
 	tviewScreenEntities
 	tviewScreenValueObjects
+	tviewScreenRelationships
 	tviewScreenPreview
 	tviewScreenGenerate
 	tviewScreenResult
@@ -43,6 +44,7 @@ var tviewRoutes = []tviewRoute{
 	{tviewScreenServices, "Services"},
 	{tviewScreenEntities, "Entities"},
 	{tviewScreenValueObjects, "Value Objects"},
+	{tviewScreenRelationships, "Relationships"},
 	{tviewScreenPreview, "Preview"},
 	{tviewScreenGenerate, "Generate"},
 	{tviewScreenResult, "Result"},
@@ -67,6 +69,7 @@ type tviewUI struct {
 	updateEntities             UpdateEntitiesFunc
 	updateFields               UpdateFieldsFunc
 	updateValueObjects         UpdateValueObjectsFunc
+	updateRelationships        UpdateRelationshipsFunc
 	targetFrameworkSuggestions []string
 	result                     application.GenerateResult
 	err                        error
@@ -115,6 +118,25 @@ type tviewValueObjectsEditState struct {
 	rows        []tviewManagerRow
 }
 
+type tviewRelationshipsEditState struct {
+	serviceName string
+	rows        []tviewRelationshipRow
+}
+
+type tviewRelationshipRow struct {
+	originalName        string
+	name                string
+	multiplicity        string
+	principalEntity     string
+	dependentEntity     string
+	foreignKeyName      string
+	foreignKeyType      string
+	required            bool
+	principalNavigation string
+	dependentNavigation string
+	deleted             bool
+}
+
 type tviewValueObjectRulesEditState struct {
 	serviceName string
 	valueObject application.ValueObjectSummary
@@ -153,12 +175,26 @@ func newTViewUI(plan application.GenerationPlan, request application.GenerateReq
 		ui.updateValueObjects = tviewUpdateValueObjectsCallback(callbacks[4])
 	}
 	if len(callbacks) > 5 {
-		ui.targetFrameworkSuggestions, _ = callbacks[5].([]string)
+		ui.updateRelationships = tviewUpdateRelationshipsCallback(callbacks[5])
+	}
+	if len(callbacks) > 6 {
+		ui.targetFrameworkSuggestions, _ = callbacks[6].([]string)
 	}
 	ui.root = ui.build()
 	ui.setFocusedPanel(tviewFocusSidebar)
 	ui.refresh()
 	return ui
+}
+
+func tviewUpdateRelationshipsCallback(callback any) UpdateRelationshipsFunc {
+	switch fn := callback.(type) {
+	case UpdateRelationshipsFunc:
+		return fn
+	case func(application.GenerateRequest, application.RelationshipSettings) (application.UpdateRelationshipSettingsResult, error):
+		return fn
+	default:
+		return nil
+	}
 }
 
 func tviewUpdateSettingsCallback(callback any) UpdateSettingsFunc {
@@ -438,10 +474,86 @@ func (ui *tviewUI) startEdit() {
 		ui.openEntitiesEdit()
 	case tviewScreenValueObjects:
 		ui.openValueObjectsEdit()
+	case tviewScreenRelationships:
+		ui.openRelationshipsEdit()
 	default:
-		ui.message = "Open Project, Services, Entities, or Value Objects before editing."
+		ui.message = "Open Project, Services, Entities, Value Objects, or Relationships before editing."
 		ui.refresh()
 	}
+}
+
+func tviewRelationshipsStateFromService(service application.ServiceSummary) *tviewRelationshipsEditState {
+	state := &tviewRelationshipsEditState{serviceName: service.Name, rows: make([]tviewRelationshipRow, 0, len(service.Relationships))}
+	for _, relationship := range service.Relationships {
+		state.rows = append(state.rows, tviewRelationshipRow{originalName: relationship.Name, name: relationship.Name, multiplicity: relationship.Multiplicity, principalEntity: relationship.PrincipalEntity, dependentEntity: relationship.DependentEntity, foreignKeyName: relationship.ForeignKeyName, foreignKeyType: relationship.ForeignKeyType, required: relationship.Required, principalNavigation: relationship.PrincipalNavigation, dependentNavigation: relationship.DependentNavigation})
+	}
+	return state
+}
+
+func tviewRelationshipSettingsFromState(state *tviewRelationshipsEditState) application.RelationshipSettings {
+	settings := application.RelationshipSettings{ServiceName: state.serviceName, Relationships: make([]application.RelationshipSetting, 0, len(state.rows))}
+	for _, row := range state.rows {
+		if row.deleted || strings.TrimSpace(row.name) == "" {
+			continue
+		}
+		required := row.required
+		settings.Relationships = append(settings.Relationships, application.RelationshipSetting{OriginalName: row.originalName, Name: strings.TrimSpace(row.name), Multiplicity: strings.TrimSpace(row.multiplicity), PrincipalEntity: strings.TrimSpace(row.principalEntity), DependentEntity: strings.TrimSpace(row.dependentEntity), ForeignKeyName: strings.TrimSpace(row.foreignKeyName), ForeignKeyType: strings.TrimSpace(row.foreignKeyType), Required: &required, PrincipalNavigation: strings.TrimSpace(row.principalNavigation), DependentNavigation: strings.TrimSpace(row.dependentNavigation)})
+	}
+	return settings
+}
+
+func (ui *tviewUI) openRelationshipsEdit() {
+	service, ok := firstService(ui.plan.Config.Services)
+	if !ok {
+		ui.closeEditWithMessage("No services are available to edit relationships.")
+		return
+	}
+	ui.openRelationshipsEditForService(service.Name)
+}
+
+func (ui *tviewUI) openRelationshipsEditForService(serviceName string) {
+	service, ok := serviceSummaryByName(ui.plan.Config.Services, serviceName)
+	if !ok {
+		service, ok = firstService(ui.plan.Config.Services)
+		if !ok {
+			ui.closeEditWithMessage("No services are available to edit relationships.")
+			return
+		}
+	}
+	ui.showRelationshipsManager(tviewRelationshipsStateFromService(service))
+}
+
+func (ui *tviewUI) saveRelationshipsEdit(state *tviewRelationshipsEditState) {
+	if ui.updateRelationships == nil {
+		ui.message = "Relationship editing is not available."
+		return
+	}
+	result, err := ui.updateRelationships(ui.request, tviewRelationshipSettingsFromState(state))
+	ui.applyRelationshipsSaveResult(result, err)
+	if err == nil {
+		for index := range state.rows {
+			state.rows[index].originalName = strings.TrimSpace(state.rows[index].name)
+		}
+	}
+}
+
+func (ui *tviewUI) applyRelationshipsSaveResult(result application.UpdateRelationshipSettingsResult, err error) {
+	if err != nil {
+		ui.message = "Relationships save failed: " + err.Error()
+		ui.err = err
+		return
+	}
+	if result.PlanError != nil {
+		ui.plan.Config = result.Config
+		ui.planStale = true
+		ui.message = "Relationships saved, but plan refresh failed."
+		ui.err = result.PlanError
+		return
+	}
+	if result.Plan.Config.SolutionName != "" || result.Plan.FileCount > 0 || len(result.Plan.Files) > 0 {
+		ui.plan = result.Plan
+	}
+	ui.refreshPlanKeepOpen("Relationships saved.")
 }
 
 func (ui *tviewUI) openEntitiesEdit() {
@@ -1045,6 +1157,153 @@ func (ui *tviewUI) showValueObjectsManager(state *tviewValueObjectsEditState) {
 		ui.saveValueObjectsEdit(state)
 		render()
 	}}, {"Cancel", ui.closeEdit}}))
+}
+
+func (ui *tviewUI) showRelationshipsManager(state *tviewRelationshipsEditState) {
+	serviceNames := serviceSummaryNames(ui.plan.Config.Services)
+	header := serviceManagerHeader(state.serviceName, "s service")
+	manager := ui.newManagerTable([]string{"Name", "Principal", "Dependent", "FK", "Required", "Actions"})
+	render := func() {
+		for manager.GetRowCount() > 1 {
+			manager.RemoveRow(1)
+		}
+		for index, row := range state.rows {
+			style := tcell.StyleDefault.Foreground(tcell.ColorWhite)
+			if row.deleted {
+				style = tcell.StyleDefault.Foreground(tcell.ColorGray).StrikeThrough(true)
+			}
+			required := "optional"
+			if row.required {
+				required = "required"
+			}
+			values := []string{row.name, row.principalEntity, row.dependentEntity, trimmedDefault(row.foreignKeyName, "Guid"), required, "delete"}
+			for column, value := range values {
+				manager.SetCell(index+1, column, managerCell(value, style).SetExpansion(1))
+			}
+		}
+	}
+	render()
+	manager.SetSelectedFunc(func(row, column int) {
+		if row <= 0 || row > len(state.rows) {
+			return
+		}
+		if column == 5 {
+			state.rows[row-1].deleted = !state.rows[row-1].deleted
+			render()
+			return
+		}
+		ui.openRelationshipEdit(" Edit Relationship ", state, row-1)
+	})
+	manager.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Key() {
+		case tcell.KeyCtrlS:
+			ui.saveRelationshipsEdit(state)
+			render()
+			return nil
+		}
+		if moveManagerSelection(manager, len(state.rows), event) {
+			return nil
+		}
+		switch strings.ToLower(string(event.Rune())) {
+		case "a":
+			state.rows = append(state.rows, ui.newTViewRelationshipRow(state.serviceName, len(state.rows)+1))
+			render()
+			manager.Select(len(state.rows), 0)
+			return nil
+		case "s":
+			ui.openServicePicker(serviceNames, state.serviceName, manager, ui.openRelationshipsEditForService)
+			return nil
+		case "d":
+			tviewToggleSelectedRelationshipRow(manager, state.rows)
+			render()
+			return nil
+		}
+		return event
+	})
+	ui.showManagerModal(" Relationships ", header, nil, manager, managerFooter("Tab focus  Up/Down/j/k move rows  s service  a add  d delete  enter edit/select  ctrl+s save  esc cancel", []managerButton{{"Add", func() {
+		state.rows = append(state.rows, ui.newTViewRelationshipRow(state.serviceName, len(state.rows)+1))
+		render()
+		manager.Select(len(state.rows), 0)
+	}}, {"Service", func() {
+		ui.openServicePicker(serviceNames, state.serviceName, manager, ui.openRelationshipsEditForService)
+	}}, {"Save", func() {
+		ui.saveRelationshipsEdit(state)
+		render()
+	}}, {"Cancel", ui.closeEdit}}))
+}
+
+func (ui *tviewUI) openRelationshipEdit(title string, state *tviewRelationshipsEditState, index int) {
+	if index < 0 || index >= len(state.rows) || state.rows[index].deleted {
+		return
+	}
+	row := state.rows[index]
+	entityNames := tviewRelationshipEntityNames(ui.plan.Config.Services, state.serviceName)
+	form := tview.NewForm()
+	addEditInputField(form, "Name", row.name)
+	form.AddDropDown("Multiplicity", []string{"one-to-many", "many-to-one"}, selectedStringIndex([]string{"one-to-many", "many-to-one"}, row.multiplicity), func(_ string, optionIndex int) {
+		row.multiplicity = []string{"one-to-many", "many-to-one"}[optionIndex]
+	})
+	form.AddDropDown("Principal entity", entityNames, selectedStringIndex(entityNames, row.principalEntity), func(value string, _ int) { row.principalEntity = value })
+	form.AddDropDown("Dependent entity", entityNames, selectedStringIndex(entityNames, row.dependentEntity), func(value string, _ int) { row.dependentEntity = value })
+	addEditInputField(form, "Foreign key name", row.foreignKeyName)
+	addEditInputField(form, "Foreign key type", trimmedDefault(row.foreignKeyType, "Guid"))
+	form.AddCheckbox("Required", row.required, func(checked bool) { row.required = checked })
+	addEditInputField(form, "Principal navigation", row.principalNavigation)
+	addEditInputField(form, "Dependent navigation", row.dependentNavigation)
+	form.AddButton("Apply", func() {
+		row.name = formInputTextByLabel(form, "Name")
+		row.foreignKeyName = formInputTextByLabel(form, "Foreign key name")
+		row.foreignKeyType = trimmedDefault(formInputTextByLabel(form, "Foreign key type"), "Guid")
+		row.required = formCheckboxCheckedByLabel(form, "Required")
+		row.principalNavigation = formInputTextByLabel(form, "Principal navigation")
+		row.dependentNavigation = formInputTextByLabel(form, "Dependent navigation")
+		state.rows[index] = row
+		ui.showRelationshipsManager(state)
+	})
+	form.AddButton("Cancel", func() { ui.showRelationshipsManager(state) })
+	ui.showEditForm(form, title)
+}
+
+func (ui *tviewUI) newTViewRelationshipRow(serviceName string, count int) tviewRelationshipRow {
+	entities := tviewRelationshipEntityNames(ui.plan.Config.Services, serviceName)
+	principal, dependent := "Principal", "Dependent"
+	if len(entities) > 0 {
+		principal = entities[0]
+		dependent = entities[0]
+	}
+	if len(entities) > 1 {
+		dependent = entities[1]
+	}
+	return tviewRelationshipRow{name: nextNamedRow("Relationship", count), multiplicity: "one-to-many", principalEntity: principal, dependentEntity: dependent, foreignKeyName: principal + "Id", foreignKeyType: "Guid", required: true, principalNavigation: dependent + "s", dependentNavigation: principal}
+}
+
+func tviewRelationshipEntityNames(services []application.ServiceSummary, serviceName string) []string {
+	service, ok := serviceSummaryByName(services, serviceName)
+	if !ok {
+		return nil
+	}
+	names := make([]string, 0, len(service.Entities))
+	for _, entity := range service.Entities {
+		names = append(names, entity.Name)
+	}
+	return names
+}
+
+func selectedStringIndex(values []string, selected string) int {
+	for index, value := range values {
+		if value == selected {
+			return index
+		}
+	}
+	return 0
+}
+
+func tviewToggleSelectedRelationshipRow(table *tview.Table, rows []tviewRelationshipRow) {
+	row, _ := table.GetSelection()
+	if row <= 0 || row > len(rows) {
+		return
+	}
+	rows[row-1].deleted = !rows[row-1].deleted
 }
 
 func (ui *tviewUI) openRulesFromValueObjectState(state *tviewValueObjectsEditState, index int) {
@@ -1951,6 +2210,9 @@ func (ui *tviewUI) detailLines() []string {
 	case tviewScreenValueObjects:
 		lines = append(lines, "", "[aqua]Value Objects[white]", "Press e to edit value objects in this dashboard.")
 		lines = append(lines, valueObjectLines(ui.plan.Config.Services)...)
+	case tviewScreenRelationships:
+		lines = append(lines, "", "[aqua]Relationships[white]", "Press e to edit relationship endpoints, FK, requiredness, and navigation names in this dashboard.")
+		lines = append(lines, relationshipLines(ui.plan.Config.Services)...)
 	case tviewScreenPreview:
 		lines = append(lines, "", "Review the planned file table before generating.")
 	case tviewScreenGenerate:
@@ -2035,6 +2297,24 @@ func valueObjectLines(services []application.ServiceSummary) []string {
 			}
 		}
 		lines = append(lines, prefixedList(valueObjects)...)
+	}
+	if len(lines) == 0 {
+		return []string{"  -"}
+	}
+	return lines
+}
+
+func relationshipLines(services []application.ServiceSummary) []string {
+	var lines []string
+	for _, service := range services {
+		lines = append(lines, "  [yellow]"+service.Name+"[white]")
+		if len(service.Relationships) == 0 {
+			lines = append(lines, "    -")
+			continue
+		}
+		for _, relationship := range service.Relationships {
+			lines = append(lines, "    "+relationship.Summary)
+		}
 	}
 	if len(lines) == 0 {
 		return []string{"  -"}

@@ -110,6 +110,24 @@ type ValueObjectSettings struct {
 	ValueObjects []ValueObjectNameSetting
 }
 
+type RelationshipSettings struct {
+	ServiceName   string
+	Relationships []RelationshipSetting
+}
+
+type RelationshipSetting struct {
+	OriginalName        string
+	Name                string
+	Multiplicity        string
+	PrincipalEntity     string
+	DependentEntity     string
+	ForeignKeyName      string
+	ForeignKeyType      string
+	Required            *bool
+	PrincipalNavigation string
+	DependentNavigation string
+}
+
 type ValueObjectNameSetting struct {
 	OriginalName string
 	Name         string
@@ -165,6 +183,13 @@ type UpdateValueObjectSettingsResult struct {
 	PlanError error
 }
 
+type UpdateRelationshipSettingsResult struct {
+	Saved     bool
+	Config    ConfigSummary
+	Plan      GenerationPlan
+	PlanError error
+}
+
 type GenerationPlan struct {
 	Config         ConfigSummary
 	Readiness      ReadinessSummary
@@ -199,7 +224,21 @@ type ServiceSummary struct {
 	ValueObjectNames      []string
 	ValueObjects          []ValueObjectSummary
 	ValueObjectReferences []ValueObjectReferenceSummary
+	Relationships         []RelationshipSummary
 	Entities              []EntitySummary
+}
+
+type RelationshipSummary struct {
+	Name                string
+	Multiplicity        string
+	PrincipalEntity     string
+	DependentEntity     string
+	ForeignKeyName      string
+	ForeignKeyType      string
+	Required            bool
+	PrincipalNavigation string
+	DependentNavigation string
+	Summary             string
 }
 
 type ValueObjectSummary struct {
@@ -482,6 +521,61 @@ func (s Service) UpdateValueObjectSettings(request GenerateRequest, settings Val
 	config := summarizeConfig(cfg)
 	plan, err := s.planGenerationFromConfig(request, cfg)
 	return UpdateValueObjectSettingsResult{Saved: true, Config: config, Plan: plan, PlanError: err}, nil
+}
+
+func (s Service) UpdateRelationshipSettings(request GenerateRequest, settings RelationshipSettings) (UpdateRelationshipSettingsResult, error) {
+	cfg, err := s.LoadConfig(request.ConfigPath)
+	if err != nil {
+		return UpdateRelationshipSettingsResult{}, err
+	}
+	serviceIndex, ok := serviceIndexByName(cfg.Services, settings.ServiceName)
+	if !ok {
+		return UpdateRelationshipSettingsResult{}, fmt.Errorf("service %q was not found", settings.ServiceName)
+	}
+	if err := validateEditableRelationships(settings.Relationships); err != nil {
+		return UpdateRelationshipSettingsResult{}, err
+	}
+	cfg.Services[serviceIndex].Relationships = updatedRelationships(settings.Relationships)
+	if cfg.SchemaVersion == 0 {
+		cfg.SchemaVersion = spec.ConfigSchemaVersion
+	}
+	if err := s.ValidateConfig(cfg); err != nil {
+		return UpdateRelationshipSettingsResult{}, err
+	}
+	if err := s.SaveConfig(request.ConfigPath, cfg); err != nil {
+		return UpdateRelationshipSettingsResult{}, err
+	}
+	config := summarizeConfig(cfg)
+	plan, err := s.planGenerationFromConfig(request, cfg)
+	return UpdateRelationshipSettingsResult{Saved: true, Config: config, Plan: plan, PlanError: err}, nil
+}
+
+func validateEditableRelationships(settings []RelationshipSetting) error {
+	for _, relationship := range settings {
+		multiplicity := strings.TrimSpace(relationship.Multiplicity)
+		if multiplicity != "one-to-many" && multiplicity != "many-to-one" {
+			return fmt.Errorf("relationship multiplicity %q is not editable", relationship.Multiplicity)
+		}
+	}
+	return nil
+}
+
+func updatedRelationships(settings []RelationshipSetting) []spec.Relationship {
+	relationships := make([]spec.Relationship, 0, len(settings))
+	for _, setting := range settings {
+		relationships = append(relationships, spec.Relationship{
+			Name:                strings.TrimSpace(setting.Name),
+			Multiplicity:        strings.TrimSpace(setting.Multiplicity),
+			PrincipalEntity:     strings.TrimSpace(setting.PrincipalEntity),
+			DependentEntity:     strings.TrimSpace(setting.DependentEntity),
+			ForeignKeyName:      strings.TrimSpace(setting.ForeignKeyName),
+			ForeignKeyType:      strings.TrimSpace(setting.ForeignKeyType),
+			Required:            setting.Required,
+			PrincipalNavigation: strings.TrimSpace(setting.PrincipalNavigation),
+			DependentNavigation: strings.TrimSpace(setting.DependentNavigation),
+		})
+	}
+	return relationships
 }
 
 func normalizedServiceSettings(settings ServiceSettings) []ServiceNameSetting {
@@ -914,7 +1008,14 @@ func summarizeConfig(cfg spec.Config) ConfigSummary {
 			valueObjectSet[valueObject.Name] = true
 			valueObjects[valueObjectIndex] = summarizeValueObject(valueObject)
 		}
-		summary.Services[index] = ServiceSummary{Name: service.Name, EntityNames: make([]string, len(service.Entities)), ValueObjectNames: valueObjectNames, ValueObjects: valueObjects, Entities: make([]EntitySummary, len(service.Entities))}
+		var relationships []RelationshipSummary
+		if len(service.Relationships) > 0 {
+			relationships = make([]RelationshipSummary, len(service.Relationships))
+		}
+		for relationshipIndex, relationship := range service.Relationships {
+			relationships[relationshipIndex] = summarizeRelationship(relationship)
+		}
+		summary.Services[index] = ServiceSummary{Name: service.Name, EntityNames: make([]string, len(service.Entities)), ValueObjectNames: valueObjectNames, ValueObjects: valueObjects, Relationships: relationships, Entities: make([]EntitySummary, len(service.Entities))}
 		for entityIndex, entity := range service.Entities {
 			summary.Services[index].EntityNames[entityIndex] = entity.Name
 			summary.Services[index].Entities[entityIndex] = EntitySummary{Name: entity.Name, Fields: make([]FieldSummary, len(entity.Fields))}
@@ -953,12 +1054,63 @@ func readinessSummary(summary ConfigSummary, outputForceRequired bool) Readiness
 	if hasStarterEntity(summary) {
 		readiness.Hints = append(readiness.Hints, "Rename the starter entity and add domain fields.")
 	}
+	relationshipCount := relationshipSummaryCount(summary.Services)
+	if relationshipCount > 0 {
+		readiness.Hints = append(readiness.Hints, fmt.Sprintf("Review %d relationship navigation before generating.", relationshipCount))
+	}
 	if outputForceRequired {
 		readiness.Hints = append(readiness.Hints, "Review output replacement; --force is required to write.")
 	} else {
 		readiness.Hints = append(readiness.Hints, "Review the output preview before generating.")
 	}
 	return readiness
+}
+
+func relationshipSummaryCount(services []ServiceSummary) int {
+	count := 0
+	for _, service := range services {
+		count += len(service.Relationships)
+	}
+	return count
+}
+
+func summarizeRelationship(relationship spec.Relationship) RelationshipSummary {
+	required := true
+	if relationship.Required != nil {
+		required = *relationship.Required
+	}
+	foreignKeyName := strings.TrimSpace(relationship.ForeignKeyName)
+	if foreignKeyName == "" {
+		foreignKeyName = strings.TrimSpace(relationship.PrincipalEntity) + "Id"
+	}
+	foreignKeyType := strings.TrimSpace(relationship.ForeignKeyType)
+	if foreignKeyType == "" {
+		foreignKeyType = "Guid"
+	}
+	principalNavigation := strings.TrimSpace(relationship.PrincipalNavigation)
+	if principalNavigation == "" {
+		principalNavigation = strings.TrimSpace(relationship.DependentEntity) + "s"
+	}
+	dependentNavigation := strings.TrimSpace(relationship.DependentNavigation)
+	if dependentNavigation == "" {
+		dependentNavigation = strings.TrimSpace(relationship.PrincipalEntity)
+	}
+	requiredLabel := "required"
+	if !required {
+		requiredLabel = "optional"
+	}
+	return RelationshipSummary{
+		Name:                strings.TrimSpace(relationship.Name),
+		Multiplicity:        strings.TrimSpace(relationship.Multiplicity),
+		PrincipalEntity:     strings.TrimSpace(relationship.PrincipalEntity),
+		DependentEntity:     strings.TrimSpace(relationship.DependentEntity),
+		ForeignKeyName:      foreignKeyName,
+		ForeignKeyType:      foreignKeyType,
+		Required:            required,
+		PrincipalNavigation: principalNavigation,
+		DependentNavigation: dependentNavigation,
+		Summary:             fmt.Sprintf("%s 1-* %s via %s (%s)", strings.TrimSpace(relationship.PrincipalEntity), strings.TrimSpace(relationship.DependentEntity), foreignKeyName, requiredLabel),
+	}
 }
 
 func hasStarterEntity(summary ConfigSummary) bool {
