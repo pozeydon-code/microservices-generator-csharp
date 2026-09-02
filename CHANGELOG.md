@@ -2,6 +2,23 @@
 
 Release notes for `microgen`, the C#/.NET microservices generator.
 
+## [0.4.1] - 2026-09-02
+
+Hardening-only release for release hygiene, generated-output compile confidence, and TUI async generation clarity.
+
+### Changed
+
+- Documented the v0.4.1 release as defensive hardening rather than new relationship functionality.
+- Added validation coverage for an existing single-service one-to-many relationship fixture.
+- Clarified TUI generation progress, success, and failure state so stale output does not remain visible after async completion.
+
+### Scope
+
+- It does not add one-to-one relationship support.
+- It does not add many-to-many relationship support.
+- It does not add cross-service relationship support.
+- It does not change the JSON schema or generated relationship semantics.
+
 ## [0.1.0] - 2026-07-26
 
 First public release.

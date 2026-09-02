@@ -1,0 +1,39 @@
+{
+  "solution": {
+    "name": "RelationshipService",
+    "description": "Generated .NET 8 microservice workspace for relationship compile validation."
+  },
+  "services": [
+    {
+      "name": "RelationshipService",
+      "entities": [
+        {
+          "name": "Customer",
+          "fields": [
+            { "name": "Id", "type": "Guid" },
+            { "name": "Name", "type": "string" }
+          ]
+        },
+        {
+          "name": "Order",
+          "fields": [
+            { "name": "Id", "type": "Guid" },
+            { "name": "OrderNumber", "type": "string" }
+          ]
+        }
+      ],
+      "relationships": [
+        {
+          "name": "CustomerOrders",
+          "multiplicity": "one-to-many",
+          "principalEntity": "Customer",
+          "dependentEntity": "Order",
+          "foreignKeyName": "CustomerId",
+          "required": true,
+          "principalNavigation": "Orders",
+          "dependentNavigation": "Customer"
+        }
+      ]
+    }
+  ]
+}

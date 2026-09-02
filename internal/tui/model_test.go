@@ -4177,6 +4177,109 @@ func TestModelUpdateStartsGenerationOnConfirmedKey(t *testing.T) {
 	assertNotContains(t, view, "Exit: q/esc/ctrl+c")
 }
 
+func TestModelUpdateKeepsGenerationStateCurrent(t *testing.T) {
+	tests := []struct {
+		name       string
+		startModel func() Model
+		msg        tea.Msg
+		wantStatus modelStatus
+		wantScreen workspaceScreen
+		wantOutput string
+		wantErr    bool
+	}{
+		{
+			name: "start clears stale result and reports progress",
+			startModel: func() Model {
+				model := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
+					return application.GenerateResult{Plan: application.GenerationPlan{FileCount: 3}, OutputDir: "out/current"}, nil
+				}, nil)
+				model.status = statusFailed
+				model.err = errors.New("previous generation failed")
+				model.errContext = "Generation"
+				model.result = application.GenerateResult{Plan: application.GenerationPlan{FileCount: 9}, OutputDir: "out/stale"}
+				model.message = "Generated 9 files in out/stale."
+				return model
+			},
+			msg:        tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}},
+			wantStatus: statusGenerating,
+			wantScreen: screenGenerate,
+			wantOutput: "",
+		},
+		{
+			name: "success stores visible result without in-progress state",
+			startModel: func() Model {
+				model := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil)
+				model.status = statusGenerating
+				return model
+			},
+			msg:        generationFinishedMsg{result: application.GenerateResult{Plan: application.GenerationPlan{FileCount: 3}, OutputDir: "out/current"}},
+			wantStatus: statusGenerated,
+			wantScreen: screenResult,
+			wantOutput: "out/current",
+		},
+		{
+			name: "failure clears stale success result and leaves visible failure",
+			startModel: func() Model {
+				model := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil)
+				model.status = statusGenerating
+				model.result = application.GenerateResult{Plan: application.GenerationPlan{FileCount: 9}, OutputDir: "out/stale"}
+				model.message = "Generated 9 files in out/stale."
+				return model
+			},
+			msg:        generationFinishedMsg{err: errors.New("write failed")},
+			wantStatus: statusFailed,
+			wantScreen: screenResult,
+			wantOutput: "",
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			updated, cmd := tt.startModel().Update(tt.msg)
+			updatedModel := updated.(Model)
+
+			if updatedModel.status != tt.wantStatus {
+				t.Fatalf("expected status %v, got %v", tt.wantStatus, updatedModel.status)
+			}
+			if updatedModel.activeScreen() != tt.wantScreen {
+				t.Fatalf("expected screen %v, got %v", tt.wantScreen, updatedModel.activeScreen())
+			}
+			if updatedModel.result.OutputDir != tt.wantOutput {
+				t.Fatalf("expected output %q, got %q", tt.wantOutput, updatedModel.result.OutputDir)
+			}
+			if (updatedModel.err != nil) != tt.wantErr {
+				t.Fatalf("expected err presence %v, got %v", tt.wantErr, updatedModel.err)
+			}
+			view := updatedModel.View()
+			assertNotContains(t, view, "out/stale")
+			assertNotContains(t, view, "Generated 9 files")
+			if tt.wantStatus == statusGenerating && cmd == nil {
+				t.Fatal("expected generation command")
+			}
+			if tt.wantStatus != statusGenerating && cmd != nil {
+				t.Fatal("expected no command after generation completion")
+			}
+		})
+	}
+}
+
+func TestTViewFinishGenerationClearsStaleAsyncState(t *testing.T) {
+	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil)
+	ui.result = application.GenerateResult{Plan: application.GenerationPlan{FileCount: 9}, OutputDir: "out/stale"}
+	ui.message = "Generated 9 files in out/stale."
+	ui.generating = true
+
+	ui.finishGeneration(application.GenerateResult{}, errors.New("write failed"))
+
+	if ui.generating || ui.result.OutputDir != "" || ui.err == nil || ui.screen != tviewScreenResult {
+		t.Fatalf("expected failed generation to clear stale result and open Result, got generating=%v result=%#v err=%v screen=%d", ui.generating, ui.result, ui.err, ui.screen)
+	}
+	if !strings.Contains(ui.message, "Generation failed") || strings.Contains(ui.message, "out/stale") {
+		t.Fatalf("expected visible failure without stale output, got %q", ui.message)
+	}
+}
+
 func TestModelUpdateStartsRefreshOnRefreshKey(t *testing.T) {
 	request := application.GenerateRequest{ConfigPath: "config.json", OutputDir: "/tmp/generated", Force: true}
 	model := workspaceModel(application.GenerationPlan{}, request, func(actual application.GenerateRequest) (application.GenerationPlan, error) {

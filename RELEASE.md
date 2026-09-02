@@ -20,6 +20,21 @@ microgen_<version>_windows_<arch>.zip
 
 Release builds disable CGO, use `-trimpath`, set archive file timestamps from the commit timestamp, and inject version, commit, and commit date metadata. The generated project output remains unchanged and never includes release or installer scripts.
 
+### v0.4.1 hardening validation
+
+v0.4.1 is a hardening-only release. Before tagging it, verify the normal Go suite and the generated C# fixture coverage:
+
+```bash
+gofmt -w $(git ls-files '*.go')
+go test ./...
+go test -race -timeout 2m ./...
+go vet ./...
+go run ./cmd/microgen generate --config examples/relationship-service.json --output ./generated-relationship-example
+dotnet build ./generated-relationship-example/RelationshipService/RelationshipService.sln --nologo -warnaserror
+```
+
+The relationship fixture exercises only existing single-service one-to-many behavior. It does not add one-to-one relationship support, it does not add many-to-many relationship support, and it does not add cross-service relationship support.
+
 ## GitHub Actions Publication Order
 
 The tag workflow builds the release into `dist/` with GoReleaser v2 using `release --skip=publish --clean`. This keeps the tag-derived version and reproducible archives, checksums, and SBOMs local; GoReleaser does not create or modify a public release at this stage.
