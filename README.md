@@ -152,9 +152,18 @@ Each entity needs exactly one `Id` field of type `Guid`. Supported scalar field 
 
 Release builds publish platform archives, checksums, SPDX SBOMs, and GitHub artifact attestations from version tags. See [`RELEASE.md`](RELEASE.md) for release validation, artifact names, package metadata handoff, and repository requirements.
 
+### v0.4.1 hardening scope
+
+v0.4.1 is a defensive hardening release. It refreshes release guidance, adds compile validation for the existing relationship fixture, and clarifies TUI generation status without expanding generated-project semantics.
+
+- It does not add one-to-one relationship support.
+- It does not add many-to-many relationship support.
+- It does not add cross-service relationship support.
+
 ## Current Limitations
 
 - JSON is the only input format.
+- Relationships remain scoped to existing single-service one-to-many/many-to-one navigation support.
 - Nested or composed Value Objects are not supported yet.
 - Docker files and vendor-specific telemetry exporters are not generated.
 - Request idempotency keys or operation IDs are not generated; add them at the API/application edge when mutation retries must be unambiguous.

@@ -71,6 +71,9 @@ jobs:
           go run ./cmd/microgen generate --config examples/record-vo-service.json --output ./generated-record-vo-example
           go run ./cmd/microgen generate --config examples/hundred-field-service.json --output ./generated-hundred-field-example
 
+      - name: Generate relationship example output
+        run: go run ./cmd/microgen generate --config examples/relationship-service.json --output ./generated-relationship-example
+
       - name: Build generated single-entity projects
         run: |
           test -f ./generated-example/ProductService/ProductService.sln
@@ -89,6 +92,11 @@ jobs:
           dotnet build ./generated-record-vo-example/RecordService/RecordService.sln --nologo -warnaserror
           test -f ./generated-hundred-field-example/HundredFieldService/HundredFieldService.sln
           dotnet build ./generated-hundred-field-example/HundredFieldService/HundredFieldService.sln --nologo -warnaserror
+
+      - name: Build generated relationship projects
+        run: |
+          test -f ./generated-relationship-example/RelationshipService/RelationshipService.sln
+          dotnet build ./generated-relationship-example/RelationshipService/RelationshipService.sln --nologo -warnaserror
 
       - name: Test generated projects with TRX evidence
         shell: bash
@@ -136,3 +144,6 @@ jobs:
           test_project ./generated-hundred-field-example/HundredFieldService/tests/HundredFieldService.WebApi.Tests/HundredFieldService.WebApi.Tests.csproj HundredFieldService.WebApi.Tests.trx 21
           test_project ./generated-hundred-field-example/HundredFieldService/tests/HundredFieldService.Architecture.Tests/HundredFieldService.Architecture.Tests.csproj HundredFieldService.Architecture.Tests.trx 4
           test_project ./generated-hundred-field-example/HundredFieldService/tests/HundredFieldService.Infrastructure.Tests/HundredFieldService.Infrastructure.Tests.csproj HundredFieldService.Infrastructure.Tests.trx 3
+          test_project ./generated-relationship-example/RelationshipService/tests/RelationshipService.Domain.Tests/RelationshipService.Domain.Tests.csproj RelationshipService.Domain.Tests.trx 1
+          test_project ./generated-relationship-example/RelationshipService/tests/RelationshipService.Application.Tests/RelationshipService.Application.Tests.csproj RelationshipService.Application.Tests.trx 18
+          test_project ./generated-relationship-example/RelationshipService/tests/RelationshipService.Architecture.Tests/RelationshipService.Architecture.Tests.csproj RelationshipService.Architecture.Tests.trx 4

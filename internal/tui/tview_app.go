@@ -2086,6 +2086,9 @@ func (ui *tviewUI) generateFiles() {
 		return
 	}
 	ui.generating = true
+	ui.result = application.GenerateResult{}
+	ui.err = nil
+	ui.message = "Generating files..."
 	request := ui.request
 	go func() {
 		result, err := ui.generate(request)
@@ -2098,6 +2101,7 @@ func (ui *tviewUI) generateFiles() {
 func (ui *tviewUI) finishGeneration(result application.GenerateResult, err error) {
 	ui.generating = false
 	if err != nil {
+		ui.result = application.GenerateResult{}
 		ui.err = err
 		ui.message = "Generation failed."
 		ui.open(tviewScreenResult)

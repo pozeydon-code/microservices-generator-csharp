@@ -671,9 +671,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.status = statusGenerating
 			m.openScreen(screenGenerate)
+			m.result = application.GenerateResult{}
 			m.err = nil
 			m.errContext = ""
-			m.message = ""
+			m.message = "Generating files..."
 			return m, m.generateCmd()
 		case "e":
 			if m.status == statusRefreshing || m.status == statusGenerating || m.status == statusSaving {
@@ -700,9 +701,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.status = statusGenerating
+				m.result = application.GenerateResult{}
 				m.err = nil
 				m.errContext = ""
-				m.message = ""
+				m.message = "Generating files..."
 				return m, m.generateCmd()
 			}
 			if m.activeScreen() == screenServices {
@@ -806,8 +808,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case generationFinishedMsg:
 		if msg.err != nil {
 			m.status = statusFailed
+			m.result = application.GenerateResult{}
 			m.err = msg.err
 			m.errContext = "Generation"
+			m.message = "Generation failed."
 			if m.returnToWizard && m.guidedWorkspace {
 				m.mode = modeWizard
 				m.wizardScreen = wizardResult
@@ -828,7 +832,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = nil
 		m.errContext = ""
-		m.message = ""
+		m.message = fmt.Sprintf("Generated %d files in %s.", msg.result.Plan.FileCount, msg.result.OutputDir)
+		if msg.result.Warning != "" {
+			m.message += " Warning: " + msg.result.Warning
+		}
 		m.clampSelectedService()
 		m.clampFileCursor()
 		if m.returnToWizard && m.guidedWorkspace {

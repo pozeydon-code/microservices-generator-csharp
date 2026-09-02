@@ -111,7 +111,7 @@ public sealed class {{ .Name }}InfrastructureTests
         await using var createContext = database.CreateContext();
         var repository = new {{ .Name }}Repository(createContext, NullLogger<{{ .Name }}Repository>.Instance);
         var unitOfWork = new UnitOfWork(createContext);
-        var entity = Domain{{ .Name }}.Create(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
+        var entity = Domain{{ .Name }}.Create(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }}{{ range .RelationshipScalarFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
         await repository.AddAsync(entity, CancellationToken.None);
         await unitOfWork.SaveChangesAsync(CancellationToken.None);
         var created = await repository.GetByIdAsync(entity.Id, CancellationToken.None);
@@ -128,7 +128,7 @@ public sealed class {{ .Name }}InfrastructureTests
 {{ end }}
         Assert.Equal(created.ConcurrencyToken, reloaded.ConcurrencyToken);
 
-        reloaded.Entity.Update(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainUpdatedValue }}, {{ end }} });
+        reloaded.Entity.Update(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainUpdatedValue }}, {{ end }}{{ range .RelationshipScalarFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }} });
         Assert.Equal(MutationPreparationStatus.Prepared, await reloadRepository.UpdateAsync(reloaded.Entity, reloaded.ConcurrencyToken, CancellationToken.None));
         await reloadUnitOfWork.SaveChangesAsync(CancellationToken.None);
         var updated = await reloadRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None);
@@ -136,7 +136,7 @@ public sealed class {{ .Name }}InfrastructureTests
         Assert.NotEqual(reloaded.ConcurrencyToken, updated.ConcurrencyToken);
 {{ range .NonIDFields }}        Assert.True(EqualityComparer<{{ .ContractType }}>.Default.Equals({{ .UpdatedValue }}, updated.Entity.{{ .ValueAccess }}));
 {{ end }}
-        updated.Entity.Update(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
+        updated.Entity.Update(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }}{{ range .RelationshipScalarFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
         Assert.Equal(MutationPreparationStatus.Prepared, await reloadRepository.UpdateAsync(updated.Entity, reloaded.ConcurrencyToken, CancellationToken.None));
         await Assert.ThrowsAsync<ConcurrencyConflictException>(() => reloadUnitOfWork.SaveChangesAsync(CancellationToken.None));
         Assert.Equal(MutationPreparationStatus.InvalidToken, await reloadRepository.UpdateAsync(updated.Entity, "not-base64", CancellationToken.None));
@@ -172,7 +172,7 @@ public sealed class {{ .Name }}InfrastructureTests
         await using var seedContext = database.CreateContext();
         var seedRepository = new {{ .Name }}Repository(seedContext, NullLogger<{{ .Name }}Repository>.Instance);
         var seedUnitOfWork = new UnitOfWork(seedContext);
-        var seed = Domain{{ .Name }}.Create(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
+        var seed = Domain{{ .Name }}.Create(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }}{{ range .RelationshipScalarFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
         await seedRepository.AddAsync(seed, CancellationToken.None);
         await seedUnitOfWork.SaveChangesAsync(CancellationToken.None);
         var created = await seedRepository.GetByIdAsync(seed.Id, CancellationToken.None);
@@ -189,10 +189,10 @@ public sealed class {{ .Name }}InfrastructureTests
         Assert.NotNull(first);
         Assert.NotNull(second);
 
-        second.Entity.Update(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainUpdatedValue }}, {{ end }} });
+        second.Entity.Update(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainUpdatedValue }}, {{ end }}{{ range .RelationshipScalarFields }}{{ .Name }} = {{ .UpdatedValue }}, {{ end }} });
         Assert.Equal(MutationPreparationStatus.Prepared, await secondRepository.UpdateAsync(second.Entity, second.ConcurrencyToken, CancellationToken.None));
         await secondUnitOfWork.SaveChangesAsync(CancellationToken.None);
-        first.Entity.Update(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
+        first.Entity.Update(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }}{{ range .RelationshipScalarFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
         Assert.Equal(MutationPreparationStatus.Prepared, await firstRepository.UpdateAsync(first.Entity, first.ConcurrencyToken, CancellationToken.None));
         await Assert.ThrowsAsync<ConcurrencyConflictException>(() => firstUnitOfWork.SaveChangesAsync(CancellationToken.None));
     }
