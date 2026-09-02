@@ -113,6 +113,13 @@ func runDotnetBuildEvidenceCommand(t *testing.T, dotnet, workDir string, args ..
 	t.Helper()
 	cmd := exec.Command(dotnet, args...)
 	cmd.Dir = workDir
+	dotnetHome := filepath.Join(workDir, ".dotnet-home")
+	nugetPackages := filepath.Join(workDir, ".nuget-packages")
+	cmd.Env = append(os.Environ(),
+		"DOTNET_CLI_HOME="+dotnetHome,
+		"NUGET_PACKAGES="+nugetPackages,
+		"DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1",
+	)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("dotnet %s failed: %v\nworking directory: %s\noutput:\n%s", strings.Join(args, " "), err, workDir, output)
