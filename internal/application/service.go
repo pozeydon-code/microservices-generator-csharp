@@ -553,7 +553,7 @@ func (s Service) UpdateRelationshipSettings(request GenerateRequest, settings Re
 func validateEditableRelationships(settings []RelationshipSetting) error {
 	for _, relationship := range settings {
 		multiplicity := strings.TrimSpace(relationship.Multiplicity)
-		if multiplicity != "one-to-many" && multiplicity != "many-to-one" {
+		if multiplicity != "one-to-many" && multiplicity != "many-to-one" && multiplicity != "one-to-one" {
 			return fmt.Errorf("relationship multiplicity %q is not editable", relationship.Multiplicity)
 		}
 	}
@@ -1090,6 +1090,9 @@ func summarizeRelationship(relationship spec.Relationship) RelationshipSummary {
 	principalNavigation := strings.TrimSpace(relationship.PrincipalNavigation)
 	if principalNavigation == "" {
 		principalNavigation = strings.TrimSpace(relationship.DependentEntity) + "s"
+		if strings.TrimSpace(relationship.Multiplicity) == "one-to-one" {
+			principalNavigation = strings.TrimSpace(relationship.DependentEntity)
+		}
 	}
 	dependentNavigation := strings.TrimSpace(relationship.DependentNavigation)
 	if dependentNavigation == "" {
@@ -1098,6 +1101,10 @@ func summarizeRelationship(relationship spec.Relationship) RelationshipSummary {
 	requiredLabel := "required"
 	if !required {
 		requiredLabel = "optional"
+	}
+	cardinality := "1-*"
+	if strings.TrimSpace(relationship.Multiplicity) == "one-to-one" {
+		cardinality = "1-1"
 	}
 	return RelationshipSummary{
 		Name:                strings.TrimSpace(relationship.Name),
@@ -1109,7 +1116,7 @@ func summarizeRelationship(relationship spec.Relationship) RelationshipSummary {
 		Required:            required,
 		PrincipalNavigation: principalNavigation,
 		DependentNavigation: dependentNavigation,
-		Summary:             fmt.Sprintf("%s 1-* %s via %s (%s)", strings.TrimSpace(relationship.PrincipalEntity), strings.TrimSpace(relationship.DependentEntity), foreignKeyName, requiredLabel),
+		Summary:             fmt.Sprintf("%s %s %s via %s (%s)", strings.TrimSpace(relationship.PrincipalEntity), cardinality, strings.TrimSpace(relationship.DependentEntity), foreignKeyName, requiredLabel),
 	}
 }
 

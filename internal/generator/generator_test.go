@@ -277,6 +277,81 @@ func TestGenerateRelationshipsProducesDeterministicGoldenOutput(t *testing.T) {
 	assertNotContains(t, orderItemApplicationTests, "Customer =")
 }
 
+func TestGenerateOneToOneRelationshipEmitsReferenceNavigationsAndEFMapping(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	files, err := gen.Generate(oneToOneRelationshipTestConfig(true))
+	if err != nil {
+		t.Fatalf("generate one-to-one relationships: %v", err)
+	}
+
+	user := string(generatedContent(t, files, "IdentityService/src/IdentityService.Domain/Entities/User.cs"))
+	assertContains(t, user, "public Profile Profile { get; private set; } = null!;")
+	assertNotContains(t, user, "ICollection<Profile>")
+
+	profile := string(generatedContent(t, files, "IdentityService/src/IdentityService.Domain/Entities/Profile.cs"))
+	assertContains(t, profile, "public required Guid UserId { get; init; }")
+	assertContains(t, profile, "public Guid UserId { get; private set; }")
+	assertContains(t, profile, "public User User { get; private set; } = null!;")
+
+	configuration := string(generatedContent(t, files, "IdentityService/src/IdentityService.Infrastructure/Persistence/Configurations/ProfileConfiguration.cs"))
+	assertContains(t, configuration, "builder.HasOne(item => item.User)")
+	assertContains(t, configuration, ".WithOne(item => item.Profile)")
+	assertContains(t, configuration, ".HasForeignKey<Profile>(item => item.UserId)")
+	assertContains(t, configuration, ".IsRequired()")
+	assertContains(t, configuration, ".OnDelete(DeleteBehavior.Restrict)")
+	assertNotContains(t, configuration, ".WithMany(item => item.Profile)")
+	assertNotContains(t, configuration, ".HasForeignKey(item => item.UserId)")
+}
+
+func TestGenerateOneToOneRelationshipsProducesGoldenOutput(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	for _, tt := range []struct {
+		name     string
+		required bool
+		golden   string
+	}{
+		{name: "required", required: true, golden: "one-to-one-required"},
+		{name: "optional", required: false, golden: "one-to-one-optional"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			files, err := gen.Generate(oneToOneRelationshipTestConfig(tt.required))
+			if err != nil {
+				t.Fatalf("generate one-to-one relationships: %v", err)
+			}
+			expectedFiles := []struct {
+				path       string
+				goldenName string
+			}{
+				{path: "IdentityService/src/IdentityService.Domain/Entities/User.cs", goldenName: filepath.Join(tt.golden, "User.cs")},
+				{path: "IdentityService/src/IdentityService.Domain/Entities/Profile.cs", goldenName: filepath.Join(tt.golden, "Profile.cs")},
+				{path: "IdentityService/src/IdentityService.Infrastructure/Persistence/Configurations/ProfileConfiguration.cs", goldenName: filepath.Join(tt.golden, "ProfileConfiguration.cs")},
+			}
+
+			for _, file := range expectedFiles {
+				assertGoldenFile(t, files, file.path, file.goldenName)
+			}
+		})
+	}
+}
+
+func TestGenerateOneToOneRuntimeBuild(t *testing.T) {
+	cfg := oneToOneRelationshipTestConfig(true)
+	cfg.Generation.TargetFramework = "net10.0"
+	workspace := generateWorkspace(t, cfg)
+	dotnet := locateDotnet(t)
+
+	runDotnetRuntimeCommand(t, dotnet, workspace, "restore", workspace.solutionPath)
+	runDotnetRuntimeCommand(t, dotnet, workspace, "build", "--no-restore", workspace.solutionPath)
+}
+
 func TestGenerateRelationshipWithExplicitForeignKeyFieldEmitsSingleScalarMember(t *testing.T) {
 	gen, err := New()
 	if err != nil {

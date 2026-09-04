@@ -178,6 +178,7 @@ type EFRelationshipView struct {
 	DependentNavigation string
 	Required            bool
 	IsRequiredCall      string
+	IsOneToOne          bool
 }
 
 type FieldView struct {
@@ -347,6 +348,7 @@ func applyRelationshipViews(serviceView *ServiceView, relationships []spec.Canon
 			Nullable:     relationship.Nullable(),
 			Initializer:  initializer,
 		})
+		isOneToOne := relationship.Multiplicity == "one-to-one"
 		serviceView.Entities[dependentIndex].EFRelationships = append(serviceView.Entities[dependentIndex].EFRelationships, EFRelationshipView{
 			PrincipalEntity:     relationship.PrincipalEntity,
 			DependentEntity:     relationship.DependentEntity,
@@ -355,7 +357,17 @@ func applyRelationshipViews(serviceView *ServiceView, relationships []spec.Canon
 			DependentNavigation: relationship.DependentNavigation,
 			Required:            relationship.Required,
 			IsRequiredCall:      relationshipIsRequiredCall(relationship.Required),
+			IsOneToOne:          isOneToOne,
 		})
+		if isOneToOne {
+			serviceView.Entities[principalIndex].ReferenceNavigations = append(serviceView.Entities[principalIndex].ReferenceNavigations, ReferenceNavigationView{
+				Name:         relationship.PrincipalNavigation,
+				TargetEntity: relationship.DependentEntity,
+				Nullable:     relationship.Nullable(),
+				Initializer:  initializer,
+			})
+			continue
+		}
 		serviceView.Entities[principalIndex].CollectionNavigations = append(serviceView.Entities[principalIndex].CollectionNavigations, CollectionNavigationView{
 			Name:         relationship.PrincipalNavigation,
 			TargetEntity: relationship.DependentEntity,
