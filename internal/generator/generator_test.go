@@ -277,6 +277,36 @@ func TestGenerateRelationshipsProducesDeterministicGoldenOutput(t *testing.T) {
 	assertNotContains(t, orderItemApplicationTests, "Customer =")
 }
 
+func TestGenerateOneToOneRelationshipEmitsReferenceNavigationsAndEFMapping(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	files, err := gen.Generate(oneToOneRelationshipTestConfig(true))
+	if err != nil {
+		t.Fatalf("generate one-to-one relationships: %v", err)
+	}
+
+	user := string(generatedContent(t, files, "IdentityService/src/IdentityService.Domain/Entities/User.cs"))
+	assertContains(t, user, "public Profile Profile { get; private set; } = null!;")
+	assertNotContains(t, user, "ICollection<Profile>")
+
+	profile := string(generatedContent(t, files, "IdentityService/src/IdentityService.Domain/Entities/Profile.cs"))
+	assertContains(t, profile, "public required Guid UserId { get; init; }")
+	assertContains(t, profile, "public Guid UserId { get; private set; }")
+	assertContains(t, profile, "public User User { get; private set; } = null!;")
+
+	configuration := string(generatedContent(t, files, "IdentityService/src/IdentityService.Infrastructure/Persistence/Configurations/ProfileConfiguration.cs"))
+	assertContains(t, configuration, "builder.HasOne(item => item.User)")
+	assertContains(t, configuration, ".WithOne(item => item.Profile)")
+	assertContains(t, configuration, ".HasForeignKey<Profile>(item => item.UserId)")
+	assertContains(t, configuration, ".IsRequired()")
+	assertContains(t, configuration, ".OnDelete(DeleteBehavior.Restrict)")
+	assertNotContains(t, configuration, ".WithMany(item => item.Profile)")
+	assertNotContains(t, configuration, ".HasForeignKey(item => item.UserId)")
+}
+
 func TestGenerateRelationshipWithExplicitForeignKeyFieldEmitsSingleScalarMember(t *testing.T) {
 	gen, err := New()
 	if err != nil {

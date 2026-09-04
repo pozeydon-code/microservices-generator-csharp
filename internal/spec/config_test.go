@@ -575,9 +575,11 @@ func TestConfigValidateAcceptsRelationshipsWithDefaultsAndCanonicalEdges(t *test
 	tests := []struct {
 		name         string
 		multiplicity string
+		wantNav      string
 	}{
-		{name: "one-to-many input", multiplicity: "one-to-many"},
-		{name: "many-to-one input", multiplicity: "many-to-one"},
+		{name: "one-to-many input", multiplicity: "one-to-many", wantNav: "Items"},
+		{name: "many-to-one input", multiplicity: "many-to-one", wantNav: "Items"},
+		{name: "one-to-one input", multiplicity: "one-to-one", wantNav: "OrderItem"},
 	}
 
 	for _, tt := range tests {
@@ -589,9 +591,11 @@ func TestConfigValidateAcceptsRelationshipsWithDefaultsAndCanonicalEdges(t *test
 				PrincipalEntity:     "Order",
 				DependentEntity:     "OrderItem",
 				ForeignKeyName:      "OrderId",
-				PrincipalNavigation: "Items",
 				DependentNavigation: "Order",
 			}}
+			if tt.multiplicity != "one-to-one" {
+				cfg.Services[0].Relationships[0].PrincipalNavigation = "Items"
+			}
 
 			if err := cfg.Validate(); err != nil {
 				t.Fatalf("expected relationship config to validate, got %v", err)
@@ -602,16 +606,202 @@ func TestConfigValidateAcceptsRelationshipsWithDefaultsAndCanonicalEdges(t *test
 			}
 			want := CanonicalRelationship{
 				Name:                "OrderItems",
+				Multiplicity:        tt.multiplicity,
 				PrincipalEntity:     "Order",
 				DependentEntity:     "OrderItem",
 				ForeignKeyName:      "OrderId",
 				ForeignKeyType:      "Guid",
 				Required:            true,
-				PrincipalNavigation: "Items",
+				PrincipalNavigation: tt.wantNav,
 				DependentNavigation: "Order",
 			}
 			if got[0] != want {
 				t.Fatalf("canonical relationship = %+v; want %+v", got[0], want)
+			}
+		})
+	}
+}
+
+func TestConfigValidateRejectsUnsupportedOneToOneShapes(t *testing.T) {
+	tests := []struct {
+		name        string
+		mutate      func(*Config)
+		expectedErr string
+	}{
+		{
+			name: "cross-service participant",
+			mutate: func(cfg *Config) {
+				cfg.Services = append(cfg.Services, Service{Name: "BillingService", Entities: []Entity{{Name: "Invoice", Fields: []Field{{Name: "Id", Type: "Guid"}}}}})
+				cfg.Services[0].Relationships[0].DependentEntity = "Invoice"
+			},
+			expectedErr: "relationships[0].dependentEntity must reference an entity in service ProductService",
+		},
+		{
+			name: "many-to-many is excluded",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].Multiplicity = "many-to-many"
+			},
+			expectedErr: "relationships[0].multiplicity must be one-to-many, many-to-one, or one-to-one",
+		},
+		{
+			name: "composite key is excluded",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].ForeignKeyNames = []string{"OrderId", "TenantId"}
+			},
+			expectedErr: "relationships[0].foreignKeyNames is not supported; use foreignKeyName for a single dependent FK",
+		},
+		{
+			name: "alternate principal key is excluded",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].PrincipalKeyName = "ExternalId"
+			},
+			expectedErr: "relationships[0].principalKeyName is not supported; one-to-one uses the principal Id key",
+		},
+		{
+			name: "cascade customization is excluded",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].DeleteBehavior = "Cascade"
+			},
+			expectedErr: "relationships[0].deleteBehavior is not supported; one-to-one uses Restrict delete behavior",
+		},
+		{
+			name: "non Guid foreign key type cannot target principal Id",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].ForeignKeyName = "OrderReference"
+				cfg.Services[0].Relationships[0].ForeignKeyType = "string"
+			},
+			expectedErr: "relationships[0].foreignKeyType must be Guid for one-to-one relationships because the principal key is Id",
+		},
+		{
+			name: "numeric foreign key type cannot target principal Id",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].ForeignKeyName = "OrderNumber"
+				cfg.Services[0].Relationships[0].ForeignKeyType = "int"
+			},
+			expectedErr: "relationships[0].foreignKeyType must be Guid for one-to-one relationships because the principal key is Id",
+		},
+		{
+			name: "foreign key name cannot collide with dependent navigation",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].ForeignKeyName = "Order"
+				cfg.Services[0].Relationships[0].DependentNavigation = "Order"
+			},
+			expectedErr: "relationships[0].foreignKeyName must not equal dependentNavigation because both generate members on OrderItem",
+		},
+		{
+			name: "foreign key name collision with dependent navigation is case insensitive",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].ForeignKeyName = "order"
+				cfg.Services[0].Relationships[0].DependentNavigation = "Order"
+			},
+			expectedErr: "relationships[0].foreignKeyName must not equal dependentNavigation because both generate members on OrderItem",
+		},
+		{
+			name: "missing participant",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].PrincipalEntity = ""
+			},
+			expectedErr: "relationships[0].principalEntity is required",
+		},
+		{
+			name: "duplicate inverse declaration",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships = append(cfg.Services[0].Relationships, Relationship{
+					Multiplicity:        "one-to-one",
+					PrincipalEntity:     "OrderItem",
+					DependentEntity:     "Order",
+					ForeignKeyName:      "OrderItemId",
+					ForeignKeyType:      "Guid",
+					PrincipalNavigation: "Order",
+					DependentNavigation: "OrderItem",
+				})
+			},
+			expectedErr: "relationships[1] duplicates inverse one-to-one relationship OrderItem-Order",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validRelationshipConfig()
+			cfg.Services[0].Relationships = []Relationship{{
+				Multiplicity:        "one-to-one",
+				PrincipalEntity:     "Order",
+				DependentEntity:     "OrderItem",
+				ForeignKeyName:      "OrderId",
+				ForeignKeyType:      "Guid",
+				PrincipalNavigation: "OrderItem",
+				DependentNavigation: "Order",
+			}}
+			tt.mutate(&cfg)
+
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			if !strings.Contains(err.Error(), tt.expectedErr) {
+				t.Fatalf("expected error to contain %q, got %v", tt.expectedErr, err)
+			}
+		})
+	}
+}
+
+func TestConfigValidateRejectsCrossRelationshipDependentMemberCollisions(t *testing.T) {
+	tests := []struct {
+		name                  string
+		secondDependentNav    string
+		expectedCollidingName string
+	}{
+		{
+			name:                  "dependent navigation matches another relationship generated foreign key",
+			secondDependentNav:    "UserId",
+			expectedCollidingName: "UserId",
+		},
+		{
+			name:                  "dependent navigation matches another generated foreign key case insensitively",
+			secondDependentNav:    "userid",
+			expectedCollidingName: "userid",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{
+				Solution: Solution{Name: "CommercePlatform", Description: "User profile management."},
+				Services: []Service{{
+					Name: "UserService",
+					Entities: []Entity{
+						{Name: "User", Fields: []Field{{Name: "Id", Type: "Guid"}}},
+						{Name: "Profile", Fields: []Field{{Name: "Id", Type: "Guid"}}},
+						{Name: "Avatar", Fields: []Field{{Name: "Id", Type: "Guid"}}},
+					},
+					Relationships: []Relationship{
+						{
+							Multiplicity:        "one-to-one",
+							PrincipalEntity:     "User",
+							DependentEntity:     "Profile",
+							PrincipalNavigation: "Profile",
+							DependentNavigation: "User",
+						},
+						{
+							Multiplicity:        "one-to-one",
+							PrincipalEntity:     "Avatar",
+							DependentEntity:     "Profile",
+							ForeignKeyName:      "AvatarId",
+							ForeignKeyType:      "Guid",
+							PrincipalNavigation: "ProfileImage",
+							DependentNavigation: tt.secondDependentNav,
+						},
+					},
+				}},
+			}
+
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			expected := fmt.Sprintf("relationships[1].dependentNavigation %s must not collide with generated foreignKeyName UserId on dependent entity Profile", tt.expectedCollidingName)
+			if !strings.Contains(err.Error(), expected) {
+				t.Fatalf("expected error to contain %q, got %v", expected, err)
 			}
 		})
 	}
@@ -701,7 +891,7 @@ func TestConfigValidateRejectsInvalidRelationshipMetadata(t *testing.T) {
 			mutate: func(cfg *Config) {
 				cfg.Services[0].Relationships[0].Multiplicity = "many-to-many"
 			},
-			expectedErr: "relationships[0].multiplicity must be one-to-many or many-to-one",
+			expectedErr: "relationships[0].multiplicity must be one-to-many, many-to-one, or one-to-one",
 		},
 		{
 			name: "missing endpoint",

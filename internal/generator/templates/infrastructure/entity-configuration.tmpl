@@ -24,8 +24,13 @@ public sealed class {{ .Entity.Name }}Configuration : IEntityTypeConfiguration<{
 {{ end }}{{ end }}
 {{- range .Entity.EFRelationships }}
         builder.HasOne(item => item.{{ .DependentNavigation }})
+            {{- if .IsOneToOne }}
+            .WithOne(item => item.{{ .PrincipalNavigation }})
+            .HasForeignKey<{{ .DependentEntity }}>(item => item.{{ .ForeignKeyName }})
+            {{- else }}
             .WithMany(item => item.{{ .PrincipalNavigation }})
             .HasForeignKey(item => item.{{ .ForeignKeyName }})
+            {{- end }}
             {{ .IsRequiredCall }}
             .OnDelete(DeleteBehavior.Restrict);
 {{ end }}
