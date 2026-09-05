@@ -31,6 +31,7 @@ public sealed class AuthenticationTests
         var item = Assert.Single(body.Items);
         Assert.Equal(Guid.Parse("11111111-1111-1111-1111-111111111111"), item.Id);
 {{ range (index .Entities 0).NonIDFields }}        Assert.True(EqualityComparer<{{ .ContractType }}>.Default.Equals({{ .SampleValue }}, item.{{ .Name }}));
+{{ end }}{{ range (index .Entities 0).RelationshipScalarFields }}        Assert.True(EqualityComparer<{{ .ContractType }}>.Default.Equals({{ .SampleValue }}, item.{{ .Name }}));
 {{ end }}        Assert.Equal("token-v1", item.ConcurrencyToken);
     }
 
@@ -127,6 +128,7 @@ public sealed class AuthenticationTests
     {
         private static readonly {{ (index .Entities 0).Name }}Dto Item = new(
 {{ range (index .Entities 0).Fields }}            {{ .Name }}: {{ if eq .Name "Id" }}Guid.Parse("11111111-1111-1111-1111-111111111111"){{ else }}{{ .SampleValue }}{{ end }},
+{{ end }}{{ range (index .Entities 0).RelationshipScalarFields }}            {{ .Name }}: {{ .SampleValue }},
 {{ end }}            ConcurrencyToken: "token-v1");
         public Task<ErrorOr<PagedResult<{{ (index .Entities 0).Name }}Dto>>> Handle(List{{ (index .Entities 0).Name }}Query request, CancellationToken cancellationToken) => Task.FromResult<ErrorOr<PagedResult<{{ (index .Entities 0).Name }}Dto>>>(new PagedResult<{{ (index .Entities 0).Name }}Dto>([Item], 1, 20, 1));
     }

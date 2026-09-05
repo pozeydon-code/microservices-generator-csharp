@@ -1240,8 +1240,9 @@ func (ui *tviewUI) openRelationshipEdit(title string, state *tviewRelationshipsE
 	entityNames := tviewRelationshipEntityNames(ui.plan.Config.Services, state.serviceName)
 	form := tview.NewForm()
 	addEditInputField(form, "Name", row.name)
-	form.AddDropDown("Multiplicity", []string{"one-to-many", "many-to-one"}, selectedStringIndex([]string{"one-to-many", "many-to-one"}, row.multiplicity), func(_ string, optionIndex int) {
-		row.multiplicity = []string{"one-to-many", "many-to-one"}[optionIndex]
+	multiplicityOptions := relationshipMultiplicityOptions()
+	form.AddDropDown("Multiplicity", multiplicityOptions, selectedStringIndex(multiplicityOptions, row.multiplicity), func(_ string, optionIndex int) {
+		row.multiplicity = multiplicityOptions[optionIndex]
 	})
 	form.AddDropDown("Principal entity", entityNames, selectedStringIndex(entityNames, row.principalEntity), func(value string, _ int) { row.principalEntity = value })
 	form.AddDropDown("Dependent entity", entityNames, selectedStringIndex(entityNames, row.dependentEntity), func(value string, _ int) { row.dependentEntity = value })

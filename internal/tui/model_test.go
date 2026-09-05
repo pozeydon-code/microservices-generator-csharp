@@ -922,6 +922,44 @@ func TestRelationshipEditorChangesEndpointsThroughBoundedKeyPathBeforeSaving(t *
 	}
 }
 
+func TestRelationshipEditorCyclesOneToOneAndSavesIt(t *testing.T) {
+	plan := wizardPlanWithRelationships()
+	var captured application.RelationshipSettings
+	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
+	model.updateRelationships = func(_ application.GenerateRequest, settings application.RelationshipSettings) (application.UpdateRelationshipSettingsResult, error) {
+		captured = settings
+		return application.UpdateRelationshipSettingsResult{Saved: true, Plan: plan}, nil
+	}
+	model.startRelationshipsEditing()
+
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune{'m'}}, {Type: tea.KeyRunes, Runes: []rune{'m'}}} {
+		updated, cmd := model.Update(key)
+		model = updated.(Model)
+		if cmd != nil {
+			updated, _ = model.Update(cmd())
+			model = updated.(Model)
+		}
+	}
+	view := stripANSI(model.View())
+	assertContains(t, view, "one-to-one")
+	assertNotContains(t, view, "many-to-many")
+	assertNotContains(t, view, "cross-service")
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if cmd != nil {
+		updated, _ = model.Update(cmd())
+		model = updated.(Model)
+	}
+
+	if model.status != statusReady || len(captured.Relationships) != 1 {
+		t.Fatalf("expected one-to-one relationship save to complete, status=%v settings=%#v", model.status, captured)
+	}
+	if got := captured.Relationships[0].Multiplicity; got != "one-to-one" {
+		t.Fatalf("expected multiplicity to cycle to one-to-one, got %q", got)
+	}
+}
+
 func TestRelationshipEditorRejectsUnsupportedMultiplicityBeforeSaving(t *testing.T) {
 	model := NewModel(wizardPlanWithRelationships(), application.GenerateRequest{}, nil, nil, nil)
 	model.updateRelationships = func(application.GenerateRequest, application.RelationshipSettings) (application.UpdateRelationshipSettingsResult, error) {
@@ -995,6 +1033,21 @@ func TestTViewRelationshipManagerSavesEditedEndpoints(t *testing.T) {
 	}
 	if !strings.Contains(ui.message, "Relationships saved") {
 		t.Fatalf("expected relationship save confirmation, got %q", ui.message)
+	}
+}
+
+func TestTViewRelationshipEditOffersOneToOneWithoutUnsupportedScopes(t *testing.T) {
+	options := relationshipMultiplicityOptions()
+
+	if !reflect.DeepEqual(options, []string{"one-to-many", "many-to-one", "one-to-one"}) {
+		t.Fatalf("expected bounded relationship multiplicity options, got %#v", options)
+	}
+	for _, unsupported := range []string{"many-to-many", "cross-service"} {
+		for _, option := range options {
+			if option == unsupported {
+				t.Fatalf("unsupported relationship scope %q must not be exposed in tview options %#v", unsupported, options)
+			}
+		}
 	}
 }
 

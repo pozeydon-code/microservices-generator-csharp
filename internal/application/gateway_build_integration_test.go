@@ -15,6 +15,9 @@ func TestGenerateGatewaySampleBuildsWithDotnet(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping gateway sample dotnet build in short mode")
 	}
+	if raceEnabled {
+		t.Skip("skipping gateway sample dotnet build when Go race detector is enabled; generated-dotnet-build validates this runtime boundary")
+	}
 	dotnet, err := exec.LookPath("dotnet")
 	if err != nil {
 		t.Skipf("dotnet not installed: %v", err)
@@ -23,6 +26,9 @@ func TestGenerateGatewaySampleBuildsWithDotnet(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "config.json")
 	outputDir := filepath.Join(tempDir, "output")
+	t.Cleanup(func() {
+		shutdownDotnetBuildServers(t, dotnet, outputDir)
+	})
 	cfg := gatewayBuildSampleConfig()
 	if err := configloader.SaveJSON(configPath, cfg); err != nil {
 		t.Fatalf("write gateway sample config: %v", err)
@@ -113,15 +119,31 @@ func runDotnetBuildEvidenceCommand(t *testing.T, dotnet, workDir string, args ..
 	t.Helper()
 	cmd := exec.Command(dotnet, args...)
 	cmd.Dir = workDir
-	dotnetHome := filepath.Join(workDir, ".dotnet-home")
-	nugetPackages := filepath.Join(workDir, ".nuget-packages")
-	cmd.Env = append(os.Environ(),
-		"DOTNET_CLI_HOME="+dotnetHome,
-		"NUGET_PACKAGES="+nugetPackages,
-		"DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1",
-	)
+	cmd.Env = dotnetBuildEvidenceEnv(workDir)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("dotnet %s failed: %v\nworking directory: %s\noutput:\n%s", strings.Join(args, " "), err, workDir, output)
 	}
+}
+
+func shutdownDotnetBuildServers(t *testing.T, dotnet, workDir string) {
+	t.Helper()
+	cmd := exec.Command(dotnet, "build-server", "shutdown")
+	cmd.Dir = workDir
+	cmd.Env = dotnetBuildEvidenceEnv(workDir)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Logf("dotnet build-server shutdown failed during cleanup: %v\noutput:\n%s", err, output)
+	}
+}
+
+func dotnetBuildEvidenceEnv(workDir string) []string {
+	dotnetHome := filepath.Join(workDir, ".dotnet-home")
+	nugetPackages := filepath.Join(workDir, ".nuget-packages")
+	return append(os.Environ(),
+		"DOTNET_CLI_HOME="+dotnetHome,
+		"DOTNET_CLI_USE_MSBUILD_SERVER=0",
+		"NUGET_PACKAGES="+nugetPackages,
+		"MSBUILDDISABLENODEREUSE=1",
+		"DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1",
+	)
 }

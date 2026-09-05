@@ -11,12 +11,27 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/pozeydon-code/microservices-generator-csharp/internal/spec"
 )
 
 var updateGolden = flag.Bool("update", false, "update generator golden files")
+
+var dotnetRuntimeCache struct {
+	once sync.Once
+	dir  string
+	err  error
+}
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if dotnetRuntimeCache.dir != "" {
+		_ = os.RemoveAll(dotnetRuntimeCache.dir)
+	}
+	os.Exit(code)
+}
 
 func TestGeneratedWebApiTestsDoNotContainUnusedJsonPropertyFields(t *testing.T) {
 	gen, err := New()
@@ -275,6 +290,81 @@ func TestGenerateRelationshipsProducesDeterministicGoldenOutput(t *testing.T) {
 	assertContains(t, orderItemApplicationTests, "Assert.True(EqualityComparer<Guid>.Default.Equals(Guid.Parse(\"00000000-0000-0000-0000-000000000002\"), result.Value.OrderId))")
 	assertNotContains(t, orderItemApplicationTests, "Order =")
 	assertNotContains(t, orderItemApplicationTests, "Customer =")
+}
+
+func TestGenerateOneToOneRelationshipEmitsReferenceNavigationsAndEFMapping(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	files, err := gen.Generate(oneToOneRelationshipTestConfig(true))
+	if err != nil {
+		t.Fatalf("generate one-to-one relationships: %v", err)
+	}
+
+	user := string(generatedContent(t, files, "IdentityService/src/IdentityService.Domain/Entities/User.cs"))
+	assertContains(t, user, "public Profile Profile { get; private set; } = null!;")
+	assertNotContains(t, user, "ICollection<Profile>")
+
+	profile := string(generatedContent(t, files, "IdentityService/src/IdentityService.Domain/Entities/Profile.cs"))
+	assertContains(t, profile, "public required Guid UserId { get; init; }")
+	assertContains(t, profile, "public Guid UserId { get; private set; }")
+	assertContains(t, profile, "public User User { get; private set; } = null!;")
+
+	configuration := string(generatedContent(t, files, "IdentityService/src/IdentityService.Infrastructure/Persistence/Configurations/ProfileConfiguration.cs"))
+	assertContains(t, configuration, "builder.HasOne(item => item.User)")
+	assertContains(t, configuration, ".WithOne(item => item.Profile)")
+	assertContains(t, configuration, ".HasForeignKey<Profile>(item => item.UserId)")
+	assertContains(t, configuration, ".IsRequired()")
+	assertContains(t, configuration, ".OnDelete(DeleteBehavior.Restrict)")
+	assertNotContains(t, configuration, ".WithMany(item => item.Profile)")
+	assertNotContains(t, configuration, ".HasForeignKey(item => item.UserId)")
+}
+
+func TestGenerateOneToOneRelationshipsProducesGoldenOutput(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	for _, tt := range []struct {
+		name     string
+		required bool
+		golden   string
+	}{
+		{name: "required", required: true, golden: "one-to-one-required"},
+		{name: "optional", required: false, golden: "one-to-one-optional"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			files, err := gen.Generate(oneToOneRelationshipTestConfig(tt.required))
+			if err != nil {
+				t.Fatalf("generate one-to-one relationships: %v", err)
+			}
+			expectedFiles := []struct {
+				path       string
+				goldenName string
+			}{
+				{path: "IdentityService/src/IdentityService.Domain/Entities/User.cs", goldenName: filepath.Join(tt.golden, "User.cs")},
+				{path: "IdentityService/src/IdentityService.Domain/Entities/Profile.cs", goldenName: filepath.Join(tt.golden, "Profile.cs")},
+				{path: "IdentityService/src/IdentityService.Infrastructure/Persistence/Configurations/ProfileConfiguration.cs", goldenName: filepath.Join(tt.golden, "ProfileConfiguration.cs")},
+			}
+
+			for _, file := range expectedFiles {
+				assertGoldenFile(t, files, file.path, file.goldenName)
+			}
+		})
+	}
+}
+
+func TestGenerateOneToOneRuntimeBuild(t *testing.T) {
+	cfg := oneToOneRelationshipTestConfig(true)
+	cfg.Generation.TargetFramework = "net10.0"
+	workspace := generateWorkspace(t, cfg)
+	dotnet := locateDotnet(t)
+
+	runDotnetRuntimeCommand(t, dotnet, workspace, "restore", workspace.solutionPath)
+	runDotnetRuntimeCommand(t, dotnet, workspace, "build", "--no-restore", workspace.solutionPath)
 }
 
 func TestGenerateRelationshipWithExplicitForeignKeyFieldEmitsSingleScalarMember(t *testing.T) {
@@ -1672,6 +1762,9 @@ func generateWorkspace(t *testing.T, cfg spec.Config) generatedWorkspace {
 	}
 	outputDir := t.TempDir()
 	writeGeneratedFiles(t, outputDir, files)
+	t.Cleanup(func() {
+		shutdownDotnetRuntimeBuildServers(t, outputDir)
+	})
 
 	services := sortedServices(cfg.Services)
 	if len(services) == 0 {
@@ -1691,6 +1784,9 @@ func locateDotnet(t *testing.T) string {
 	if testing.Short() {
 		t.Skip("skipping dotnet runtime validation in short mode")
 	}
+	if raceEnabled {
+		t.Skip("skipping dotnet runtime validation when Go race detector is enabled; generated-dotnet-build validates this runtime boundary")
+	}
 	dotnet, err := exec.LookPath("dotnet")
 	if err != nil {
 		t.Skipf("dotnet not installed: %v", err)
@@ -1702,10 +1798,48 @@ func runDotnetRuntimeCommand(t *testing.T, dotnet string, workspace generatedWor
 	t.Helper()
 	cmd := exec.Command(dotnet, args...)
 	cmd.Dir = workspace.dir
+	cmd.Env = dotnetRuntimeEnv(workspace.dir)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("dotnet %s failed: %v\nworking directory: %s\nsolution: %s\noutput:\n%s", strings.Join(args, " "), err, workspace.dir, workspace.solutionName, output)
 	}
+}
+
+func shutdownDotnetRuntimeBuildServers(t *testing.T, workDir string) {
+	t.Helper()
+	dotnet, err := exec.LookPath("dotnet")
+	if err != nil {
+		return
+	}
+	cmd := exec.Command(dotnet, "build-server", "shutdown")
+	cmd.Dir = workDir
+	cmd.Env = dotnetRuntimeEnv(workDir)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Logf("dotnet build-server shutdown failed during cleanup: %v\noutput:\n%s", err, output)
+	}
+}
+
+func dotnetRuntimeEnv(workDir string) []string {
+	cacheDir, err := dotnetRuntimeCacheDir()
+	if err != nil {
+		cacheDir = workDir
+	}
+	dotnetHome := filepath.Join(cacheDir, ".dotnet-home")
+	nugetPackages := filepath.Join(cacheDir, ".nuget-packages")
+	return append(os.Environ(),
+		"DOTNET_CLI_HOME="+dotnetHome,
+		"DOTNET_CLI_USE_MSBUILD_SERVER=0",
+		"NUGET_PACKAGES="+nugetPackages,
+		"MSBUILDDISABLENODEREUSE=1",
+		"DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1",
+	)
+}
+
+func dotnetRuntimeCacheDir() (string, error) {
+	dotnetRuntimeCache.once.Do(func() {
+		dotnetRuntimeCache.dir, dotnetRuntimeCache.err = os.MkdirTemp("", "microgen-dotnet-runtime-*")
+	})
+	return dotnetRuntimeCache.dir, dotnetRuntimeCache.err
 }
 
 func writeGeneratedFiles(t *testing.T, outputDir string, files []GeneratedFile) {

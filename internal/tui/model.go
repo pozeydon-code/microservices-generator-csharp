@@ -1944,6 +1944,10 @@ func relationshipEditItemFromSummary(summary application.RelationshipSummary) re
 	}
 }
 
+func relationshipMultiplicityOptions() []string {
+	return []string{"one-to-many", "many-to-one", "one-to-one"}
+}
+
 func (m Model) newRelationshipEditItem(originalName, name string) relationshipEditItem {
 	entities := m.serviceEntitySummaries()
 	principal, dependent := "Principal", "Dependent"
@@ -2393,11 +2397,7 @@ func (m Model) updateRelationshipsEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "m":
 		if !m.relationshipsEdit.editingText && len(m.relationshipsEdit.relationships) > 0 {
 			selected := &m.relationshipsEdit.relationships[m.relationshipsEdit.selected]
-			if selected.multiplicity == "one-to-many" {
-				selected.multiplicity = "many-to-one"
-			} else {
-				selected.multiplicity = "one-to-many"
-			}
+			selected.multiplicity = nextRelationshipMultiplicity(selected.multiplicity)
 		}
 		return m, nil
 	case "e":
@@ -2440,6 +2440,16 @@ func (m Model) updateRelationshipsEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+func nextRelationshipMultiplicity(current string) string {
+	options := relationshipMultiplicityOptions()
+	for index, option := range options {
+		if option == current {
+			return options[(index+1)%len(options)]
+		}
+	}
+	return options[0]
 }
 
 func (m *Model) moveRelationshipSelection(delta int) {
@@ -5865,7 +5875,7 @@ func (m Model) renderRelationshipsEditor(builder *strings.Builder) {
 		return
 	}
 	fmt.Fprintf(builder, "Editing relationships for %s\n", m.relationshipsEdit.serviceName)
-	fmt.Fprintln(builder, "Only one-to-many and many-to-one relationships are supported.")
+	fmt.Fprintln(builder, "Only one-to-many, many-to-one, and one-to-one relationships are supported.")
 	if m.err != nil {
 		fmt.Fprintf(builder, "Save failed: %v\n", m.err)
 	}
