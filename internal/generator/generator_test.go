@@ -11,12 +11,27 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/pozeydon-code/microservices-generator-csharp/internal/spec"
 )
 
 var updateGolden = flag.Bool("update", false, "update generator golden files")
+
+var dotnetRuntimeCache struct {
+	once sync.Once
+	dir  string
+	err  error
+}
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if dotnetRuntimeCache.dir != "" {
+		_ = os.RemoveAll(dotnetRuntimeCache.dir)
+	}
+	os.Exit(code)
+}
 
 func TestGeneratedWebApiTestsDoNotContainUnusedJsonPropertyFields(t *testing.T) {
 	gen, err := New()
@@ -1747,6 +1762,9 @@ func generateWorkspace(t *testing.T, cfg spec.Config) generatedWorkspace {
 	}
 	outputDir := t.TempDir()
 	writeGeneratedFiles(t, outputDir, files)
+	t.Cleanup(func() {
+		shutdownDotnetRuntimeBuildServers(t, outputDir)
+	})
 
 	services := sortedServices(cfg.Services)
 	if len(services) == 0 {
@@ -1766,6 +1784,9 @@ func locateDotnet(t *testing.T) string {
 	if testing.Short() {
 		t.Skip("skipping dotnet runtime validation in short mode")
 	}
+	if raceEnabled {
+		t.Skip("skipping dotnet runtime validation when Go race detector is enabled; generated-dotnet-build validates this runtime boundary")
+	}
 	dotnet, err := exec.LookPath("dotnet")
 	if err != nil {
 		t.Skipf("dotnet not installed: %v", err)
@@ -1777,10 +1798,48 @@ func runDotnetRuntimeCommand(t *testing.T, dotnet string, workspace generatedWor
 	t.Helper()
 	cmd := exec.Command(dotnet, args...)
 	cmd.Dir = workspace.dir
+	cmd.Env = dotnetRuntimeEnv(workspace.dir)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("dotnet %s failed: %v\nworking directory: %s\nsolution: %s\noutput:\n%s", strings.Join(args, " "), err, workspace.dir, workspace.solutionName, output)
 	}
+}
+
+func shutdownDotnetRuntimeBuildServers(t *testing.T, workDir string) {
+	t.Helper()
+	dotnet, err := exec.LookPath("dotnet")
+	if err != nil {
+		return
+	}
+	cmd := exec.Command(dotnet, "build-server", "shutdown")
+	cmd.Dir = workDir
+	cmd.Env = dotnetRuntimeEnv(workDir)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Logf("dotnet build-server shutdown failed during cleanup: %v\noutput:\n%s", err, output)
+	}
+}
+
+func dotnetRuntimeEnv(workDir string) []string {
+	cacheDir, err := dotnetRuntimeCacheDir()
+	if err != nil {
+		cacheDir = workDir
+	}
+	dotnetHome := filepath.Join(cacheDir, ".dotnet-home")
+	nugetPackages := filepath.Join(cacheDir, ".nuget-packages")
+	return append(os.Environ(),
+		"DOTNET_CLI_HOME="+dotnetHome,
+		"DOTNET_CLI_USE_MSBUILD_SERVER=0",
+		"NUGET_PACKAGES="+nugetPackages,
+		"MSBUILDDISABLENODEREUSE=1",
+		"DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1",
+	)
+}
+
+func dotnetRuntimeCacheDir() (string, error) {
+	dotnetRuntimeCache.once.Do(func() {
+		dotnetRuntimeCache.dir, dotnetRuntimeCache.err = os.MkdirTemp("", "microgen-dotnet-runtime-*")
+	})
+	return dotnetRuntimeCache.dir, dotnetRuntimeCache.err
 }
 
 func writeGeneratedFiles(t *testing.T, outputDir string, files []GeneratedFile) {

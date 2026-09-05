@@ -15,6 +15,9 @@ func TestGenerateGatewaySampleBuildsWithDotnet(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping gateway sample dotnet build in short mode")
 	}
+	if raceEnabled {
+		t.Skip("skipping gateway sample dotnet build when Go race detector is enabled; generated-dotnet-build validates this runtime boundary")
+	}
 	dotnet, err := exec.LookPath("dotnet")
 	if err != nil {
 		t.Skipf("dotnet not installed: %v", err)
@@ -138,7 +141,9 @@ func dotnetBuildEvidenceEnv(workDir string) []string {
 	nugetPackages := filepath.Join(workDir, ".nuget-packages")
 	return append(os.Environ(),
 		"DOTNET_CLI_HOME="+dotnetHome,
+		"DOTNET_CLI_USE_MSBUILD_SERVER=0",
 		"NUGET_PACKAGES="+nugetPackages,
+		"MSBUILDDISABLENODEREUSE=1",
 		"DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1",
 	)
 }
