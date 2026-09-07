@@ -357,6 +357,90 @@ func TestGenerateOneToOneRelationshipsProducesGoldenOutput(t *testing.T) {
 	}
 }
 
+func TestGenerateExplicitManyToManyJoinEntityProducesDeterministicGoldenOutput(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	files, err := gen.Generate(manyToManyRelationshipTestConfig())
+	if err != nil {
+		t.Fatalf("generate many-to-many relationship: %v", err)
+	}
+
+	expectedFiles := []struct {
+		path       string
+		goldenName string
+	}{
+		{path: "SchoolService/src/SchoolService.Domain/Entities/Course.cs", goldenName: filepath.Join("relationships", "many-to-many", "Course.cs")},
+		{path: "SchoolService/src/SchoolService.Domain/Entities/Student.cs", goldenName: filepath.Join("relationships", "many-to-many", "Student.cs")},
+		{path: "SchoolService/src/SchoolService.Domain/Entities/StudentCourse.cs", goldenName: filepath.Join("relationships", "many-to-many", "StudentCourse.cs")},
+		{path: "SchoolService/src/SchoolService.Application/StudentCourses/Dtos/StudentCourseDto.cs", goldenName: filepath.Join("relationships", "many-to-many", "StudentCourseDto.cs")},
+		{path: "SchoolService/src/SchoolService.Application/StudentCourses/Dtos/CreateStudentCourseRequest.cs", goldenName: filepath.Join("relationships", "many-to-many", "CreateStudentCourseRequest.cs")},
+		{path: "SchoolService/src/SchoolService.Application/StudentCourses/Commands/Create/CreateStudentCourseCommand.cs", goldenName: filepath.Join("relationships", "many-to-many", "CreateStudentCourseCommand.cs")},
+		{path: "SchoolService/src/SchoolService.WebApi/Controllers/StudentCourses/StudentCourseController.cs", goldenName: filepath.Join("relationships", "many-to-many", "StudentCourseController.cs")},
+		{path: "SchoolService/src/SchoolService.Infrastructure/Persistence/Configurations/StudentCourseConfiguration.cs", goldenName: filepath.Join("relationships", "many-to-many", "StudentCourseConfiguration.cs")},
+		{path: "SchoolService/tests/SchoolService.Infrastructure.Tests/SchoolServiceInfrastructureTests.cs", goldenName: filepath.Join("relationships", "many-to-many", "SchoolServiceInfrastructureTests.cs")},
+	}
+
+	for _, file := range expectedFiles {
+		assertGoldenFile(t, files, file.path, file.goldenName)
+	}
+
+	course := string(generatedContent(t, files, "SchoolService/src/SchoolService.Domain/Entities/Course.cs"))
+	student := string(generatedContent(t, files, "SchoolService/src/SchoolService.Domain/Entities/Student.cs"))
+	studentCourse := string(generatedContent(t, files, "SchoolService/src/SchoolService.Domain/Entities/StudentCourse.cs"))
+	configuration := string(generatedContent(t, files, "SchoolService/src/SchoolService.Infrastructure/Persistence/Configurations/StudentCourseConfiguration.cs"))
+
+	assertContains(t, course, "ICollection<StudentCourse> StudentCourses")
+	assertContains(t, student, "ICollection<StudentCourse> StudentCourses")
+	assertContains(t, studentCourse, "public Guid CourseId { get; private set; }")
+	assertContains(t, studentCourse, "public Guid StudentId { get; private set; }")
+	assertContains(t, studentCourse, "public Course Course { get; private set; } = null!;")
+	assertContains(t, studentCourse, "public Student Student { get; private set; } = null!;")
+	assertContains(t, configuration, "builder.HasOne(item => item.Course)")
+	assertContains(t, configuration, ".WithMany(item => item.StudentCourses)")
+	assertContains(t, configuration, ".HasForeignKey(item => item.CourseId)")
+	assertContains(t, configuration, "builder.HasOne(item => item.Student)")
+	assertContains(t, configuration, ".HasForeignKey(item => item.StudentId)")
+	assertContains(t, configuration, ".OnDelete(DeleteBehavior.Restrict)")
+	assertNotContains(t, course, "ICollection<Student> Students")
+	assertNotContains(t, student, "ICollection<Course> Courses")
+	assertNotContains(t, configuration, "UsingEntity")
+}
+
+func TestGenerateExplicitManyToManyInfrastructureTestsSeedRequiredPrincipalsBeforeJoinEntitySaves(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	files, err := gen.Generate(manyToManyRelationshipTestConfig())
+	if err != nil {
+		t.Fatalf("generate many-to-many relationship: %v", err)
+	}
+
+	infrastructureTests := string(generatedContent(t, files, "SchoolService/tests/SchoolService.Infrastructure.Tests/SchoolServiceInfrastructureTests.cs"))
+	assertContains(t, infrastructureTests, "private static async Task SeedRequiredRelationshipsForStudentCourseAsync(SchoolServiceDbContext context)")
+	assertContains(t, infrastructureTests, "INSERT INTO [Courses] ([Id], [Title]) VALUES ({0}, N'Title Value')")
+	assertContains(t, infrastructureTests, "Guid.Parse(\"00000000-0000-0000-0000-000000000002\")")
+	assertContains(t, infrastructureTests, "INSERT INTO [Students] ([Id], [Name]) VALUES ({0}, N'Name Value')")
+	assertContains(t, infrastructureTests, "await context.SaveChangesAsync(CancellationToken.None);")
+	assertContains(t, infrastructureTests, "await SeedRequiredRelationshipsForStudentCourseAsync(createContext);")
+	assertContains(t, infrastructureTests, "await SeedRequiredRelationshipsForStudentCourseAsync(seedContext);")
+
+	createSeedIndex := strings.Index(infrastructureTests, "await SeedRequiredRelationshipsForStudentCourseAsync(createContext);")
+	createEntityIndex := strings.Index(infrastructureTests, "var entity = DomainStudentCourse.Create")
+	if createSeedIndex == -1 || createEntityIndex == -1 || createSeedIndex > createEntityIndex {
+		t.Fatalf("expected StudentCourse required relationship seed before create entity construction")
+	}
+	seedPrincipalIndex := strings.Index(infrastructureTests, "await SeedRequiredRelationshipsForStudentCourseAsync(seedContext);")
+	seedEntityIndex := strings.Index(infrastructureTests, "var seed = DomainStudentCourse.Create")
+	if seedPrincipalIndex == -1 || seedEntityIndex == -1 || seedPrincipalIndex > seedEntityIndex {
+		t.Fatalf("expected StudentCourse required relationship seed before concurrency race entity construction")
+	}
+}
+
 func TestGenerateOneToOneRuntimeBuild(t *testing.T) {
 	cfg := oneToOneRelationshipTestConfig(true)
 	cfg.Generation.TargetFramework = "net10.0"

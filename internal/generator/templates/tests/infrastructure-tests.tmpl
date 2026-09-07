@@ -109,7 +109,9 @@ public sealed class {{ .Name }}InfrastructureTests
         await database.InitializeAsync();
 
         await using var createContext = database.CreateContext();
-        var repository = new {{ .Name }}Repository(createContext, NullLogger<{{ .Name }}Repository>.Instance);
+{{ if .RelationshipScalarFields }}        await SeedRequiredRelationshipsFor{{ .Name }}Async(createContext);
+
+{{ end }}        var repository = new {{ .Name }}Repository(createContext, NullLogger<{{ .Name }}Repository>.Instance);
         var unitOfWork = new UnitOfWork(createContext);
         var entity = Domain{{ .Name }}.Create(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }}{{ range .RelationshipScalarFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
         await repository.AddAsync(entity, CancellationToken.None);
@@ -170,7 +172,9 @@ public sealed class {{ .Name }}InfrastructureTests
         await database.InitializeAsync();
 
         await using var seedContext = database.CreateContext();
-        var seedRepository = new {{ .Name }}Repository(seedContext, NullLogger<{{ .Name }}Repository>.Instance);
+{{ if .RelationshipScalarFields }}        await SeedRequiredRelationshipsFor{{ .Name }}Async(seedContext);
+
+{{ end }}        var seedRepository = new {{ .Name }}Repository(seedContext, NullLogger<{{ .Name }}Repository>.Instance);
         var seedUnitOfWork = new UnitOfWork(seedContext);
         var seed = Domain{{ .Name }}.Create(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }}{{ range .RelationshipScalarFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
         await seedRepository.AddAsync(seed, CancellationToken.None);
@@ -255,6 +259,14 @@ public sealed class {{ .Name }}InfrastructureTests
     private sealed record PreflightViolation(string TableName, string ColumnName, string RuleCode, Guid RecordId);
 
 {{- end }}
+{{ range $entity := .Entities }}{{ if .RelationshipScalarFields }}    private static async Task SeedRequiredRelationshipsFor{{ .Name }}Async({{ $.Name }}DbContext context)
+    {
+{{ range $relationship := .EFRelationships }}{{ range $principal := $.Entities }}{{ if eq $principal.Name $relationship.PrincipalEntity }}        await context.Database.ExecuteSqlRawAsync("INSERT INTO [{{ $principal.Name }}s] ([Id]{{ range $principal.NonIDFields }}, [{{ .Name }}]{{ end }}) VALUES ({0}{{ range $principal.NonIDFields }}, {{ .SQLSampleLiteral }}{{ end }})", {{ range $scalar := $entity.RelationshipScalarFields }}{{ if eq $scalar.Name $relationship.ForeignKeyName }}{{ $scalar.SampleValue }}{{ end }}{{ end }});
+        await context.Database.ExecuteSqlRawAsync("INSERT INTO [{{ $principal.Name }}s] ([Id]{{ range $principal.NonIDFields }}, [{{ .Name }}]{{ end }}) VALUES ({0}{{ range $principal.NonIDFields }}, {{ .SQLSampleLiteral }}{{ end }})", {{ range $scalar := $entity.RelationshipScalarFields }}{{ if eq $scalar.Name $relationship.ForeignKeyName }}{{ $scalar.UpdatedValue }}{{ end }}{{ end }});
+{{ end }}{{ end }}{{ end }}        await context.SaveChangesAsync(CancellationToken.None);
+    }
+
+{{ end }}{{ end }}
     private sealed class CaptureLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
     {
         public string LastMessage { get; private set; } = string.Empty;
