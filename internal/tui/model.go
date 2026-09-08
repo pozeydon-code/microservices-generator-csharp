@@ -2397,6 +2397,9 @@ func (m Model) updateRelationshipsEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "m":
 		if !m.relationshipsEdit.editingText && len(m.relationshipsEdit.relationships) > 0 {
 			selected := &m.relationshipsEdit.relationships[m.relationshipsEdit.selected]
+			if selected.multiplicity == "many-to-many" {
+				return m, nil
+			}
 			selected.multiplicity = nextRelationshipMultiplicity(selected.multiplicity)
 		}
 		return m, nil
@@ -5875,7 +5878,11 @@ func (m Model) renderRelationshipsEditor(builder *strings.Builder) {
 		return
 	}
 	fmt.Fprintf(builder, "Editing relationships for %s\n", m.relationshipsEdit.serviceName)
-	fmt.Fprintln(builder, "Only one-to-many, many-to-one, and one-to-one relationships are supported.")
+	if m.relationshipsEditContainsManyToMany() {
+		fmt.Fprintln(builder, "Existing many-to-many join links are displayed for compatibility; new many-to-many authoring is not available in this editor.")
+	} else {
+		fmt.Fprintln(builder, "Only one-to-many, many-to-one, and one-to-one relationships are supported.")
+	}
 	if m.err != nil {
 		fmt.Fprintf(builder, "Save failed: %v\n", m.err)
 	}
@@ -5899,8 +5906,21 @@ func (m Model) renderRelationshipsEditor(builder *strings.Builder) {
 		return
 	}
 	fmt.Fprintln(builder)
-	fmt.Fprintln(builder, "Keys: up/down select, tab field, e edit text, m toggle multiplicity, space cycles focused endpoint or toggles required, a add, d delete, enter save, esc cancel.")
+	if m.relationshipsEditContainsManyToMany() {
+		fmt.Fprintln(builder, "Keys: up/down select, tab field, e edit text, space cycles focused endpoint or toggles required, a add bounded relationship, d delete, enter save, esc cancel.")
+	} else {
+		fmt.Fprintln(builder, "Keys: up/down select, tab field, e edit text, m toggle multiplicity, space cycles focused endpoint or toggles required, a add, d delete, enter save, esc cancel.")
+	}
 	fmt.Fprintln(builder, "Final validation rejects unsupported multiplicities, missing endpoints, FK conflicts, and navigation collisions before save.")
+}
+
+func (m Model) relationshipsEditContainsManyToMany() bool {
+	for _, relationship := range m.relationshipsEdit.relationships {
+		if relationship.multiplicity == "many-to-many" {
+			return true
+		}
+	}
+	return false
 }
 
 func (m Model) renderValueObjectRulesEditor(builder *strings.Builder) {
