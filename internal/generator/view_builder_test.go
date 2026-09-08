@@ -173,6 +173,54 @@ func TestBuildSolutionViewProjectsOneToOneRelationshipViews(t *testing.T) {
 	}
 }
 
+func TestBuildSolutionViewProjectsExplicitManyToManyJoinRelationshipViews(t *testing.T) {
+	view, err := buildSolutionView(manyToManyRelationshipTestConfig())
+	if err != nil {
+		t.Fatalf("build solution view: %v", err)
+	}
+
+	service := view.Services[0]
+	entities := map[string]EntityView{}
+	for _, entity := range service.Entities {
+		entities[entity.Name] = entity
+	}
+
+	course := entities["Course"]
+	student := entities["Student"]
+	studentCourse := entities["StudentCourse"]
+
+	wantScalars := []RelationshipScalarFieldView{
+		expectedRelationshipScalarFieldView("CourseId", "Guid", true),
+		expectedRelationshipScalarFieldView("StudentId", "Guid", true),
+	}
+	if !reflect.DeepEqual(studentCourse.RelationshipScalarFields, wantScalars) {
+		t.Fatalf("unexpected join FK scalar views: %#v", studentCourse.RelationshipScalarFields)
+	}
+	wantReferences := []ReferenceNavigationView{
+		{Name: "Course", TargetEntity: "Course", Nullable: false, Initializer: " = null!;"},
+		{Name: "Student", TargetEntity: "Student", Nullable: false, Initializer: " = null!;"},
+	}
+	if !reflect.DeepEqual(studentCourse.ReferenceNavigations, wantReferences) {
+		t.Fatalf("unexpected join reference navigations: %#v", studentCourse.ReferenceNavigations)
+	}
+	if !reflect.DeepEqual(course.CollectionNavigations, []CollectionNavigationView{{Name: "StudentCourses", TargetEntity: "StudentCourse"}}) {
+		t.Fatalf("unexpected course join collection: %#v", course.CollectionNavigations)
+	}
+	if !reflect.DeepEqual(student.CollectionNavigations, []CollectionNavigationView{{Name: "StudentCourses", TargetEntity: "StudentCourse"}}) {
+		t.Fatalf("unexpected student join collection: %#v", student.CollectionNavigations)
+	}
+	if len(course.ReferenceNavigations) != 0 || len(student.ReferenceNavigations) != 0 {
+		t.Fatalf("expected principals to avoid skip-navigation references, got course=%#v student=%#v", course.ReferenceNavigations, student.ReferenceNavigations)
+	}
+	wantEF := []EFRelationshipView{
+		{PrincipalEntity: "Course", DependentEntity: "StudentCourse", ForeignKeyName: "CourseId", PrincipalNavigation: "StudentCourses", DependentNavigation: "Course", Required: true, IsRequiredCall: ".IsRequired()"},
+		{PrincipalEntity: "Student", DependentEntity: "StudentCourse", ForeignKeyName: "StudentId", PrincipalNavigation: "StudentCourses", DependentNavigation: "Student", Required: true, IsRequiredCall: ".IsRequired()"},
+	}
+	if !reflect.DeepEqual(studentCourse.EFRelationships, wantEF) {
+		t.Fatalf("unexpected explicit join EF views: %#v", studentCourse.EFRelationships)
+	}
+}
+
 func TestBuildSolutionViewUsesExplicitForeignKeyFieldAsRelationshipScalar(t *testing.T) {
 	cfg := relationshipTestConfig()
 	for serviceIndex := range cfg.Services {
@@ -318,6 +366,25 @@ func oneToOneRelationshipTestConfig(required bool) spec.Config {
 				{Name: "Profile", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "DisplayName", Type: "string"}}},
 			},
 			Relationships: []spec.Relationship{{Multiplicity: "one-to-one", PrincipalEntity: "User", DependentEntity: "Profile", ForeignKeyName: "UserId", Required: &required, PrincipalNavigation: "Profile", DependentNavigation: "User"}},
+		}},
+	}
+}
+
+func manyToManyRelationshipTestConfig() spec.Config {
+	required := true
+	return spec.Config{
+		Solution: spec.Solution{Name: "SchoolPlatform", Description: "Many-to-many join entity generation regression."},
+		Services: []spec.Service{{
+			Name: "SchoolService",
+			Entities: []spec.Entity{
+				{Name: "Course", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Title", Type: "string"}}},
+				{Name: "Student", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}},
+				{Name: "StudentCourse", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "EnrolledAt", Type: "DateTime"}}},
+			},
+			Relationships: []spec.Relationship{
+				{Name: "StudentCourse", Multiplicity: "many-to-many", PrincipalEntity: "Course", DependentEntity: "StudentCourse", ForeignKeyName: "CourseId", Required: &required, PrincipalNavigation: "StudentCourses", DependentNavigation: "Course"},
+				{Name: "StudentCourse", Multiplicity: "many-to-many", PrincipalEntity: "Student", DependentEntity: "StudentCourse", ForeignKeyName: "StudentId", Required: &required, PrincipalNavigation: "StudentCourses", DependentNavigation: "Student"},
+			},
 		}},
 	}
 }

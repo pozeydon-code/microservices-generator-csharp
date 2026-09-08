@@ -205,6 +205,7 @@ public sealed class ProductServiceInfrastructureTests
 
 
 
+
     private sealed class CaptureLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
     {
         public string LastMessage { get; private set; } = string.Empty;

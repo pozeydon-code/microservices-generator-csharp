@@ -1220,6 +1220,80 @@ func TestServiceUpdateRelationshipSettingsSavesAndSummarizesOneToOneRelationship
 	}
 }
 
+func TestServicePlanGenerationSummarizesExplicitManyToManyJoinRelationships(t *testing.T) {
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validConfigWithExplicitManyToManyJoin()},
+		ConfigValidator: specValidator{},
+		Generator:       &fakeGenerator{files: []GeneratedFile{{Path: "README.md", Content: []byte("readme")}}},
+		OutputPlanner:   fakeOutputPlanner{plan: OutputPlan{OutputDir: "/planned/generated", Action: "create", Files: []OutputPlannedFile{{Path: "README.md", Action: "create"}}}},
+	})
+
+	plan, err := service.PlanGeneration(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"})
+
+	if err != nil {
+		t.Fatalf("expected explicit many-to-many plan success, got %v", err)
+	}
+	relationships := plan.Config.Services[0].Relationships
+	want := []RelationshipSummary{
+		{Name: "StudentCourse", Multiplicity: "many-to-many", PrincipalEntity: "Student", DependentEntity: "StudentCourse", ForeignKeyName: "StudentId", ForeignKeyType: "Guid", Required: true, PrincipalNavigation: "StudentCourses", DependentNavigation: "Student", Summary: "Student *-* StudentCourse via StudentId (required join link)"},
+		{Name: "StudentCourse", Multiplicity: "many-to-many", PrincipalEntity: "Course", DependentEntity: "StudentCourse", ForeignKeyName: "CourseId", ForeignKeyType: "Guid", Required: true, PrincipalNavigation: "StudentCourses", DependentNavigation: "Course", Summary: "Course *-* StudentCourse via CourseId (required join link)"},
+	}
+	if !reflect.DeepEqual(relationships, want) {
+		t.Fatalf("expected explicit many-to-many summaries %#v, got %#v", want, relationships)
+	}
+	if !containsString(plan.Readiness.Hints, "Review 1 relationship navigation before generating.") {
+		t.Fatalf("expected explicit join relationship readiness count to be grouped, got %#v", plan.Readiness.Hints)
+	}
+}
+
+func TestServiceUpdateRelationshipSettingsSavesExistingExplicitManyToManyJoinRelationships(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	service := NewService(Ports{
+		ConfigLoader:    &fakeConfigLoader{cfg: validConfigWithExplicitManyToManyJoin()},
+		ConfigSaver:     saver,
+		ConfigValidator: specValidator{},
+		Generator:       &fakeGenerator{files: []GeneratedFile{{Path: "README.md", Content: []byte("readme")}}},
+		OutputPlanner:   fakeOutputPlanner{plan: OutputPlan{OutputDir: "/planned/generated", Action: "create", Files: []OutputPlannedFile{{Path: "README.md", Action: "create"}}}},
+	})
+	required := true
+
+	result, err := service.UpdateRelationshipSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, RelationshipSettings{ServiceName: "EnrollmentService", Relationships: []RelationshipSetting{
+		{OriginalName: "StudentCourse", Name: "StudentCourse", Multiplicity: "many-to-many", PrincipalEntity: "Student", DependentEntity: "StudentCourse", ForeignKeyName: "StudentId", ForeignKeyType: "Guid", Required: &required, PrincipalNavigation: "StudentCourses", DependentNavigation: "Student"},
+		{OriginalName: "StudentCourse", Name: "StudentCourse", Multiplicity: "many-to-many", PrincipalEntity: "Course", DependentEntity: "StudentCourse", ForeignKeyName: "CourseId", ForeignKeyType: "Guid", Required: &required, PrincipalNavigation: "StudentCourses", DependentNavigation: "Course"},
+	}})
+
+	if err != nil {
+		t.Fatalf("expected existing explicit many-to-many save success, got %v", err)
+	}
+	if !saver.called || len(saver.cfg.Services[0].Relationships) != 2 {
+		t.Fatalf("expected explicit many-to-many join relationships to be saved, called=%v relationships=%#v", saver.called, saver.cfg.Services[0].Relationships)
+	}
+	if !result.Saved || result.PlanError != nil || result.Plan.FileCount != 1 {
+		t.Fatalf("expected saved result with refreshed plan, got %#v", result)
+	}
+	if got := result.Config.Services[0].Relationships[0].Summary; got != "Student *-* StudentCourse via StudentId (required join link)" {
+		t.Fatalf("expected explicit join summary, got %q", got)
+	}
+}
+
+func TestServiceUpdateRelationshipSettingsPropagatesInvalidExistingJoinValidation(t *testing.T) {
+	saver := &fakeConfigSaver{}
+	gen := &fakeGenerator{}
+	service := NewService(Ports{ConfigLoader: &fakeConfigLoader{cfg: validConfigWithExplicitManyToManyJoin()}, ConfigSaver: saver, ConfigValidator: specValidator{}, Generator: gen, OutputPlanner: fakeOutputPlanner{}})
+	required := true
+
+	_, err := service.UpdateRelationshipSettings(GenerateRequest{ConfigPath: "microgen.json", OutputDir: "generated"}, RelationshipSettings{ServiceName: "EnrollmentService", Relationships: []RelationshipSetting{
+		{OriginalName: "StudentCourse", Name: "StudentCourse", Multiplicity: "many-to-many", PrincipalEntity: "Student", DependentEntity: "StudentCourse", ForeignKeyName: "StudentId", ForeignKeyType: "Guid", Required: &required, PrincipalNavigation: "StudentCourses", DependentNavigation: "Student"},
+	}})
+
+	if err == nil || !strings.Contains(err.Error(), "many-to-many join entity StudentCourse must declare exactly two principal links") {
+		t.Fatalf("expected explicit join validation error to propagate, got %v", err)
+	}
+	if saver.called || gen.called {
+		t.Fatalf("expected invalid explicit join not to save or plan, saver=%v gen=%v", saver.called, gen.called)
+	}
+}
+
 func TestServiceUpdateRelationshipSettingsRejectsUnsupportedOptionsWithoutSaving(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -1507,6 +1581,26 @@ func validConfigWithRelationshipEntities() spec.Config {
 		{Name: "Category", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}},
 	}
 	return cfg
+}
+
+func validConfigWithExplicitManyToManyJoin() spec.Config {
+	return spec.Config{
+		SchemaVersion: spec.ConfigSchemaVersion,
+		Generation:    spec.GenerationOptions{TargetFramework: "net8.0"},
+		Solution:      spec.Solution{Name: "SchoolPlatform", Description: "Enrollment management."},
+		Services: []spec.Service{{
+			Name: "EnrollmentService",
+			Entities: []spec.Entity{
+				{Name: "Student", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}},
+				{Name: "Course", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Title", Type: "string"}}},
+				{Name: "StudentCourse", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "EnrolledAt", Type: "DateTime"}}},
+			},
+			Relationships: []spec.Relationship{
+				{Multiplicity: "many-to-many", Name: "StudentCourse", PrincipalEntity: "Student", DependentEntity: "StudentCourse"},
+				{Multiplicity: "many-to-many", Name: "StudentCourse", PrincipalEntity: "Course", DependentEntity: "StudentCourse"},
+			},
+		}},
+	}
 }
 
 func serviceNames(services []spec.Service) []string {
