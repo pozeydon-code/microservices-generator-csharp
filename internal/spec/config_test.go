@@ -622,6 +622,157 @@ func TestConfigValidateAcceptsRelationshipsWithDefaultsAndCanonicalEdges(t *test
 	}
 }
 
+func TestConfigValidateAcceptsExplicitManyToManyJoinEntityWithCanonicalDefaults(t *testing.T) {
+	cfg := validManyToManyConfig()
+	cfg.Services[0].Relationships = []Relationship{
+		{Multiplicity: "many-to-many", Name: "StudentCourse", PrincipalEntity: "Student", DependentEntity: "StudentCourse"},
+		{Multiplicity: "many-to-many", Name: "StudentCourse", PrincipalEntity: "Course", DependentEntity: "StudentCourse"},
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected explicit many-to-many join entity to validate, got %v", err)
+	}
+
+	got := cfg.Services[0].CanonicalRelationships()
+	want := []CanonicalRelationship{
+		{
+			Name:                "StudentCourse",
+			Multiplicity:        "one-to-many",
+			PrincipalEntity:     "Student",
+			DependentEntity:     "StudentCourse",
+			ForeignKeyName:      "StudentId",
+			ForeignKeyType:      "Guid",
+			Required:            true,
+			PrincipalNavigation: "StudentCourses",
+			DependentNavigation: "Student",
+		},
+		{
+			Name:                "StudentCourse",
+			Multiplicity:        "one-to-many",
+			PrincipalEntity:     "Course",
+			DependentEntity:     "StudentCourse",
+			ForeignKeyName:      "CourseId",
+			ForeignKeyType:      "Guid",
+			Required:            true,
+			PrincipalNavigation: "StudentCourses",
+			DependentNavigation: "Course",
+		},
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("canonical relationships = %+v; want %+v", got, want)
+	}
+}
+
+func TestConfigValidateRejectsInvalidManyToManyJoinShapes(t *testing.T) {
+	tests := []struct {
+		name        string
+		mutate      func(*Config)
+		expectedErr string
+	}{
+		{
+			name: "missing join entity name",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].Name = ""
+				cfg.Services[0].Relationships[1].Name = ""
+			},
+			expectedErr: "relationships[0].name is required for many-to-many join relationships",
+		},
+		{
+			name: "named join entity must exist",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].Name = "Enrollment"
+				cfg.Services[0].Relationships[1].Name = "Enrollment"
+			},
+			expectedErr: "relationships[0].name must reference the dependent join entity StudentCourse",
+		},
+		{
+			name: "missing second principal link",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships = cfg.Services[0].Relationships[:1]
+			},
+			expectedErr: "many-to-many join entity StudentCourse must declare exactly two principal links",
+		},
+		{
+			name: "duplicate principal link",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[1].PrincipalEntity = "Student"
+				cfg.Services[0].Relationships[1].ForeignKeyName = "SecondStudentId"
+				cfg.Services[0].Relationships[1].DependentNavigation = "SecondStudent"
+			},
+			expectedErr: "many-to-many join entity StudentCourse must reference two different principal entities",
+		},
+		{
+			name: "foreign key collision",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[1].ForeignKeyName = "StudentId"
+			},
+			expectedErr: "relationships[1] duplicates generated foreignKeyName StudentId on join entity StudentCourse",
+		},
+		{
+			name: "navigation collision",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[1].DependentNavigation = "Student"
+			},
+			expectedErr: "duplicate dependent navigation in service EnrollmentService name \"StudentCourse.Student\"",
+		},
+		{
+			name: "cross-service principal",
+			mutate: func(cfg *Config) {
+				cfg.Services = append(cfg.Services, Service{Name: "CatalogService", Entities: []Entity{{Name: "Course", Fields: []Field{{Name: "Id", Type: "Guid"}}}}})
+				cfg.Services[0].Entities = []Entity{cfg.Services[0].Entities[0], cfg.Services[0].Entities[2]}
+			},
+			expectedErr: "relationships[1].principalEntity must reference an entity in service EnrollmentService",
+		},
+		{
+			name: "composite key override",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].ForeignKeyNames = []string{"StudentId", "TenantId"}
+			},
+			expectedErr: "relationships[0].foreignKeyNames is not supported; many-to-many join relationships use one required FK per principal link",
+		},
+		{
+			name: "alternate key override",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].PrincipalKeyName = "ExternalId"
+			},
+			expectedErr: "relationships[0].principalKeyName is not supported; many-to-many join relationships use the principal Id key",
+		},
+		{
+			name: "delete behavior override",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships[0].DeleteBehavior = "Cascade"
+			},
+			expectedErr: "relationships[0].deleteBehavior is not supported; many-to-many join relationships use Restrict delete behavior",
+		},
+		{
+			name: "shorthand direct relationship",
+			mutate: func(cfg *Config) {
+				cfg.Services[0].Relationships = []Relationship{{Multiplicity: "many-to-many", Name: "StudentCourse", PrincipalEntity: "Student", DependentEntity: "Course"}}
+			},
+			expectedErr: "relationships[0].name must reference the dependent join entity Course",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validManyToManyConfig()
+			cfg.Services[0].Relationships = []Relationship{
+				{Multiplicity: "many-to-many", Name: "StudentCourse", PrincipalEntity: "Student", DependentEntity: "StudentCourse"},
+				{Multiplicity: "many-to-many", Name: "StudentCourse", PrincipalEntity: "Course", DependentEntity: "StudentCourse"},
+			}
+			tt.mutate(&cfg)
+
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			if !strings.Contains(err.Error(), tt.expectedErr) {
+				t.Fatalf("expected error to contain %q, got %v", tt.expectedErr, err)
+			}
+		})
+	}
+}
+
 func TestConfigValidateRejectsUnsupportedOneToOneShapes(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -641,7 +792,7 @@ func TestConfigValidateRejectsUnsupportedOneToOneShapes(t *testing.T) {
 			mutate: func(cfg *Config) {
 				cfg.Services[0].Relationships[0].Multiplicity = "many-to-many"
 			},
-			expectedErr: "relationships[0].multiplicity must be one-to-many, many-to-one, or one-to-one",
+			expectedErr: "relationships[0].name is required for many-to-many join relationships",
 		},
 		{
 			name: "composite key is excluded",
@@ -743,6 +894,64 @@ func TestConfigValidateRejectsUnsupportedOneToOneShapes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConfigValidatePreservesOneToOneRelationshipBehavior(t *testing.T) {
+	t.Run("valid same-service one-to-one remains valid", func(t *testing.T) {
+		cfg := validRelationshipConfig()
+		cfg.Services[0].Relationships = []Relationship{{
+			Name:                "OrderShipment",
+			Multiplicity:        "one-to-one",
+			PrincipalEntity:     "Order",
+			DependentEntity:     "OrderItem",
+			ForeignKeyName:      "OrderId",
+			Required:            boolPtr(true),
+			PrincipalNavigation: "OrderItem",
+			DependentNavigation: "Order",
+		}}
+
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("expected valid one-to-one relationship to remain accepted, got %v", err)
+		}
+		got := cfg.Services[0].CanonicalRelationships()
+		want := CanonicalRelationship{
+			Name:                "OrderShipment",
+			Multiplicity:        "one-to-one",
+			PrincipalEntity:     "Order",
+			DependentEntity:     "OrderItem",
+			ForeignKeyName:      "OrderId",
+			ForeignKeyType:      "Guid",
+			Required:            true,
+			PrincipalNavigation: "OrderItem",
+			DependentNavigation: "Order",
+		}
+		if len(got) != 1 || got[0] != want {
+			t.Fatalf("canonical one-to-one relationship = %+v; want %+v", got, want)
+		}
+	})
+
+	t.Run("unsupported one-to-one with delete override remains rejected", func(t *testing.T) {
+		cfg := validRelationshipConfig()
+		cfg.Services[0].Relationships = []Relationship{{
+			Multiplicity:        "one-to-one",
+			PrincipalEntity:     "Order",
+			DependentEntity:     "OrderItem",
+			ForeignKeyName:      "OrderId",
+			ForeignKeyType:      "Guid",
+			PrincipalNavigation: "OrderItem",
+			DependentNavigation: "Order",
+			DeleteBehavior:      "Cascade",
+		}}
+
+		err := cfg.Validate()
+		if err == nil {
+			t.Fatal("expected unsupported one-to-one shape to remain rejected")
+		}
+		const expected = "relationships[0].deleteBehavior is not supported; one-to-one uses Restrict delete behavior"
+		if !strings.Contains(err.Error(), expected) {
+			t.Fatalf("expected error to contain %q, got %v", expected, err)
+		}
+	})
 }
 
 func TestConfigValidateRejectsCrossRelationshipDependentMemberCollisions(t *testing.T) {
@@ -891,7 +1100,7 @@ func TestConfigValidateRejectsInvalidRelationshipMetadata(t *testing.T) {
 			mutate: func(cfg *Config) {
 				cfg.Services[0].Relationships[0].Multiplicity = "many-to-many"
 			},
-			expectedErr: "relationships[0].multiplicity must be one-to-many, many-to-one, or one-to-one",
+			expectedErr: "relationships[0].name is required for many-to-many join relationships",
 		},
 		{
 			name: "missing endpoint",
@@ -989,6 +1198,20 @@ func validRelationshipConfig() Config {
 			Entities: []Entity{
 				{Name: "Order", Fields: []Field{{Name: "Id", Type: "Guid"}, {Name: "Number", Type: "string"}}},
 				{Name: "OrderItem", Fields: []Field{{Name: "Id", Type: "Guid"}, {Name: "OrderId", Type: "Guid"}, {Name: "Sku", Type: "string"}}},
+			},
+		}},
+	}
+}
+
+func validManyToManyConfig() Config {
+	return Config{
+		Solution: Solution{Name: "EnrollmentPlatform", Description: "Course enrollment management."},
+		Services: []Service{{
+			Name: "EnrollmentService",
+			Entities: []Entity{
+				{Name: "Student", Fields: []Field{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}},
+				{Name: "Course", Fields: []Field{{Name: "Id", Type: "Guid"}, {Name: "Title", Type: "string"}}},
+				{Name: "StudentCourse", Fields: []Field{{Name: "Id", Type: "Guid"}, {Name: "StudentId", Type: "Guid"}, {Name: "CourseId", Type: "Guid"}}},
 			},
 		}},
 	}
