@@ -50,17 +50,14 @@ Generator automatically:
   - Commit: `012a6a2` feat(generator): add query shape metadata to view builder
   - Slice boundary: 1864 lines on feat/v0.7.0-query-shaping
 
-- **T3**: Update application templates for shape-aware DTOs
-  - Add QueryShapeView to ServiceView
-  - Build shape metadata for templates
-  - Route: inline (view builder, no high-risk)
-  - Commit: feat/view-builder-query-shapes
-  
-- **T3**: Update application templates for shape-aware DTOs
-  - Modify `dto.tmpl` to generate shape-specific DTOs
-  - Modify query handlers to accept shape parameter
+- **T3**: Update application templates for shape-aware DTOs ✅
+  - Added capitalize template function for shape name formatting
+  - Modified dto.tmpl to generate shape-specific DTOs ({Entity}{Shape}Dto)
+  - Generate additional DTOs alongside base {Entity}Dto when query shapes configured
+  - Tests passing: TestGenerateProducesShapeSpecificDtos, TestGenerateWithoutQueryShapesProducesOnlyBaseDto
   - Route: inline (templates, no high-risk)
-  - Commit: feat/app-templates-query-shapes
+  - Commit: `1e4f5b5` feat(t3): implement shape-specific DTOs generation
+  - Slice boundary: 2066 lines on feat/v0.7.0-query-shaping
   
 - **T4**: Update infrastructure templates for EF Core shaping
   - Modify `repository-implementation.tmpl` to build Include/ThenInclude chains

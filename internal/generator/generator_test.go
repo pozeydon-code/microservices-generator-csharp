@@ -1929,6 +1929,124 @@ func TestGenerateWithoutQueryShapesProducesOnlyBaseDto(t *testing.T) {
 	}
 }
 
+func TestGenerateRepositoryWithQueryShapesGeneratesShapedMethods(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	cfg := spec.Config{
+		Solution: spec.Solution{Name: "ShopPlatform", Description: "Shop platform."},
+		Services: []spec.Service{{
+			Name: "OrderService",
+			Entities: []spec.Entity{
+				{Name: "Order", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Number", Type: "string"}}},
+				{Name: "OrderItem", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Sku", Type: "string"}}},
+			},
+			Relationships: []spec.Relationship{
+				{Multiplicity: "one-to-many", PrincipalEntity: "Order", DependentEntity: "OrderItem", ForeignKeyName: "OrderId", PrincipalNavigation: "Items", DependentNavigation: "Order"},
+			},
+			QueryShapes: []spec.QueryShape{
+				{Name: "summary", DefaultDepth: 1},
+				{Name: "detail", DefaultDepth: 2},
+			},
+		}},
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	var orderRepo *GeneratedFile
+	for i := range files {
+		if files[i].Path == "OrderService/src/OrderService.Infrastructure/Persistence/Features/Orders/OrderRepository.cs" {
+			orderRepo = &files[i]
+			break
+		}
+	}
+
+	if orderRepo == nil {
+		t.Fatal("expected OrderRepository.cs to be generated")
+	}
+
+	content := string(orderRepo.Content)
+
+	// Verify shaped methods are generated
+	if !strings.Contains(content, "ListShaped_summaryAsync") {
+		t.Error("expected ListShaped_summaryAsync method to be generated")
+	}
+	if !strings.Contains(content, "GetShaped_summaryAsync") {
+		t.Error("expected GetShaped_summaryAsync method to be generated")
+	}
+	if !strings.Contains(content, "ListShaped_detailAsync") {
+		t.Error("expected ListShaped_detailAsync method to be generated")
+	}
+	if !strings.Contains(content, "GetShaped_detailAsync") {
+		t.Error("expected GetShaped_detailAsync method to be generated")
+	}
+
+	// Verify ApplyShaping methods are generated for depth > 0
+	if !strings.Contains(content, "ApplyShaping_summary") {
+		t.Error("expected ApplyShaping_summary method to be generated")
+	}
+	if !strings.Contains(content, "ApplyShaping_detail") {
+		t.Error("expected ApplyShaping_detail method to be generated")
+	}
+
+	// Verify Include statements are present
+	if !strings.Contains(content, ".Include(e => e.Items)") {
+		t.Error("expected Include for Items navigation to be present")
+	}
+}
+
+func TestGenerateRepositoryWithoutQueryShapesDoesNotGenerateShapedMethods(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	cfg := spec.Config{
+		Solution: spec.Solution{Name: "ShopPlatform", Description: "Shop platform."},
+		Services: []spec.Service{{
+			Name: "OrderService",
+			Entities: []spec.Entity{
+				{Name: "Order", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Number", Type: "string"}}},
+			},
+		}},
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	var orderRepo *GeneratedFile
+	for i := range files {
+		if files[i].Path == "OrderService/src/OrderService.Infrastructure/Persistence/Features/Orders/OrderRepository.cs" {
+			orderRepo = &files[i]
+			break
+		}
+	}
+
+	if orderRepo == nil {
+		t.Fatal("expected OrderRepository.cs to be generated")
+	}
+
+	content := string(orderRepo.Content)
+
+	// Verify no shaped methods are generated when no query shapes configured
+	if strings.Contains(content, "ListShaped_") {
+		t.Error("expected no ListShaped_ methods when no query shapes configured")
+	}
+	if strings.Contains(content, "GetShaped_") {
+		t.Error("expected no GetShaped_ methods when no query shapes configured")
+	}
+	if strings.Contains(content, "ApplyShaping_") {
+		t.Error("expected no ApplyShaping_ methods when no query shapes configured")
+	}
+}
+
 func boolPtr(value bool) *bool            { return &value }
 func intPtr(value int) *int               { return &value }
 func stringPtr(value string) *string      { return &value }
