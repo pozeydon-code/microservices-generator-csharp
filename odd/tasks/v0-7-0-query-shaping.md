@@ -87,12 +87,8 @@ Generator automatically:
     * Controller shape parameter validation
   - Route: inline (tests, no high-risk)
   - Commit: `23d4d0d` feat(t6): add golden tests for query shaping
-  - Slice boundary: 7196 lines on feat/v0.7.0-query-shaping
-  - Create test config with query shapes
-  - Generate golden output for shallow and shaped reads
-  - Verify deterministic output
-  - Route: inline (tests, no high-risk)
-  - Commit: test/golden-query-shaping
+  - Additional fix commit: `56d0901` fix(golden): update golden files and fix template trailing newline
+  - Slice boundary: 7238 lines on feat/v0.7.0-query-shaping
 
 ## Log
 L1: User requested to advance v0.7.0 query shaping from OpenSpec specification
