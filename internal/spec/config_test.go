@@ -771,6 +771,74 @@ func TestConfigValidateRejectsInvalidRelationshipMetadata(t *testing.T) {
 	}
 }
 
+func TestConfigValidateAcceptsValidQueryShapes(t *testing.T) {
+	cfg := validConfig()
+	cfg.Services[0].QueryShapes = []QueryShape{
+		{Name: "summary", DefaultDepth: 1},
+		{Name: "detail", DefaultDepth: 2},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid config, got %v", err)
+	}
+}
+
+func TestConfigValidateRejectsInvalidQueryShapeName(t *testing.T) {
+	cfg := validConfig()
+	cfg.Services[0].QueryShapes = []QueryShape{
+		{Name: "123invalid", DefaultDepth: 1},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "queryShapes[0].name") {
+		t.Fatalf("expected error about queryShapes[0].name, got %v", err)
+	}
+}
+
+func TestConfigValidateRejectsDuplicateQueryShapeNames(t *testing.T) {
+	cfg := validConfig()
+	cfg.Services[0].QueryShapes = []QueryShape{
+		{Name: "summary", DefaultDepth: 1},
+		{Name: "summary", DefaultDepth: 2},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "query shape") {
+		t.Fatalf("expected error about duplicate query shape, got %v", err)
+	}
+}
+
+func TestConfigValidateRejectsQueryShapeDepthBelowMinimum(t *testing.T) {
+	cfg := validConfig()
+	cfg.Services[0].QueryShapes = []QueryShape{
+		{Name: "summary", DefaultDepth: 0},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "defaultDepth") {
+		t.Fatalf("expected error about defaultDepth, got %v", err)
+	}
+}
+
+func TestConfigValidateRejectsQueryShapeDepthAboveMaximum(t *testing.T) {
+	cfg := validConfig()
+	cfg.Services[0].QueryShapes = []QueryShape{
+		{Name: "detail", DefaultDepth: 4},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "defaultDepth") {
+		t.Fatalf("expected error about defaultDepth, got %v", err)
+	}
+}
+
 func validConfig() Config {
 	return Config{
 		Solution: Solution{Name: "CommercePlatform", Description: "Product management."},
