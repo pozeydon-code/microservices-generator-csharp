@@ -20,6 +20,10 @@ const (
 	MaxEntitiesPerService       = 100
 	MaxFieldsPerEntity          = 100
 	MaxQueryShapeDepth          = 3
+	
+	GenerationModeSimple      = "simple"
+	GenerationModeEnterprise  = "enterprise"
+	DefaultGenerationMode     = GenerationModeEnterprise
 )
 
 var reservedRelationshipForeignKeyNames = []string{"Id", "RowVersion", "ConcurrencyToken"}
@@ -34,6 +38,7 @@ type Config struct {
 type GenerationOptions struct {
 	TargetFramework            string         `json:"targetFramework,omitempty"`
 	SolutionFormat             string         `json:"solutionFormat,omitempty"`
+	Mode                       string         `json:"mode,omitempty"`
 	EnableValueObjectPreflight bool           `json:"enableValueObjectPreflight,omitempty"`
 	Gateway                    GatewayOptions `json:"gateway,omitempty"`
 }
@@ -176,6 +181,9 @@ func (c Config) Validate() error {
 	if !isSupportedSolutionFormat(c.Generation.SolutionFormat) {
 		problems = append(problems, "generation.solutionFormat must be sln or slnx")
 	}
+	if mode := c.GenerationMode(); mode != GenerationModeSimple && mode != GenerationModeEnterprise {
+		problems = append(problems, "generation.mode must be simple or enterprise")
+	}
 	validateRequiredIdentifier(&problems, "solution.name", c.Solution.Name)
 	validateCount(&problems, "services", len(c.Services), 1, MaxServices)
 
@@ -282,6 +290,14 @@ func (c Config) TargetFramework() string {
 		return DefaultTargetFramework
 	}
 	return strings.TrimSpace(c.Generation.TargetFramework)
+}
+
+func (c Config) GenerationMode() string {
+	mode := strings.TrimSpace(strings.ToLower(c.Generation.Mode))
+	if mode == "" {
+		return DefaultGenerationMode
+	}
+	return mode
 }
 
 func (c Config) SolutionFormat() string {
