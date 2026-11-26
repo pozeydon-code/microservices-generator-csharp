@@ -59,11 +59,13 @@ Generator automatically:
   - Commit: `1e4f5b5` feat(t3): implement shape-specific DTOs generation
   - Slice boundary: 2066 lines on feat/v0.7.0-query-shaping
   
-- **T4**: Update infrastructure templates for EF Core shaping
-  - Modify `repository-implementation.tmpl` to build Include/ThenInclude chains
-  - Implement shape-based projection
+- **T4**: Update infrastructure templates for EF Core shaping ✅
+  - Generate ListShaped_{name}Async and GetShaped_{name}Async methods per shape
+  - Apply Include statements based on entity navigation properties
+  - Tests verify shaped methods, ApplyShaping, and Include statements
   - Route: inline (templates, no high-risk)
-  - Commit: feat/infra-templates-query-shapes
+  - Commit: `d9eb59d` feat(t4): add shaped read methods to repository
+  - Slice boundary: 2209 lines on feat/v0.7.0-query-shaping
   
 - **T5**: Update WebAPI templates for shape parameter
   - Modify `controller.tmpl` to accept `shape` query parameter

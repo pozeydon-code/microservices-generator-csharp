@@ -11,11 +11,32 @@ public sealed class Get{{ .Entity.Name }}ByIdQueryHandler(I{{ .Entity.Name }}Rep
 {
     public async Task<ErrorOr<{{ .Entity.Name }}Dto>> Handle(Get{{ .Entity.Name }}ByIdQuery request, CancellationToken cancellationToken)
     {
+{{- if .Service.HasQueryShapes }}
+        if (request.Shape is not null)
+        {
+            var entity = request.Shape switch
+            {
+{{- range .Service.QueryShapes }}
+                "{{ .Name }}" => await repository.GetShaped_{{ .Name }}Async(request.Id, cancellationToken),
+{{- end }}
+                _ => null
+            };
+            return entity is null
+                ? Error.NotFound(code: "{{ .Entity.Name }}.NotFound", description: "{{ .Entity.Name }} was not found.")
+                : ToDtoFromEntity(entity);
+        }
+{{- end }}
         var snapshot = await repository.GetByIdAsync(request.Id, cancellationToken);
         return snapshot is null
             ? Error.NotFound(code: "{{ .Entity.Name }}.NotFound", description: "{{ .Entity.Name }} was not found.")
             : ToDto(snapshot);
     }
+
+    private static {{ .Entity.Name }}Dto ToDtoFromEntity({{ .Entity.Name }} entity) => new(
+{{ range $index, $field := .Entity.Fields }}{{ if $index }},
+{{ end }}        entity.{{ $field.ValueAccess }}{{ end }}{{ range .Entity.RelationshipScalarFields }},
+        entity.{{ .ValueAccess }}{{ end }},
+        Convert.ToBase64String(entity.RowVersion));
 
     private static {{ .Entity.Name }}Dto ToDto(EntitySnapshot<{{ .Entity.Name }}> snapshot) => new(
 {{ range $index, $field := .Entity.Fields }}{{ if $index }},

@@ -14,9 +14,28 @@ public sealed class List{{ .Entity.Name }}QueryHandler(I{{ .Entity.Name }}Reposi
     public async Task<ErrorOr<PagedResult<{{ .Entity.Name }}Dto>>> Handle(List{{ .Entity.Name }}Query request, CancellationToken cancellationToken)
     {
         var normalized = PaginationPolicy.Normalize(request.Page, request.PageSize);
+{{- if .Service.HasQueryShapes }}
+        if (request.Shape is not null)
+        {
+            var shapedResult = request.Shape switch
+            {
+{{- range .Service.QueryShapes }}
+                "{{ .Name }}" => await repository.ListShaped_{{ .Name }}Async(normalized.Offset, normalized.PageSize, cancellationToken),
+{{- end }}
+                _ => await repository.ListAsync(normalized.Offset, normalized.PageSize, cancellationToken)
+            };
+            return new PagedResult<{{ .Entity.Name }}Dto>(shapedResult.Items.Select(ToDtoFromEntity).ToList(), normalized.Page, normalized.PageSize, shapedResult.TotalCount);
+        }
+{{- end }}
         var result = await repository.ListAsync(normalized.Offset, normalized.PageSize, cancellationToken);
         return new PagedResult<{{ .Entity.Name }}Dto>(result.Items.Select(ToDto).ToList(), normalized.Page, normalized.PageSize, result.TotalCount);
     }
+
+    private static {{ .Entity.Name }}Dto ToDtoFromEntity({{ .Entity.Name }} entity) => new(
+{{ range $index, $field := .Entity.Fields }}{{ if $index }},
+{{ end }}        entity.{{ $field.ValueAccess }}{{ end }}{{ range .Entity.RelationshipScalarFields }},
+        entity.{{ .ValueAccess }}{{ end }},
+        Convert.ToBase64String(entity.RowVersion));
 
     private static {{ .Entity.Name }}Dto ToDto(EntitySnapshot<{{ .Entity.Name }}> snapshot) => new(
 {{ range $index, $field := .Entity.Fields }}{{ if $index }},

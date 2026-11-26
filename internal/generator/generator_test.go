@@ -39,6 +39,164 @@ func TestGeneratedWebApiTestsDoNotContainUnusedJsonPropertyFields(t *testing.T) 
 	assertNotContains(t, content, "AllowedValidationProblemProperties")
 }
 
+func TestGeneratedControllerAcceptsShapeParameter(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	cfg := testConfig()
+	cfg.Services[0].QueryShapes = []spec.QueryShape{
+		{Name: "summary", DefaultDepth: 1},
+		{Name: "detail", DefaultDepth: 2},
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	content := string(generatedContent(
+		t,
+		files,
+		"ProductService/src/ProductService.WebApi/Controllers/Products/ProductController.cs",
+	))
+
+	// Controller should accept shape parameter in List and Get endpoints
+	if !strings.Contains(content, "[FromQuery] string? shape") {
+		t.Error("expected controller to accept shape parameter")
+	}
+
+	// Controller should validate shape against configured shapes
+	if !strings.Contains(content, "IsValidShape") {
+		t.Error("expected controller to validate shape")
+	}
+
+	// Controller should return BadRequest for invalid shape
+	if !strings.Contains(content, "Invalid shape:") {
+		t.Error("expected controller to return error for invalid shape")
+	}
+
+	// Controller should have helper methods for shape validation
+	if !strings.Contains(content, "private static bool IsValidShape") {
+		t.Error("expected IsValidShape helper method")
+	}
+	if !strings.Contains(content, "private static string[] ValidShapes") {
+		t.Error("expected ValidShapes helper method")
+	}
+}
+
+func TestGeneratedQueriesAcceptShapeParameter(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	cfg := testConfig()
+	cfg.Services[0].QueryShapes = []spec.QueryShape{
+		{Name: "summary", DefaultDepth: 1},
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	// Check List query accepts shape parameter
+	listQueryContent := string(generatedContent(
+		t,
+		files,
+		"ProductService/src/ProductService.Application/Products/Queries/List/ListProductQuery.cs",
+	))
+	if !strings.Contains(listQueryContent, "string? Shape") {
+		t.Error("expected List query to accept Shape parameter")
+	}
+
+	// Check GetById query accepts shape parameter
+	getByIdQueryContent := string(generatedContent(
+		t,
+		files,
+		"ProductService/src/ProductService.Application/Products/Queries/GetById/GetProductByIdQuery.cs",
+	))
+	if !strings.Contains(getByIdQueryContent, "string? Shape") {
+		t.Error("expected GetById query to accept Shape parameter")
+	}
+}
+
+func TestGeneratedHandlersUseShapedMethods(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	cfg := testConfig()
+	cfg.Services[0].Entities = []spec.Entity{
+		{
+			Name: "Product",
+			Fields: []spec.Field{
+				{Name: "Id", Type: "Guid"},
+				{Name: "Name", Type: "string"},
+			},
+		},
+		{
+			Name: "Category",
+			Fields: []spec.Field{
+				{Name: "Id", Type: "Guid"},
+				{Name: "Name", Type: "string"},
+			},
+		},
+	}
+	cfg.Services[0].Relationships = []spec.Relationship{
+		{
+			Name:            "ProductCategory",
+			PrincipalEntity: "Product",
+			DependentEntity: "Category",
+			Multiplicity:    "one-to-many",
+		},
+	}
+	cfg.Services[0].QueryShapes = []spec.QueryShape{
+		{Name: "summary", DefaultDepth: 1},
+		{Name: "detail", DefaultDepth: 2},
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	// Check List handler uses shaped methods
+	listHandlerContent := string(generatedContent(
+		t,
+		files,
+		"ProductService/src/ProductService.Application/Products/Queries/List/ListProductQueryHandler.cs",
+	))
+	if !strings.Contains(listHandlerContent, "request.Shape switch") {
+		t.Error("expected List handler to switch on shape")
+	}
+	if !strings.Contains(listHandlerContent, "ListShaped_summaryAsync") {
+		t.Error("expected List handler to call ListShaped_summaryAsync")
+	}
+	if !strings.Contains(listHandlerContent, "ListShaped_detailAsync") {
+		t.Error("expected List handler to call ListShaped_detailAsync")
+	}
+
+	// Check GetById handler uses shaped methods
+	getByIdHandlerContent := string(generatedContent(
+		t,
+		files,
+		"ProductService/src/ProductService.Application/Products/Queries/GetById/GetProductByIdQueryHandler.cs",
+	))
+	if !strings.Contains(getByIdHandlerContent, "request.Shape switch") {
+		t.Error("expected GetById handler to switch on shape")
+	}
+	if !strings.Contains(getByIdHandlerContent, "GetShaped_summaryAsync") {
+		t.Error("expected GetById handler to call GetShaped_summaryAsync")
+	}
+	if !strings.Contains(getByIdHandlerContent, "GetShaped_detailAsync") {
+		t.Error("expected GetById handler to call GetShaped_detailAsync")
+	}
+}
+
 func TestGeneratedReadmeUsesSimpleLocalMigrationCommands(t *testing.T) {
 	gen, err := New()
 	if err != nil {
