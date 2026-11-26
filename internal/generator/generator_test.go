@@ -1828,6 +1828,107 @@ func relationshipGeneratorConfig() spec.Config {
 	return relationshipTestConfig()
 }
 
+func TestGenerateProducesShapeSpecificDtos(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	cfg := spec.Config{
+		Solution: spec.Solution{Name: "ShopPlatform", Description: "Shop platform."},
+		Services: []spec.Service{{
+			Name: "ProductService",
+			Entities: []spec.Entity{{
+				Name:   "Product",
+				Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}},
+			}},
+			QueryShapes: []spec.QueryShape{
+				{Name: "summary", DefaultDepth: 1},
+				{Name: "detail", DefaultDepth: 2},
+			},
+		}},
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	var dtoFile *GeneratedFile
+	for i := range files {
+		if files[i].Path == "ProductService/src/ProductService.Application/Products/Dtos/ProductDto.cs" {
+			dtoFile = &files[i]
+			break
+		}
+	}
+
+	if dtoFile == nil {
+		t.Fatal("expected ProductDto.cs to be generated")
+	}
+
+	content := string(dtoFile.Content)
+
+	// Verificar que se genere el DTO base
+	if !strings.Contains(content, "public sealed record ProductDto(") {
+		t.Error("expected base ProductDto to be generated")
+	}
+
+	// Verificar que se generen DTOs por shape
+	if !strings.Contains(content, "public sealed record ProductSummaryDto(") {
+		t.Error("expected ProductSummaryDto to be generated for 'summary' shape")
+	}
+	if !strings.Contains(content, "public sealed record ProductDetailDto(") {
+		t.Error("expected ProductDetailDto to be generated for 'detail' shape")
+	}
+}
+
+func TestGenerateWithoutQueryShapesProducesOnlyBaseDto(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	cfg := spec.Config{
+		Solution: spec.Solution{Name: "ShopPlatform", Description: "Shop platform."},
+		Services: []spec.Service{{
+			Name: "ProductService",
+			Entities: []spec.Entity{{
+				Name:   "Product",
+				Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}},
+			}},
+		}},
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	var dtoFile *GeneratedFile
+	for i := range files {
+		if files[i].Path == "ProductService/src/ProductService.Application/Products/Dtos/ProductDto.cs" {
+			dtoFile = &files[i]
+			break
+		}
+	}
+
+	if dtoFile == nil {
+		t.Fatal("expected ProductDto.cs to be generated")
+	}
+
+	content := string(dtoFile.Content)
+
+	// Verificar que solo se genere el DTO base
+	if !strings.Contains(content, "public sealed record ProductDto(") {
+		t.Error("expected base ProductDto to be generated")
+	}
+
+	// Verificar que NO se generen DTOs adicionales
+	if strings.Contains(content, "Dto(") && strings.Count(content, "public sealed record") > 1 {
+		t.Error("expected only base ProductDto when no query shapes configured")
+	}
+}
+
 func boolPtr(value bool) *bool            { return &value }
 func intPtr(value int) *int               { return &value }
 func stringPtr(value string) *string      { return &value }
