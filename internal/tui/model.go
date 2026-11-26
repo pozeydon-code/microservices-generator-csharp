@@ -671,10 +671,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.status = statusGenerating
 			m.openScreen(screenGenerate)
-			m.result = application.GenerateResult{}
 			m.err = nil
 			m.errContext = ""
-			m.message = "Generating files..."
+			m.message = ""
 			return m, m.generateCmd()
 		case "e":
 			if m.status == statusRefreshing || m.status == statusGenerating || m.status == statusSaving {
@@ -701,10 +700,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.status = statusGenerating
-				m.result = application.GenerateResult{}
 				m.err = nil
 				m.errContext = ""
-				m.message = "Generating files..."
+				m.message = ""
 				return m, m.generateCmd()
 			}
 			if m.activeScreen() == screenServices {
@@ -808,10 +806,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case generationFinishedMsg:
 		if msg.err != nil {
 			m.status = statusFailed
-			m.result = application.GenerateResult{}
 			m.err = msg.err
 			m.errContext = "Generation"
-			m.message = "Generation failed."
 			if m.returnToWizard && m.guidedWorkspace {
 				m.mode = modeWizard
 				m.wizardScreen = wizardResult
@@ -832,10 +828,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = nil
 		m.errContext = ""
-		m.message = fmt.Sprintf("Generated %d files in %s.", msg.result.Plan.FileCount, msg.result.OutputDir)
-		if msg.result.Warning != "" {
-			m.message += " Warning: " + msg.result.Warning
-		}
+		m.message = ""
 		m.clampSelectedService()
 		m.clampFileCursor()
 		if m.returnToWizard && m.guidedWorkspace {
@@ -1944,10 +1937,6 @@ func relationshipEditItemFromSummary(summary application.RelationshipSummary) re
 	}
 }
 
-func relationshipMultiplicityOptions() []string {
-	return []string{"one-to-many", "many-to-one", "one-to-one"}
-}
-
 func (m Model) newRelationshipEditItem(originalName, name string) relationshipEditItem {
 	entities := m.serviceEntitySummaries()
 	principal, dependent := "Principal", "Dependent"
@@ -2397,10 +2386,11 @@ func (m Model) updateRelationshipsEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "m":
 		if !m.relationshipsEdit.editingText && len(m.relationshipsEdit.relationships) > 0 {
 			selected := &m.relationshipsEdit.relationships[m.relationshipsEdit.selected]
-			if selected.multiplicity == "many-to-many" {
-				return m, nil
+			if selected.multiplicity == "one-to-many" {
+				selected.multiplicity = "many-to-one"
+			} else {
+				selected.multiplicity = "one-to-many"
 			}
-			selected.multiplicity = nextRelationshipMultiplicity(selected.multiplicity)
 		}
 		return m, nil
 	case "e":
@@ -2443,16 +2433,6 @@ func (m Model) updateRelationshipsEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
-}
-
-func nextRelationshipMultiplicity(current string) string {
-	options := relationshipMultiplicityOptions()
-	for index, option := range options {
-		if option == current {
-			return options[(index+1)%len(options)]
-		}
-	}
-	return options[0]
 }
 
 func (m *Model) moveRelationshipSelection(delta int) {
@@ -5878,11 +5858,7 @@ func (m Model) renderRelationshipsEditor(builder *strings.Builder) {
 		return
 	}
 	fmt.Fprintf(builder, "Editing relationships for %s\n", m.relationshipsEdit.serviceName)
-	if m.relationshipsEditContainsManyToMany() {
-		fmt.Fprintln(builder, "Existing many-to-many join links are displayed for compatibility; new many-to-many authoring is not available in this editor.")
-	} else {
-		fmt.Fprintln(builder, "Only one-to-many, many-to-one, and one-to-one relationships are supported.")
-	}
+	fmt.Fprintln(builder, "Only one-to-many and many-to-one relationships are supported.")
 	if m.err != nil {
 		fmt.Fprintf(builder, "Save failed: %v\n", m.err)
 	}
@@ -5906,21 +5882,8 @@ func (m Model) renderRelationshipsEditor(builder *strings.Builder) {
 		return
 	}
 	fmt.Fprintln(builder)
-	if m.relationshipsEditContainsManyToMany() {
-		fmt.Fprintln(builder, "Keys: up/down select, tab field, e edit text, space cycles focused endpoint or toggles required, a add bounded relationship, d delete, enter save, esc cancel.")
-	} else {
-		fmt.Fprintln(builder, "Keys: up/down select, tab field, e edit text, m toggle multiplicity, space cycles focused endpoint or toggles required, a add, d delete, enter save, esc cancel.")
-	}
+	fmt.Fprintln(builder, "Keys: up/down select, tab field, e edit text, m toggle multiplicity, space cycles focused endpoint or toggles required, a add, d delete, enter save, esc cancel.")
 	fmt.Fprintln(builder, "Final validation rejects unsupported multiplicities, missing endpoints, FK conflicts, and navigation collisions before save.")
-}
-
-func (m Model) relationshipsEditContainsManyToMany() bool {
-	for _, relationship := range m.relationshipsEdit.relationships {
-		if relationship.multiplicity == "many-to-many" {
-			return true
-		}
-	}
-	return false
 }
 
 func (m Model) renderValueObjectRulesEditor(builder *strings.Builder) {

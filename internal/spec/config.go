@@ -83,23 +83,19 @@ type Field struct {
 }
 
 type Relationship struct {
-	Name                string   `json:"name,omitempty"`
-	Multiplicity        string   `json:"multiplicity"`
-	PrincipalEntity     string   `json:"principalEntity"`
-	DependentEntity     string   `json:"dependentEntity"`
-	ForeignKeyName      string   `json:"foreignKeyName,omitempty"`
-	ForeignKeyType      string   `json:"foreignKeyType,omitempty"`
-	Required            *bool    `json:"required,omitempty"`
-	PrincipalNavigation string   `json:"principalNavigation,omitempty"`
-	DependentNavigation string   `json:"dependentNavigation,omitempty"`
-	ForeignKeyNames     []string `json:"foreignKeyNames,omitempty"`
-	PrincipalKeyName    string   `json:"principalKeyName,omitempty"`
-	DeleteBehavior      string   `json:"deleteBehavior,omitempty"`
+	Name                string `json:"name,omitempty"`
+	Multiplicity        string `json:"multiplicity"`
+	PrincipalEntity     string `json:"principalEntity"`
+	DependentEntity     string `json:"dependentEntity"`
+	ForeignKeyName      string `json:"foreignKeyName,omitempty"`
+	ForeignKeyType      string `json:"foreignKeyType,omitempty"`
+	Required            *bool  `json:"required,omitempty"`
+	PrincipalNavigation string `json:"principalNavigation,omitempty"`
+	DependentNavigation string `json:"dependentNavigation,omitempty"`
 }
 
 type CanonicalRelationship struct {
 	Name                string
-	Multiplicity        string
 	PrincipalEntity     string
 	DependentEntity     string
 	ForeignKeyName      string
@@ -381,44 +377,16 @@ func validateRelationships(problems *[]string, servicePath string, service Servi
 	seenEdges := map[string]struct{}{}
 	seenPrincipalNavigations := map[string]struct{}{}
 	seenDependentNavigations := map[string]struct{}{}
-	seenForeignKeysByDependent := map[string]map[string]string{}
-	seenDependentNavigationsByDependent := map[string]map[string]string{}
-	manyToManyGroups := map[string]*manyToManyJoinGroup{}
 
 	for relationshipIndex, relationship := range service.Relationships {
 		relationshipPath := fmt.Sprintf("%s.relationships[%d]", servicePath, relationshipIndex)
 		canonical := relationship.canonical()
-		manyToMany := relationship.Multiplicity == "many-to-many"
 
 		if strings.TrimSpace(relationship.Name) != "" {
 			validateRequiredIdentifier(problems, relationshipPath+".name", relationship.Name)
 		}
-		if relationship.Multiplicity != "one-to-many" && relationship.Multiplicity != "many-to-one" && relationship.Multiplicity != "one-to-one" && !manyToMany {
-			*problems = append(*problems, relationshipPath+".multiplicity must be one-to-many, many-to-one, one-to-one, or many-to-many")
-		}
-		if len(relationship.ForeignKeyNames) > 0 {
-			if manyToMany {
-				*problems = append(*problems, relationshipPath+".foreignKeyNames is not supported; many-to-many join relationships use one required FK per principal link")
-			} else {
-				*problems = append(*problems, relationshipPath+".foreignKeyNames is not supported; use foreignKeyName for a single dependent FK")
-			}
-		}
-		if strings.TrimSpace(relationship.PrincipalKeyName) != "" {
-			if manyToMany {
-				*problems = append(*problems, relationshipPath+".principalKeyName is not supported; many-to-many join relationships use the principal Id key")
-			} else {
-				*problems = append(*problems, relationshipPath+".principalKeyName is not supported; one-to-one uses the principal Id key")
-			}
-		}
-		if strings.TrimSpace(relationship.DeleteBehavior) != "" {
-			if manyToMany {
-				*problems = append(*problems, relationshipPath+".deleteBehavior is not supported; many-to-many join relationships use Restrict delete behavior")
-			} else {
-				*problems = append(*problems, relationshipPath+".deleteBehavior is not supported; one-to-one uses Restrict delete behavior")
-			}
-		}
-		if manyToMany {
-			validateManyToManyJoinLink(problems, relationshipPath, canonical, relationship.Required, manyToManyGroups)
+		if relationship.Multiplicity != "one-to-many" && relationship.Multiplicity != "many-to-one" {
+			*problems = append(*problems, relationshipPath+".multiplicity must be one-to-many or many-to-one")
 		}
 		validateRequiredIdentifier(problems, relationshipPath+".principalEntity", relationship.PrincipalEntity)
 		validateRequiredIdentifier(problems, relationshipPath+".dependentEntity", relationship.DependentEntity)
@@ -450,51 +418,10 @@ func validateRelationships(problems *[]string, servicePath string, service Servi
 		} else {
 			seenEdges[edgeKey] = struct{}{}
 		}
-		if canonical.Multiplicity == "one-to-one" {
-			inverseKey := strings.ToLower(canonical.DependentEntity + "\x00" + canonical.PrincipalEntity)
-			if _, exists := seenEdges[inverseKey]; exists {
-				*problems = append(*problems, fmt.Sprintf("%s duplicates inverse one-to-one relationship %s-%s", relationshipPath, canonical.PrincipalEntity, canonical.DependentEntity))
-			}
-			seenEdges[strings.ToLower(canonical.PrincipalEntity+"\x00"+canonical.DependentEntity)] = struct{}{}
-		}
 
 		if _, ok := supportedFieldTypes[canonical.ForeignKeyType]; !ok {
 			*problems = append(*problems, fmt.Sprintf("%s.foreignKeyType must be a supported scalar primitive: %s", relationshipPath, strings.Join(SupportedFieldTypes(), ", ")))
 		}
-		if canonical.Multiplicity == "one-to-one" && canonical.ForeignKeyType != "Guid" {
-			*problems = append(*problems, relationshipPath+".foreignKeyType must be Guid for one-to-one relationships because the principal key is Id")
-		}
-		if strings.EqualFold(canonical.ForeignKeyName, canonical.DependentNavigation) {
-			*problems = append(*problems, fmt.Sprintf("%s.foreignKeyName must not equal dependentNavigation because both generate members on %s", relationshipPath, canonical.DependentEntity))
-		}
-		dependentKey := strings.ToLower(canonical.DependentEntity)
-		foreignKeyNameKey := strings.ToLower(canonical.ForeignKeyName)
-		dependentNavigationKey := strings.ToLower(canonical.DependentNavigation)
-		if generatedForeignKeys := seenForeignKeysByDependent[dependentKey]; generatedForeignKeys != nil {
-			if collidingForeignKeyName, exists := generatedForeignKeys[foreignKeyNameKey]; exists {
-				if manyToMany {
-					*problems = append(*problems, fmt.Sprintf("%s duplicates generated foreignKeyName %s on join entity %s", relationshipPath, canonical.ForeignKeyName, canonical.DependentEntity))
-				} else {
-					*problems = append(*problems, fmt.Sprintf("%s.foreignKeyName %s duplicates generated foreignKeyName %s on dependent entity %s", relationshipPath, canonical.ForeignKeyName, collidingForeignKeyName, canonical.DependentEntity))
-				}
-			}
-			if collidingForeignKeyName, exists := generatedForeignKeys[dependentNavigationKey]; exists {
-				*problems = append(*problems, fmt.Sprintf("%s.dependentNavigation %s must not collide with generated foreignKeyName %s on dependent entity %s", relationshipPath, canonical.DependentNavigation, collidingForeignKeyName, canonical.DependentEntity))
-			}
-		}
-		if dependentNavigations := seenDependentNavigationsByDependent[dependentKey]; dependentNavigations != nil {
-			if collidingDependentNavigation, exists := dependentNavigations[foreignKeyNameKey]; exists {
-				*problems = append(*problems, fmt.Sprintf("%s.foreignKeyName %s must not collide with dependentNavigation %s on dependent entity %s", relationshipPath, canonical.ForeignKeyName, collidingDependentNavigation, canonical.DependentEntity))
-			}
-		}
-		if seenForeignKeysByDependent[dependentKey] == nil {
-			seenForeignKeysByDependent[dependentKey] = map[string]string{}
-		}
-		seenForeignKeysByDependent[dependentKey][foreignKeyNameKey] = canonical.ForeignKeyName
-		if seenDependentNavigationsByDependent[dependentKey] == nil {
-			seenDependentNavigationsByDependent[dependentKey] = map[string]string{}
-		}
-		seenDependentNavigationsByDependent[dependentKey][dependentNavigationKey] = canonical.DependentNavigation
 		if reservedName, reserved := reservedRelationshipForeignKeyName(canonical.ForeignKeyName); reserved {
 			*problems = append(*problems, fmt.Sprintf("%s.foreignKeyName %s is reserved for generated %s members", relationshipPath, canonical.ForeignKeyName, reservedName))
 		}
@@ -511,47 +438,6 @@ func validateRelationships(problems *[]string, servicePath string, service Servi
 		}
 		addUnique(problems, seenPrincipalNavigations, canonical.PrincipalEntity+"."+canonical.PrincipalNavigation, "principal navigation in service "+service.Name)
 		addUnique(problems, seenDependentNavigations, canonical.DependentEntity+"."+canonical.DependentNavigation, "dependent navigation in service "+service.Name)
-	}
-	validateManyToManyJoinGroups(problems, service.Name, manyToManyGroups)
-}
-
-type manyToManyJoinGroup struct {
-	joinEntity string
-	paths      []string
-	principals map[string]string
-}
-
-func validateManyToManyJoinLink(problems *[]string, relationshipPath string, canonical CanonicalRelationship, required *bool, groups map[string]*manyToManyJoinGroup) {
-	if canonical.Name == "" {
-		*problems = append(*problems, relationshipPath+".name is required for many-to-many join relationships")
-	}
-	if canonical.Name != "" && !strings.EqualFold(canonical.Name, canonical.DependentEntity) {
-		*problems = append(*problems, fmt.Sprintf("%s.name must reference the dependent join entity %s", relationshipPath, canonical.DependentEntity))
-	}
-	if required != nil && !*required {
-		*problems = append(*problems, relationshipPath+".required must be true for many-to-many join relationships")
-	}
-	if canonical.ForeignKeyType != "Guid" {
-		*problems = append(*problems, relationshipPath+".foreignKeyType must be Guid for many-to-many join relationships because the principal key is Id")
-	}
-	key := strings.ToLower(canonical.DependentEntity)
-	if groups[key] == nil {
-		groups[key] = &manyToManyJoinGroup{joinEntity: canonical.DependentEntity, principals: map[string]string{}}
-	}
-	groups[key].paths = append(groups[key].paths, relationshipPath)
-	if strings.TrimSpace(canonical.PrincipalEntity) != "" {
-		groups[key].principals[strings.ToLower(canonical.PrincipalEntity)] = canonical.PrincipalEntity
-	}
-}
-
-func validateManyToManyJoinGroups(problems *[]string, serviceName string, groups map[string]*manyToManyJoinGroup) {
-	for _, group := range groups {
-		if len(group.paths) != 2 {
-			*problems = append(*problems, fmt.Sprintf("many-to-many join entity %s must declare exactly two principal links in service %s", group.joinEntity, serviceName))
-		}
-		if len(group.paths) == 2 && len(group.principals) != 2 {
-			*problems = append(*problems, fmt.Sprintf("many-to-many join entity %s must reference two different principal entities", group.joinEntity))
-		}
 	}
 }
 
@@ -580,9 +466,6 @@ func (r Relationship) canonical() CanonicalRelationship {
 	principalNavigation := strings.TrimSpace(r.PrincipalNavigation)
 	if principalNavigation == "" {
 		principalNavigation = strings.TrimSpace(r.DependentEntity) + "s"
-		if strings.TrimSpace(r.Multiplicity) == "one-to-one" {
-			principalNavigation = strings.TrimSpace(r.DependentEntity)
-		}
 	}
 	dependentNavigation := strings.TrimSpace(r.DependentNavigation)
 	if dependentNavigation == "" {
@@ -590,7 +473,6 @@ func (r Relationship) canonical() CanonicalRelationship {
 	}
 	return CanonicalRelationship{
 		Name:                strings.TrimSpace(r.Name),
-		Multiplicity:        canonicalMultiplicity(r.Multiplicity),
 		PrincipalEntity:     strings.TrimSpace(r.PrincipalEntity),
 		DependentEntity:     strings.TrimSpace(r.DependentEntity),
 		ForeignKeyName:      foreignKeyName,
@@ -599,14 +481,6 @@ func (r Relationship) canonical() CanonicalRelationship {
 		PrincipalNavigation: principalNavigation,
 		DependentNavigation: dependentNavigation,
 	}
-}
-
-func canonicalMultiplicity(multiplicity string) string {
-	trimmed := strings.TrimSpace(multiplicity)
-	if trimmed == "many-to-many" {
-		return "one-to-many"
-	}
-	return trimmed
 }
 
 func findField(entity Entity, name string) (Field, bool) {

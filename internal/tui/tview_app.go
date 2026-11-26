@@ -1240,9 +1240,8 @@ func (ui *tviewUI) openRelationshipEdit(title string, state *tviewRelationshipsE
 	entityNames := tviewRelationshipEntityNames(ui.plan.Config.Services, state.serviceName)
 	form := tview.NewForm()
 	addEditInputField(form, "Name", row.name)
-	multiplicityOptions := relationshipMultiplicityOptions()
-	form.AddDropDown("Multiplicity", multiplicityOptions, selectedStringIndex(multiplicityOptions, row.multiplicity), func(_ string, optionIndex int) {
-		row.multiplicity = multiplicityOptions[optionIndex]
+	form.AddDropDown("Multiplicity", []string{"one-to-many", "many-to-one"}, selectedStringIndex([]string{"one-to-many", "many-to-one"}, row.multiplicity), func(_ string, optionIndex int) {
+		row.multiplicity = []string{"one-to-many", "many-to-one"}[optionIndex]
 	})
 	form.AddDropDown("Principal entity", entityNames, selectedStringIndex(entityNames, row.principalEntity), func(value string, _ int) { row.principalEntity = value })
 	form.AddDropDown("Dependent entity", entityNames, selectedStringIndex(entityNames, row.dependentEntity), func(value string, _ int) { row.dependentEntity = value })
@@ -2087,9 +2086,6 @@ func (ui *tviewUI) generateFiles() {
 		return
 	}
 	ui.generating = true
-	ui.result = application.GenerateResult{}
-	ui.err = nil
-	ui.message = "Generating files..."
 	request := ui.request
 	go func() {
 		result, err := ui.generate(request)
@@ -2102,7 +2098,6 @@ func (ui *tviewUI) generateFiles() {
 func (ui *tviewUI) finishGeneration(result application.GenerateResult, err error) {
 	ui.generating = false
 	if err != nil {
-		ui.result = application.GenerateResult{}
 		ui.err = err
 		ui.message = "Generation failed."
 		ui.open(tviewScreenResult)

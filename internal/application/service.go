@@ -553,10 +553,7 @@ func (s Service) UpdateRelationshipSettings(request GenerateRequest, settings Re
 func validateEditableRelationships(settings []RelationshipSetting) error {
 	for _, relationship := range settings {
 		multiplicity := strings.TrimSpace(relationship.Multiplicity)
-		if multiplicity == "many-to-many" && strings.TrimSpace(relationship.OriginalName) != "" {
-			continue
-		}
-		if multiplicity != "one-to-many" && multiplicity != "many-to-one" && multiplicity != "one-to-one" {
+		if multiplicity != "one-to-many" && multiplicity != "many-to-one" {
 			return fmt.Errorf("relationship multiplicity %q is not editable", relationship.Multiplicity)
 		}
 	}
@@ -1071,18 +1068,8 @@ func readinessSummary(summary ConfigSummary, outputForceRequired bool) Readiness
 
 func relationshipSummaryCount(services []ServiceSummary) int {
 	count := 0
-	seenManyToMany := map[string]bool{}
 	for _, service := range services {
-		for _, relationship := range service.Relationships {
-			if relationship.Multiplicity == "many-to-many" && relationship.Name != "" {
-				key := service.Name + "/" + relationship.Name
-				if seenManyToMany[key] {
-					continue
-				}
-				seenManyToMany[key] = true
-			}
-			count++
-		}
+		count += len(service.Relationships)
 	}
 	return count
 }
@@ -1103,9 +1090,6 @@ func summarizeRelationship(relationship spec.Relationship) RelationshipSummary {
 	principalNavigation := strings.TrimSpace(relationship.PrincipalNavigation)
 	if principalNavigation == "" {
 		principalNavigation = strings.TrimSpace(relationship.DependentEntity) + "s"
-		if strings.TrimSpace(relationship.Multiplicity) == "one-to-one" {
-			principalNavigation = strings.TrimSpace(relationship.DependentEntity)
-		}
 	}
 	dependentNavigation := strings.TrimSpace(relationship.DependentNavigation)
 	if dependentNavigation == "" {
@@ -1115,17 +1099,9 @@ func summarizeRelationship(relationship spec.Relationship) RelationshipSummary {
 	if !required {
 		requiredLabel = "optional"
 	}
-	cardinality := "1-*"
-	multiplicity := strings.TrimSpace(relationship.Multiplicity)
-	if multiplicity == "one-to-one" {
-		cardinality = "1-1"
-	} else if multiplicity == "many-to-many" {
-		cardinality = "*-*"
-		requiredLabel += " join link"
-	}
 	return RelationshipSummary{
 		Name:                strings.TrimSpace(relationship.Name),
-		Multiplicity:        multiplicity,
+		Multiplicity:        strings.TrimSpace(relationship.Multiplicity),
 		PrincipalEntity:     strings.TrimSpace(relationship.PrincipalEntity),
 		DependentEntity:     strings.TrimSpace(relationship.DependentEntity),
 		ForeignKeyName:      foreignKeyName,
@@ -1133,7 +1109,7 @@ func summarizeRelationship(relationship spec.Relationship) RelationshipSummary {
 		Required:            required,
 		PrincipalNavigation: principalNavigation,
 		DependentNavigation: dependentNavigation,
-		Summary:             fmt.Sprintf("%s %s %s via %s (%s)", strings.TrimSpace(relationship.PrincipalEntity), cardinality, strings.TrimSpace(relationship.DependentEntity), foreignKeyName, requiredLabel),
+		Summary:             fmt.Sprintf("%s 1-* %s via %s (%s)", strings.TrimSpace(relationship.PrincipalEntity), strings.TrimSpace(relationship.DependentEntity), foreignKeyName, requiredLabel),
 	}
 }
 

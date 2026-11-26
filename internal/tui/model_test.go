@@ -922,44 +922,6 @@ func TestRelationshipEditorChangesEndpointsThroughBoundedKeyPathBeforeSaving(t *
 	}
 }
 
-func TestRelationshipEditorCyclesOneToOneAndSavesIt(t *testing.T) {
-	plan := wizardPlanWithRelationships()
-	var captured application.RelationshipSettings
-	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
-	model.updateRelationships = func(_ application.GenerateRequest, settings application.RelationshipSettings) (application.UpdateRelationshipSettingsResult, error) {
-		captured = settings
-		return application.UpdateRelationshipSettingsResult{Saved: true, Plan: plan}, nil
-	}
-	model.startRelationshipsEditing()
-
-	for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune{'m'}}, {Type: tea.KeyRunes, Runes: []rune{'m'}}} {
-		updated, cmd := model.Update(key)
-		model = updated.(Model)
-		if cmd != nil {
-			updated, _ = model.Update(cmd())
-			model = updated.(Model)
-		}
-	}
-	view := stripANSI(model.View())
-	assertContains(t, view, "one-to-one")
-	assertNotContains(t, view, "many-to-many")
-	assertNotContains(t, view, "cross-service")
-
-	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if cmd != nil {
-		updated, _ = model.Update(cmd())
-		model = updated.(Model)
-	}
-
-	if model.status != statusReady || len(captured.Relationships) != 1 {
-		t.Fatalf("expected one-to-one relationship save to complete, status=%v settings=%#v", model.status, captured)
-	}
-	if got := captured.Relationships[0].Multiplicity; got != "one-to-one" {
-		t.Fatalf("expected multiplicity to cycle to one-to-one, got %q", got)
-	}
-}
-
 func TestRelationshipEditorRejectsUnsupportedMultiplicityBeforeSaving(t *testing.T) {
 	model := NewModel(wizardPlanWithRelationships(), application.GenerateRequest{}, nil, nil, nil)
 	model.updateRelationships = func(application.GenerateRequest, application.RelationshipSettings) (application.UpdateRelationshipSettingsResult, error) {
@@ -977,54 +939,6 @@ func TestRelationshipEditorRejectsUnsupportedMultiplicityBeforeSaving(t *testing
 		t.Fatalf("expected rejected relationship save to keep editor, status=%v mode=%v err=%v", model.status, model.edit.mode, model.err)
 	}
 	assertContains(t, stripANSI(model.View()), "many-to-many")
-}
-
-func TestRelationshipEditorDisplaysAndSavesExistingExplicitManyToManyJoinRelationships(t *testing.T) {
-	plan := wizardPlanWithExplicitManyToManyJoin()
-	var captured application.RelationshipSettings
-	model := NewModel(plan, application.GenerateRequest{}, nil, nil, nil)
-	model.updateRelationships = func(_ application.GenerateRequest, settings application.RelationshipSettings) (application.UpdateRelationshipSettingsResult, error) {
-		captured = settings
-		return application.UpdateRelationshipSettingsResult{Saved: true, Plan: plan}, nil
-	}
-	model.startRelationshipsEditing()
-
-	view := stripANSI(model.View())
-	assertContains(t, view, "Existing many-to-many join links are displayed for compatibility; new many-to-many authoring is not available in this editor.")
-	assertContains(t, view, "StudentCourse: many-to-many Student -> StudentCourse via StudentId:Guid")
-	assertContains(t, view, "StudentCourse: many-to-many Course -> StudentCourse via CourseId:Guid")
-	assertNotContains(t, view, "m toggle multiplicity")
-
-	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	model = updated.(Model)
-	if cmd == nil || model.status != statusSaving {
-		t.Fatalf("expected existing explicit join save command, got status=%v cmd=%v", model.status, cmd)
-	}
-	updated, _ = model.Update(cmd())
-	model = updated.(Model)
-
-	if model.status != statusReady || len(captured.Relationships) != 2 {
-		t.Fatalf("expected existing explicit join save to complete, status=%v settings=%#v", model.status, captured)
-	}
-	if captured.Relationships[0].Multiplicity != "many-to-many" || captured.Relationships[1].Multiplicity != "many-to-many" || captured.Relationships[0].OriginalName != "StudentCourse" || captured.Relationships[1].OriginalName != "StudentCourse" {
-		t.Fatalf("expected existing explicit join links to be preserved, got %#v", captured.Relationships)
-	}
-}
-
-func TestRelationshipEditorDoesNotCycleExistingExplicitManyToManyIntoShorthandAuthoring(t *testing.T) {
-	model := NewModel(wizardPlanWithExplicitManyToManyJoin(), application.GenerateRequest{}, nil, nil, nil)
-	model.startRelationshipsEditing()
-	model.relationshipsEdit.focused = relationshipEditFieldMultiplicity
-
-	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
-	model = updated.(Model)
-
-	if cmd != nil {
-		t.Fatalf("expected multiplicity guard to avoid commands, got %v", cmd)
-	}
-	if got := model.relationshipsEdit.relationships[0].multiplicity; got != "many-to-many" {
-		t.Fatalf("expected existing explicit join multiplicity to remain many-to-many, got %q", got)
-	}
 }
 
 func TestTViewRelationshipStateMapsRowsToApplicationSettings(t *testing.T) {
@@ -1081,21 +995,6 @@ func TestTViewRelationshipManagerSavesEditedEndpoints(t *testing.T) {
 	}
 	if !strings.Contains(ui.message, "Relationships saved") {
 		t.Fatalf("expected relationship save confirmation, got %q", ui.message)
-	}
-}
-
-func TestTViewRelationshipEditOffersOneToOneWithoutUnsupportedScopes(t *testing.T) {
-	options := relationshipMultiplicityOptions()
-
-	if !reflect.DeepEqual(options, []string{"one-to-many", "many-to-one", "one-to-one"}) {
-		t.Fatalf("expected bounded relationship multiplicity options, got %#v", options)
-	}
-	for _, unsupported := range []string{"many-to-many", "cross-service"} {
-		for _, option := range options {
-			if option == unsupported {
-				t.Fatalf("unsupported relationship scope %q must not be exposed in tview options %#v", unsupported, options)
-			}
-		}
 	}
 }
 
@@ -4278,109 +4177,6 @@ func TestModelUpdateStartsGenerationOnConfirmedKey(t *testing.T) {
 	assertNotContains(t, view, "Exit: q/esc/ctrl+c")
 }
 
-func TestModelUpdateKeepsGenerationStateCurrent(t *testing.T) {
-	tests := []struct {
-		name       string
-		startModel func() Model
-		msg        tea.Msg
-		wantStatus modelStatus
-		wantScreen workspaceScreen
-		wantOutput string
-		wantErr    bool
-	}{
-		{
-			name: "start clears stale result and reports progress",
-			startModel: func() Model {
-				model := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, func(application.GenerateRequest) (application.GenerateResult, error) {
-					return application.GenerateResult{Plan: application.GenerationPlan{FileCount: 3}, OutputDir: "out/current"}, nil
-				}, nil)
-				model.status = statusFailed
-				model.err = errors.New("previous generation failed")
-				model.errContext = "Generation"
-				model.result = application.GenerateResult{Plan: application.GenerationPlan{FileCount: 9}, OutputDir: "out/stale"}
-				model.message = "Generated 9 files in out/stale."
-				return model
-			},
-			msg:        tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}},
-			wantStatus: statusGenerating,
-			wantScreen: screenGenerate,
-			wantOutput: "",
-		},
-		{
-			name: "success stores visible result without in-progress state",
-			startModel: func() Model {
-				model := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil)
-				model.status = statusGenerating
-				return model
-			},
-			msg:        generationFinishedMsg{result: application.GenerateResult{Plan: application.GenerationPlan{FileCount: 3}, OutputDir: "out/current"}},
-			wantStatus: statusGenerated,
-			wantScreen: screenResult,
-			wantOutput: "out/current",
-		},
-		{
-			name: "failure clears stale success result and leaves visible failure",
-			startModel: func() Model {
-				model := workspaceModel(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil, nil)
-				model.status = statusGenerating
-				model.result = application.GenerateResult{Plan: application.GenerationPlan{FileCount: 9}, OutputDir: "out/stale"}
-				model.message = "Generated 9 files in out/stale."
-				return model
-			},
-			msg:        generationFinishedMsg{err: errors.New("write failed")},
-			wantStatus: statusFailed,
-			wantScreen: screenResult,
-			wantOutput: "",
-			wantErr:    true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			updated, cmd := tt.startModel().Update(tt.msg)
-			updatedModel := updated.(Model)
-
-			if updatedModel.status != tt.wantStatus {
-				t.Fatalf("expected status %v, got %v", tt.wantStatus, updatedModel.status)
-			}
-			if updatedModel.activeScreen() != tt.wantScreen {
-				t.Fatalf("expected screen %v, got %v", tt.wantScreen, updatedModel.activeScreen())
-			}
-			if updatedModel.result.OutputDir != tt.wantOutput {
-				t.Fatalf("expected output %q, got %q", tt.wantOutput, updatedModel.result.OutputDir)
-			}
-			if (updatedModel.err != nil) != tt.wantErr {
-				t.Fatalf("expected err presence %v, got %v", tt.wantErr, updatedModel.err)
-			}
-			view := updatedModel.View()
-			assertNotContains(t, view, "out/stale")
-			assertNotContains(t, view, "Generated 9 files")
-			if tt.wantStatus == statusGenerating && cmd == nil {
-				t.Fatal("expected generation command")
-			}
-			if tt.wantStatus != statusGenerating && cmd != nil {
-				t.Fatal("expected no command after generation completion")
-			}
-		})
-	}
-}
-
-func TestTViewFinishGenerationClearsStaleAsyncState(t *testing.T) {
-	ui := newTViewUI(application.GenerationPlan{}, application.GenerateRequest{}, nil, nil)
-	ui.result = application.GenerateResult{Plan: application.GenerationPlan{FileCount: 9}, OutputDir: "out/stale"}
-	ui.message = "Generated 9 files in out/stale."
-	ui.generating = true
-
-	ui.finishGeneration(application.GenerateResult{}, errors.New("write failed"))
-
-	if ui.generating || ui.result.OutputDir != "" || ui.err == nil || ui.screen != tviewScreenResult {
-		t.Fatalf("expected failed generation to clear stale result and open Result, got generating=%v result=%#v err=%v screen=%d", ui.generating, ui.result, ui.err, ui.screen)
-	}
-	if !strings.Contains(ui.message, "Generation failed") || strings.Contains(ui.message, "out/stale") {
-		t.Fatalf("expected visible failure without stale output, got %q", ui.message)
-	}
-}
-
 func TestModelUpdateStartsRefreshOnRefreshKey(t *testing.T) {
 	request := application.GenerateRequest{ConfigPath: "config.json", OutputDir: "/tmp/generated", Force: true}
 	model := workspaceModel(application.GenerationPlan{}, request, func(actual application.GenerateRequest) (application.GenerationPlan, error) {
@@ -6353,21 +6149,6 @@ func wizardPlanWithRelationships() application.GenerationPlan {
 		{Name: "Product", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}},
 	}
 	plan.Config.Services[0].Relationships = []application.RelationshipSummary{{Name: "ProductCategory", Multiplicity: "one-to-many", PrincipalEntity: "Category", DependentEntity: "Product", ForeignKeyName: "CategoryId", ForeignKeyType: "Guid", Required: true, PrincipalNavigation: "Products", DependentNavigation: "Category", Summary: "Category 1-* Product via CategoryId (required)"}}
-	return plan
-}
-
-func wizardPlanWithExplicitManyToManyJoin() application.GenerationPlan {
-	plan := wizardPlan()
-	plan.Config.Services[0].Name = "EnrollmentService"
-	plan.Config.Services[0].Entities = []application.EntitySummary{
-		{Name: "Student", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}}},
-		{Name: "Course", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "Title", Type: "string"}}},
-		{Name: "StudentCourse", Fields: []application.FieldSummary{{Name: "Id", Type: "Guid"}, {Name: "EnrolledAt", Type: "DateTime"}}},
-	}
-	plan.Config.Services[0].Relationships = []application.RelationshipSummary{
-		{Name: "StudentCourse", Multiplicity: "many-to-many", PrincipalEntity: "Student", DependentEntity: "StudentCourse", ForeignKeyName: "StudentId", ForeignKeyType: "Guid", Required: true, PrincipalNavigation: "StudentCourses", DependentNavigation: "Student", Summary: "Student *-* StudentCourse via StudentId (required join link)"},
-		{Name: "StudentCourse", Multiplicity: "many-to-many", PrincipalEntity: "Course", DependentEntity: "StudentCourse", ForeignKeyName: "CourseId", ForeignKeyType: "Guid", Required: true, PrincipalNavigation: "StudentCourses", DependentNavigation: "Course", Summary: "Course *-* StudentCourse via CourseId (required join link)"},
-	}
 	return plan
 }
 
