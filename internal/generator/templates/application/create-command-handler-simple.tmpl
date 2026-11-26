@@ -1,0 +1,47 @@
+using ErrorOr;
+using {{ .Service.Name }}.Application.Common;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Dtos;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Interfaces;
+using {{ .Service.Name }}.Domain.Entities;
+{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.ValueObjects;
+{{ end }}
+
+namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Services;
+
+public sealed class Create{{ .Entity.Name }}Service(I{{ .Entity.Name }}Repository repository, IUnitOfWork unitOfWork)
+{
+    public async Task<ErrorOr<{{ .Entity.Name }}Dto>> Execute(Create{{ .Entity.Name }}Request request, CancellationToken cancellationToken)
+    {
+{{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        var {{ .CamelName }}Result = {{ .DomainType }}.Create(request.{{ .Name }}, "{{ .CamelName }}");
+        if ({{ .CamelName }}Result.IsFailure)
+        {
+            return {{ .CamelName }}Result.Errors.Select(e => Error.Validation(
+                code: e.Code,
+                description: e.Message,
+                metadata: new Dictionary<string, object> { ["field"] = e.Field ?? "{{ .CamelName }}" })).ToList();
+        }
+
+{{ end }}{{ end }}        var entity = {{ .Entity.Name }}.Create(new {{ .Entity.Name }}State
+        {
+{{ range .Entity.NonIDFields }}            {{ .Name }} = {{ if .IsValueObject }}{{ .CamelName }}Result.Value{{ else }}request.{{ .Name }}{{ end }},
+{{ end }}{{ range .Entity.RelationshipScalarFields }}            {{ .Name }} = request.{{ .Name }},
+{{ end }}        });
+        
+        await repository.AddAsync(entity, cancellationToken);
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            return Error.Conflict(code: "{{ .Entity.Name }}.ConcurrencyConflict", description: "{{ .Entity.Name }} was changed by another request.");
+        }
+
+        return ToDto(entity);
+    }
+
+    private static {{ .Entity.Name }}Dto ToDto({{ .Entity.Name }} entity) => new(
+{{ range $index, $field := .Entity.Fields }}{{ if $index }},
+{{ end }}        entity.{{ $field.ValueAccess }}{{ end }}{{ range .Entity.RelationshipScalarFields }},
+        entity.{{ .ValueAccess }}{{ end }});
+}

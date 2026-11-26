@@ -33,14 +33,14 @@ Implement 5 major improvements to reduce over-engineering and add flexibility to
 
 ## Tasks
 
-### T1: Add generation mode to spec [S1]
+### T1: Add generation mode to spec [S1] ✅
 - Add `Mode` field to GenerationOptions in spec/config.go
 - Validate mode is "simple" or "enterprise" (default: "enterprise")
 - Add tests for validation
 - Route: inline (spec model)
-- Commit: `feat/spec-add-generation-mode`
+- Commit: `0068c18` feat(spec): add generation mode (simple/enterprise) to config
 
-### T2: Create simple mode templates [S1]
+### T2: Create simple mode templates [S1] - IN PROGRESS
 - Create alternative templates for simple mode:
   - Direct handlers (no MediatR)
   - Simple DTOs (no EntitySnapshot)
@@ -48,7 +48,6 @@ Implement 5 major improvements to reduce over-engineering and add flexibility to
 - Add template selection logic in generator
 - Add tests for both modes
 - Route: inline (templates)
-- Commit: `feat/templates-simple-mode`
 
 ### T3: Unify error handling with ErrorOr [S2]
 - Remove DomainResult<T> from Domain/Primitives

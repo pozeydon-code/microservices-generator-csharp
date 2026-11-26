@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "generation": {
+    "targetFramework": "net8.0",
+    "solutionFormat": "sln",
+    "mode": "simple",
+    "enableValueObjectPreflight": false,
+    "gateway": {
+      "enabled": false
+    }
+  },
+  "solution": {
+    "name": "SimpleModeTest",
+    "description": "Test project for simple generation mode"
+  },
+  "services": [
+    {
+      "name": "ProductService",
+      "valueObjects": [
+        {
+          "name": "ProductName",
+          "type": "string",
+          "validations": {
+            "required": true,
+            "minLength": 3,
+            "maxLength": 100
+          }
+        }
+      ],
+      "entities": [
+        {
+          "name": "Product",
+          "fields": [
+            {"name": "Id", "type": "Guid"},
+            {"name": "Name", "type": "ProductName"},
+            {"name": "Price", "type": "decimal"}
+          ]
+        }
+      ],
+      "relationships": []
+    }
+  ]
+}

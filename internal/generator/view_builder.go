@@ -15,6 +15,7 @@ type SolutionTemplateData struct {
 	Solution                   spec.Solution
 	TargetFramework            string
 	SolutionFormat             string
+	GenerationMode             string
 	PackageVersions            []PackageVersion
 	MediatRVersion             string
 	FluentValidationVersion    string
@@ -55,6 +56,7 @@ type PackageVersion struct {
 type ServiceView struct {
 	Name                       string
 	SolutionFileName           string
+	GenerationMode             string
 	MediatRVersion             string
 	FluentValidationVersion    string
 	ErrorOrVersion             string
@@ -225,6 +227,7 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 		Solution:                   cfg.Solution,
 		TargetFramework:            targetFramework,
 		SolutionFormat:             solutionFormat,
+		GenerationMode:             cfg.GenerationMode(),
 		PackageVersions:            dependencyPackageVersions(dependencyPolicy, cfg.Generation.Gateway.Enabled),
 		MediatRVersion:             dependencyPackageVersion(dependencyPolicy, "MediatR"),
 		FluentValidationVersion:    dependencyPackageVersion(dependencyPolicy, "FluentValidation"),
@@ -241,6 +244,7 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 		serviceView := ServiceView{
 			Name:                       service.Name,
 			SolutionFileName:           service.Name + "." + solutionFormat,
+			GenerationMode:             cfg.GenerationMode(),
 			MediatRVersion:             dependencyPackageVersion(dependencyPolicy, "MediatR"),
 			FluentValidationVersion:    dependencyPackageVersion(dependencyPolicy, "FluentValidation"),
 			ErrorOrVersion:             dependencyPackageVersion(dependencyPolicy, "ErrorOr"),

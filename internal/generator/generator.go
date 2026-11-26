@@ -226,31 +226,56 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		for _, entity := range service.Entities {
 			data := EntityTemplateData{Service: service, Entity: entity}
 			applicationFeaturePath := join(service.Name, "src", service.ApplicationProject.Directory, entity.FeatureName)
-			entityFiles := []struct{ path, template string }{
-				{join(service.Name, "src", service.DomainProject.Directory, "Entities", entity.Name+".cs"), templatePath(domainTemplateDir, "entity.tmpl")},
-				{join(applicationFeaturePath, "Dtos", entity.Name+"Dto.cs"), templatePath(applicationTemplateDir, "dto.tmpl")},
+				dtoTemplate := "dto.tmpl"
+				if service.GenerationMode == "simple" {
+					dtoTemplate = "dto-simple.tmpl"
+				}
+				entityFiles := []struct{ path, template string }{
+					{join(service.Name, "src", service.DomainProject.Directory, "Entities", entity.Name+".cs"), templatePath(domainTemplateDir, "entity.tmpl")},
+					{join(applicationFeaturePath, "Dtos", entity.Name+"Dto.cs"), templatePath(applicationTemplateDir, dtoTemplate)},
 				{join(applicationFeaturePath, "Dtos", "Create"+entity.Name+"Request.cs"), templatePath(applicationTemplateDir, "create-request.tmpl")},
 				{join(applicationFeaturePath, "Dtos", "Update"+entity.Name+"Request.cs"), templatePath(applicationTemplateDir, "update-request.tmpl")},
 				{join(applicationFeaturePath, "Interfaces", "I"+entity.Name+"Repository.cs"), templatePath(applicationTemplateDir, "repository-port.tmpl")},
 				{join(service.Name, "src", service.InfrastructureProject.Directory, "Persistence", "Configurations", entity.Name+"Configuration.cs"), templatePath(infrastructureTemplateDir, "entity-configuration.tmpl")},
 				{join(service.Name, "src", service.InfrastructureProject.Directory, "Persistence", "Features", entity.FeatureName, entity.Name+"Repository.cs"), templatePath(infrastructureTemplateDir, "repository-implementation.tmpl")},
-				{join(service.Name, "src", service.WebApiProject.Directory, "Controllers", entity.FeatureName, entity.Name+"Controller.cs"), templatePath(webAPITemplateDir, "controller.tmpl")},
+				{join(service.Name, "src", service.WebApiProject.Directory, "Controllers", entity.FeatureName, entity.Name+"Controller.cs"), templatePath(webAPITemplateDir, func() string {
+					if service.GenerationMode == "simple" {
+						return "controller-simple.tmpl"
+					}
+					return "controller.tmpl"
+				}())},
 				{join(service.Name, "tests", service.ApplicationTestsProject.Directory, "Features", entity.FeatureName, entity.Name+"ApplicationTests.cs"), templatePath(testsTemplateDir, "application-tests.tmpl")},
 				{join(service.Name, "tests", service.WebApiTestsProject.Directory, "Features", entity.FeatureName, entity.Name+"ControllerTests.cs"), templatePath(testsTemplateDir, "webapi-tests.tmpl")},
-				{join(applicationFeaturePath, "Queries", "List", "List"+entity.Name+"Query.cs"), templatePath(applicationTemplateDir, "list-query.tmpl")},
-				{join(applicationFeaturePath, "Queries", "List", "List"+entity.Name+"QueryHandler.cs"), templatePath(applicationTemplateDir, "list-query-handler.tmpl")},
-				{join(applicationFeaturePath, "Queries", "List", "List"+entity.Name+"QueryValidator.cs"), templatePath(applicationTemplateDir, "list-query-validator.tmpl")},
-				{join(applicationFeaturePath, "Queries", "GetById", "Get"+entity.Name+"ByIdQuery.cs"), templatePath(applicationTemplateDir, "get-by-id-query.tmpl")},
-				{join(applicationFeaturePath, "Queries", "GetById", "Get"+entity.Name+"ByIdQueryHandler.cs"), templatePath(applicationTemplateDir, "get-by-id-query-handler.tmpl")},
-				{join(applicationFeaturePath, "Commands", "Create", "Create"+entity.Name+"Command.cs"), templatePath(applicationTemplateDir, "create-command.tmpl")},
-				{join(applicationFeaturePath, "Commands", "Create", "Create"+entity.Name+"CommandHandler.cs"), templatePath(applicationTemplateDir, "create-command-handler.tmpl")},
-				{join(applicationFeaturePath, "Commands", "Create", "Create"+entity.Name+"CommandValidator.cs"), templatePath(applicationTemplateDir, "create-command-validator.tmpl")},
-				{join(applicationFeaturePath, "Commands", "Update", "Update"+entity.Name+"Command.cs"), templatePath(applicationTemplateDir, "update-command.tmpl")},
-				{join(applicationFeaturePath, "Commands", "Update", "Update"+entity.Name+"CommandHandler.cs"), templatePath(applicationTemplateDir, "update-command-handler.tmpl")},
-				{join(applicationFeaturePath, "Commands", "Update", "Update"+entity.Name+"CommandValidator.cs"), templatePath(applicationTemplateDir, "update-command-validator.tmpl")},
-				{join(applicationFeaturePath, "Commands", "Delete", "Delete"+entity.Name+"Command.cs"), templatePath(applicationTemplateDir, "delete-command.tmpl")},
-				{join(applicationFeaturePath, "Commands", "Delete", "Delete"+entity.Name+"CommandHandler.cs"), templatePath(applicationTemplateDir, "delete-command-handler.tmpl")},
-				{join(applicationFeaturePath, "Commands", "Delete", "Delete"+entity.Name+"CommandValidator.cs"), templatePath(applicationTemplateDir, "delete-command-validator.tmpl")},
+			}
+			
+			// Add mode-specific handler files
+			if service.GenerationMode == "simple" {
+				entityFiles = append(entityFiles,
+					[]struct{ path, template string }{
+						{join(applicationFeaturePath, "Services", "List"+entity.PluralName+"Service.cs"), templatePath(applicationTemplateDir, "list-query-handler-simple.tmpl")},
+						{join(applicationFeaturePath, "Services", "Get"+entity.Name+"ByIdService.cs"), templatePath(applicationTemplateDir, "get-by-id-query-handler-simple.tmpl")},
+						{join(applicationFeaturePath, "Services", "Create"+entity.Name+"Service.cs"), templatePath(applicationTemplateDir, "create-command-handler-simple.tmpl")},
+						{join(applicationFeaturePath, "Services", "Update"+entity.Name+"Service.cs"), templatePath(applicationTemplateDir, "update-command-handler-simple.tmpl")},
+						{join(applicationFeaturePath, "Services", "Delete"+entity.Name+"Service.cs"), templatePath(applicationTemplateDir, "delete-command-handler-simple.tmpl")},
+					}...)
+			} else {
+				entityFiles = append(entityFiles,
+					[]struct{ path, template string }{
+						{join(applicationFeaturePath, "Queries", "List", "List"+entity.Name+"Query.cs"), templatePath(applicationTemplateDir, "list-query.tmpl")},
+						{join(applicationFeaturePath, "Queries", "List", "List"+entity.Name+"QueryHandler.cs"), templatePath(applicationTemplateDir, "list-query-handler.tmpl")},
+						{join(applicationFeaturePath, "Queries", "List", "List"+entity.Name+"QueryValidator.cs"), templatePath(applicationTemplateDir, "list-query-validator.tmpl")},
+						{join(applicationFeaturePath, "Queries", "GetById", "Get"+entity.Name+"ByIdQuery.cs"), templatePath(applicationTemplateDir, "get-by-id-query.tmpl")},
+						{join(applicationFeaturePath, "Queries", "GetById", "Get"+entity.Name+"ByIdQueryHandler.cs"), templatePath(applicationTemplateDir, "get-by-id-query-handler.tmpl")},
+						{join(applicationFeaturePath, "Commands", "Create", "Create"+entity.Name+"Command.cs"), templatePath(applicationTemplateDir, "create-command.tmpl")},
+						{join(applicationFeaturePath, "Commands", "Create", "Create"+entity.Name+"CommandHandler.cs"), templatePath(applicationTemplateDir, "create-command-handler.tmpl")},
+						{join(applicationFeaturePath, "Commands", "Create", "Create"+entity.Name+"CommandValidator.cs"), templatePath(applicationTemplateDir, "create-command-validator.tmpl")},
+						{join(applicationFeaturePath, "Commands", "Update", "Update"+entity.Name+"Command.cs"), templatePath(applicationTemplateDir, "update-command.tmpl")},
+						{join(applicationFeaturePath, "Commands", "Update", "Update"+entity.Name+"CommandHandler.cs"), templatePath(applicationTemplateDir, "update-command-handler.tmpl")},
+						{join(applicationFeaturePath, "Commands", "Update", "Update"+entity.Name+"CommandValidator.cs"), templatePath(applicationTemplateDir, "update-command-validator.tmpl")},
+						{join(applicationFeaturePath, "Commands", "Delete", "Delete"+entity.Name+"Command.cs"), templatePath(applicationTemplateDir, "delete-command.tmpl")},
+						{join(applicationFeaturePath, "Commands", "Delete", "Delete"+entity.Name+"CommandHandler.cs"), templatePath(applicationTemplateDir, "delete-command-handler.tmpl")},
+						{join(applicationFeaturePath, "Commands", "Delete", "Delete"+entity.Name+"CommandValidator.cs"), templatePath(applicationTemplateDir, "delete-command-validator.tmpl")},
+					}...)
 			}
 			for _, file := range entityFiles {
 				if err := g.appendRendered(&files, file.path, file.template, data); err != nil {

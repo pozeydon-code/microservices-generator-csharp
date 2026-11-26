@@ -2307,6 +2307,101 @@ func TestGenerateRepositoryWithoutQueryShapesDoesNotGenerateShapedMethods(t *tes
 	}
 }
 
+func TestGenerateEnterpriseModeUsesMediatR(t *testing.T) {
+	cfg := testConfig()
+	cfg.Generation.Mode = "enterprise"
+	
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	
+	// Verificar que se generen archivos de Commands/Queries
+	found := false
+	for _, f := range files {
+		if strings.Contains(f.Path, "Commands/Create/Create") && strings.HasSuffix(f.Path, "CommandHandler.cs") {
+			found = true
+			if !strings.Contains(string(f.Content), "IRequestHandler") {
+				t.Error("enterprise mode should use MediatR IRequestHandler")
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("enterprise mode should generate CommandHandler files")
+	}
+}
+
+func TestGenerateSimpleModeUsesDirectServices(t *testing.T) {
+	cfg := testConfig()
+	cfg.Generation.Mode = "simple"
+	
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	
+	// Verificar que se generen Services en lugar de Commands/Queries
+	foundService := false
+	foundCommand := false
+	for _, f := range files {
+		if strings.Contains(f.Path, "Services/Create") && strings.HasSuffix(f.Path, "Service.cs") {
+			foundService = true
+			if strings.Contains(string(f.Content), "IRequestHandler") {
+				t.Error("simple mode should not use MediatR IRequestHandler")
+			}
+			if !strings.Contains(string(f.Content), "Execute(") {
+				t.Error("simple mode Service should have Execute method")
+			}
+		}
+		if strings.Contains(f.Path, "Commands/Create") && strings.HasSuffix(f.Path, "CommandHandler.cs") {
+			foundCommand = true
+		}
+	}
+	
+	if !foundService {
+		t.Error("simple mode should generate Service files")
+	}
+	if foundCommand {
+		t.Error("simple mode should not generate CommandHandler files")
+	}
+}
+
+func TestGenerateSimpleModeDtoHasNoConcurrencyToken(t *testing.T) {
+	cfg := testConfig()
+	cfg.Generation.Mode = "simple"
+	
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	
+	// Verificar que el DTO no tenga ConcurrencyToken
+	for _, f := range files {
+		if strings.HasSuffix(f.Path, "Dto.cs") && !strings.Contains(f.Path, "Create") && !strings.Contains(f.Path, "Update") {
+			if strings.Contains(string(f.Content), "ConcurrencyToken") {
+				t.Error("simple mode DTO should not have ConcurrencyToken field")
+			}
+			break
+		}
+	}
+}
+
 func boolPtr(value bool) *bool            { return &value }
 func intPtr(value int) *int               { return &value }
 func stringPtr(value string) *string      { return &value }
