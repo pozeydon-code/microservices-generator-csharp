@@ -19,11 +19,11 @@ namespace ProductService.WebApi.Controllers.Products;
 public sealed class ProductController(ISender sender) : ApiController
 {
     [HttpGet(Name = "ListProducts")]
-    public async Task<ActionResult<PagedResult<ProductDto>>> List([FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken)
+    public async Task<ActionResult<PagedResult<ProductDto>>> List([FromQuery] int? page, [FromQuery] int? pageSize, [FromQuery] string? shape, CancellationToken cancellationToken)
     {
         try
         {
-            var result = await sender.Send(new ListProductQuery(page, pageSize), cancellationToken);
+            var result = await sender.Send(new ListProductQuery(page, pageSize, shape), cancellationToken);
             return result.IsError
                 ? Problem(result.Errors)
                 : Ok(result.Value);
@@ -35,9 +35,9 @@ public sealed class ProductController(ISender sender) : ApiController
     }
 
     [HttpGet("{id:guid}", Name = "GetProductById")]
-    public async Task<ActionResult<ProductDto>> Get(Guid id, CancellationToken cancellationToken)
+    public async Task<ActionResult<ProductDto>> Get(Guid id, [FromQuery] string? shape, CancellationToken cancellationToken)
     {
-        var result = await sender.Send(new GetProductByIdQuery(id), cancellationToken);
+        var result = await sender.Send(new GetProductByIdQuery(id, shape), cancellationToken);
         return result.IsError
             ? Problem(result.Errors)
             : Ok(result.Value);

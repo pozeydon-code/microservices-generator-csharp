@@ -4,4 +4,4 @@ using ProductService.Application.Products.Dtos;
 
 namespace ProductService.Application.Products.Queries.GetById;
 
-public sealed record GetProductByIdQuery(Guid Id) : IRequest<ErrorOr<ProductDto>>;
+public sealed record GetProductByIdQuery(Guid Id, string? Shape = null) : IRequest<ErrorOr<ProductDto>>;

@@ -76,7 +76,18 @@ Generator automatically:
   - Commit: `61973d8` feat(t5): add WebAPI shape parameter support
   - Slice boundary: 2456 lines on feat/v0.7.0-query-shaping
   
-- **T6**: Add golden tests for query shaping
+- **T6**: Add golden tests for query shaping ✅
+  - Updated configloader JSON schema to accept queryShapes field
+  - Added golden config with 2 query shapes (summary/depth:1, detail/depth:2)
+  - Generated 94 golden files in query-shapes/golden/
+  - Added TestGenerateQueryShapesProducesDeterministicOutput that verifies:
+    * Deterministic generation
+    * Shape-specific DTOs (ProductSummaryDto, ProductDetailDto)
+    * Shaped repository methods (ListShaped_*, GetShaped_*)
+    * Controller shape parameter validation
+  - Route: inline (tests, no high-risk)
+  - Commit: `23d4d0d` feat(t6): add golden tests for query shaping
+  - Slice boundary: 7196 lines on feat/v0.7.0-query-shaping
   - Create test config with query shapes
   - Generate golden output for shallow and shaped reads
   - Verify deterministic output

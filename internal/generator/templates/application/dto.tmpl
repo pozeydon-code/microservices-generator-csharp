@@ -5,11 +5,12 @@ public sealed record {{ .Entity.Name }}Dto(
 {{ end }}    {{ $field.ContractType }} {{ $field.Name }}{{ end }}{{ range .Entity.RelationshipScalarFields }},
     {{ .ContractType }} {{ .Name }}{{ end }},
     string ConcurrencyToken);
+{{- if .Service.HasQueryShapes }}
 {{ range .Service.QueryShapes }}
-
 public sealed record {{ $.Entity.Name }}{{ .Name | capitalize }}Dto(
 {{ range $index, $field := $.Entity.Fields }}{{ if $index }},
 {{ end }}    {{ $field.ContractType }} {{ $field.Name }}{{ end }}{{ range $.Entity.RelationshipScalarFields }},
     {{ .ContractType }} {{ .Name }}{{ end }},
     string ConcurrencyToken);
 {{ end }}
+{{- end }}
