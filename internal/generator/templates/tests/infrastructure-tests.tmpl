@@ -220,7 +220,8 @@ public sealed class {{ .Name }}InfrastructureTests
         await using var reloadContext = database.CreateContext();
         var logger = new CaptureLogger<{{ $entity.Name }}Repository>();
         var repository = new {{ $entity.Name }}Repository(reloadContext, logger);
-        var exception = await Assert.ThrowsAsync<{{ $.Name }}.Domain.Primitives.DomainReconstitutionException>(() => repository.GetByIdAsync(id, CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => repository.GetByIdAsync(id, CancellationToken.None));
+        Assert.Contains("Rehydrate", exception.Message);
         Assert.Equal("{{ $corrupt.DomainType }}", exception.ValueObjectType);
         Assert.Contains("{{ $corrupt.InvalidCode }}", exception.InvariantCodes);
         Assert.Contains("{{ $entity.Name }}", logger.LastMessage);

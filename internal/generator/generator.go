@@ -125,12 +125,6 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		if err := g.appendRendered(&files, join(service.Name, "src", service.ApplicationProject.Directory, "Common", "UnitOfWork.cs"), templatePath(applicationTemplateDir, "application-unit-of-work.tmpl"), service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join(service.Name, "src", service.DomainProject.Directory, "Primitives", "DomainResult.cs"), templatePath(domainTemplateDir, "domain-result.tmpl"), service); err != nil {
-			return nil, err
-		}
-		if err := g.appendRendered(&files, join(service.Name, "src", service.DomainProject.Directory, "Primitives", "DomainReconstitutionException.cs"), templatePath(domainTemplateDir, "domain-reconstitution-exception.tmpl"), service); err != nil {
-			return nil, err
-		}
 		if err := g.appendRendered(&files, join(service.Name, "src", service.InfrastructureProject.Directory, service.InfrastructureProject.FileName), templatePath(infrastructureTemplateDir, "infrastructure-project.tmpl"), service); err != nil {
 			return nil, err
 		}

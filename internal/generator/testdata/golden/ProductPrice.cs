@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-using ProductService.Domain.Primitives;
+using ErrorOr;
 
 namespace ProductService.Domain.ValueObjects;
 
@@ -10,17 +10,19 @@ public sealed class ProductPrice : IEquatable<ProductPrice>
 
     public decimal Value { get; }
 
-    public static DomainResult<ProductPrice> Create(decimal value, string? field = null)
+    public static ErrorOr<ProductPrice> Create(decimal value, string? field = null)
     {
-        if (value < 0m) return DomainResult.Failure<ProductPrice>(new DomainError("ProductPrice.Minimum", "ProductPrice must be greater than or equal to 0m.", field));
-        if (value > 999999.99m) return DomainResult.Failure<ProductPrice>(new DomainError("ProductPrice.Maximum", "ProductPrice must be less than or equal to 999999.99m.", field));
-        return DomainResult.Success(new ProductPrice(value));
+        if (value < 0m) return Error.Validation(code: "ProductPrice.Minimum", description: "ProductPrice must be greater than or equal to 0m.", metadata: new Dictionary<string, object> { ["field"] = field ?? "value" });
+        if (value > 999999.99m) return Error.Validation(code: "ProductPrice.Maximum", description: "ProductPrice must be less than or equal to 999999.99m.", metadata: new Dictionary<string, object> { ["field"] = field ?? "value" });
+        return new ProductPrice(value);
     }
 
     public static ProductPrice Rehydrate(decimal value)
     {
         var result = Create(value);
-        return result.Value ?? throw new DomainReconstitutionException("ProductPrice", result.Errors.Select(error => error.Code).ToArray());
+        return result.IsError
+            ? throw new InvalidOperationException($"Failed to rehydrate ProductPrice: {string.Join(", ", result.Errors.Select(e => e.Code))}")
+            : result.Value;
     }
 
     public bool Equals(ProductPrice? other) => other is not null && EqualityComparer<decimal>.Default.Equals(Value, other.Value);

@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-using {{ .Service.Name }}.Domain.Primitives;
+using ErrorOr;
 
 namespace {{ .Service.Name }}.Domain.ValueObjects;
 
@@ -12,24 +12,26 @@ public sealed class {{ .ValueObject.Name }} : IEquatable<{{ .ValueObject.Name }}
 
     public {{ .ValueObject.Type }} Value { get; }
 
-    public static DomainResult<{{ .ValueObject.Name }}> Create({{ .ValueObject.ParameterType }} value, string? field = null)
+    public static ErrorOr<{{ .ValueObject.Name }}> Create({{ .ValueObject.ParameterType }} value, string? field = null)
     {
-{{ if eq .ValueObject.Type "string" }}        if (value is null) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.Null", "{{ .ValueObject.Name }} must not be null.", field));
-{{ end }}{{ if .ValueObject.HasRequired }}        if (string.IsNullOrWhiteSpace(value)) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.Required", "{{ .ValueObject.Name }} is required.", field));
-{{ end }}{{ if .ValueObject.MinLength }}        if (value!.Length < {{ .ValueObject.MinLength }}) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.MinLength", "{{ .ValueObject.Name }} must be at least {{ .ValueObject.MinLength }} characters.", field));
-{{ end }}{{ if .ValueObject.MaxLength }}        if (value.Length > {{ .ValueObject.MaxLength }}) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.MaxLength", "{{ .ValueObject.Name }} must be at most {{ .ValueObject.MaxLength }} characters.", field));
-{{ end }}{{ if .ValueObject.Pattern }}        if (!Pattern.IsMatch(value)) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.Pattern", "{{ .ValueObject.Name }} has an invalid format.", field));
-{{ end }}{{ if .ValueObject.Minimum }}        if (value < {{ .ValueObject.Minimum }}) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.Minimum", "{{ .ValueObject.Name }} must be greater than or equal to {{ .ValueObject.Minimum }}.", field));
-{{ end }}{{ if .ValueObject.Maximum }}        if (value > {{ .ValueObject.Maximum }}) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.Maximum", "{{ .ValueObject.Name }} must be less than or equal to {{ .ValueObject.Maximum }}.", field));
-{{ end }}{{ if .ValueObject.HasNotEmpty }}        if (value == Guid.Empty) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.NotEmpty", "{{ .ValueObject.Name }} must not be empty.", field));
-{{ end }}{{ if .ValueObject.HasNotDefault }}        if (value == default) return DomainResult.Failure<{{ .ValueObject.Name }}>(new DomainError("{{ .ValueObject.Name }}.NotDefault", "{{ .ValueObject.Name }} must not be the default value.", field));
-{{ end }}        return DomainResult.Success(new {{ .ValueObject.Name }}(value));
+{{ if eq .ValueObject.Type "string" }}        if (value is null) return Error.Validation(code: "{{ .ValueObject.Name }}.Null", description: "{{ .ValueObject.Name }} must not be null.", metadata: new Dictionary<string, object> { ["field"] = field ?? "value" });
+{{ end }}{{ if .ValueObject.HasRequired }}        if (string.IsNullOrWhiteSpace(value)) return Error.Validation(code: "{{ .ValueObject.Name }}.Required", description: "{{ .ValueObject.Name }} is required.", metadata: new Dictionary<string, object> { ["field"] = field ?? "value" });
+{{ end }}{{ if .ValueObject.MinLength }}        if (value!.Length < {{ .ValueObject.MinLength }}) return Error.Validation(code: "{{ .ValueObject.Name }}.MinLength", description: "{{ .ValueObject.Name }} must be at least {{ .ValueObject.MinLength }} characters.", metadata: new Dictionary<string, object> { ["field"] = field ?? "value" });
+{{ end }}{{ if .ValueObject.MaxLength }}        if (value.Length > {{ .ValueObject.MaxLength }}) return Error.Validation(code: "{{ .ValueObject.Name }}.MaxLength", description: "{{ .ValueObject.Name }} must be at most {{ .ValueObject.MaxLength }} characters.", metadata: new Dictionary<string, object> { ["field"] = field ?? "value" });
+{{ end }}{{ if .ValueObject.Pattern }}        if (!Pattern.IsMatch(value)) return Error.Validation(code: "{{ .ValueObject.Name }}.Pattern", description: "{{ .ValueObject.Name }} has an invalid format.", metadata: new Dictionary<string, object> { ["field"] = field ?? "value" });
+{{ end }}{{ if .ValueObject.Minimum }}        if (value < {{ .ValueObject.Minimum }}) return Error.Validation(code: "{{ .ValueObject.Name }}.Minimum", description: "{{ .ValueObject.Name }} must be greater than or equal to {{ .ValueObject.Minimum }}.", metadata: new Dictionary<string, object> { ["field"] = field ?? "value" });
+{{ end }}{{ if .ValueObject.Maximum }}        if (value > {{ .ValueObject.Maximum }}) return Error.Validation(code: "{{ .ValueObject.Name }}.Maximum", description: "{{ .ValueObject.Name }} must be less than or equal to {{ .ValueObject.Maximum }}.", metadata: new Dictionary<string, object> { ["field"] = field ?? "value" });
+{{ end }}{{ if .ValueObject.HasNotEmpty }}        if (value == Guid.Empty) return Error.Validation(code: "{{ .ValueObject.Name }}.NotEmpty", description: "{{ .ValueObject.Name }} must not be empty.", metadata: new Dictionary<string, object> { ["field"] = field ?? "value" });
+{{ end }}{{ if .ValueObject.HasNotDefault }}        if (value == default) return Error.Validation(code: "{{ .ValueObject.Name }}.NotDefault", description: "{{ .ValueObject.Name }} must not be the default value.", metadata: new Dictionary<string, object> { ["field"] = field ?? "value" });
+{{ end }}        return new {{ .ValueObject.Name }}(value);
     }
 
     public static {{ .ValueObject.Name }} Rehydrate({{ .ValueObject.Type }} value)
     {
         var result = Create(value);
-        return result.Value ?? throw new DomainReconstitutionException("{{ .ValueObject.Name }}", result.Errors.Select(error => error.Code).ToArray());
+        return result.IsError
+            ? throw new InvalidOperationException($"Failed to rehydrate {{ .ValueObject.Name }}: {string.Join(", ", result.Errors.Select(e => e.Code))}")
+            : result.Value;
     }
 
     public bool Equals({{ .ValueObject.Name }}? other) => other is not null && EqualityComparer<{{ .ValueObject.Type }}>.Default.Equals(Value, other.Value);

@@ -80,7 +80,8 @@ public sealed class ProductServiceDomainTests
         var error = Assert.Single(result.Errors);
         Assert.Equal("ProductName.Required", error.Code);
         Assert.Equal("Field", error.Field);
-        var exception = Assert.Throws<DomainReconstitutionException>(() => ProductName.Rehydrate(""));
+        var exception = Assert.Throws<InvalidOperationException>(() => ProductName.Rehydrate(""));
+        Assert.Contains("Rehydrate", exception.Message);
         Assert.Equal("ProductName", exception.ValueObjectType);
         Assert.Contains("ProductName.Required", exception.InvariantCodes);
     }
@@ -94,7 +95,8 @@ public sealed class ProductServiceDomainTests
         var error = Assert.Single(result.Errors);
         Assert.Equal("ProductName.MinLength", error.Code);
         Assert.Equal("Field", error.Field);
-        var exception = Assert.Throws<DomainReconstitutionException>(() => ProductName.Rehydrate("x"));
+        var exception = Assert.Throws<InvalidOperationException>(() => ProductName.Rehydrate("x"));
+        Assert.Contains("Rehydrate", exception.Message);
         Assert.Equal("ProductName", exception.ValueObjectType);
         Assert.Contains("ProductName.MinLength", exception.InvariantCodes);
     }
@@ -108,7 +110,8 @@ public sealed class ProductServiceDomainTests
         var error = Assert.Single(result.Errors);
         Assert.Equal("ProductName.MaxLength", error.Code);
         Assert.Equal("Field", error.Field);
-        var exception = Assert.Throws<DomainReconstitutionException>(() => ProductName.Rehydrate(new string('x', 100 + 1)));
+        var exception = Assert.Throws<InvalidOperationException>(() => ProductName.Rehydrate(new string('x', 100 + 1)));
+        Assert.Contains("Rehydrate", exception.Message);
         Assert.Equal("ProductName", exception.ValueObjectType);
         Assert.Contains("ProductName.MaxLength", exception.InvariantCodes);
     }
@@ -122,7 +125,8 @@ public sealed class ProductServiceDomainTests
         var error = Assert.Single(result.Errors);
         Assert.Equal("ProductName.Pattern", error.Code);
         Assert.Equal("Field", error.Field);
-        var exception = Assert.Throws<DomainReconstitutionException>(() => ProductName.Rehydrate("***"));
+        var exception = Assert.Throws<InvalidOperationException>(() => ProductName.Rehydrate("***"));
+        Assert.Contains("Rehydrate", exception.Message);
         Assert.Equal("ProductName", exception.ValueObjectType);
         Assert.Contains("ProductName.Pattern", exception.InvariantCodes);
     }
@@ -179,7 +183,8 @@ public sealed class ProductServiceDomainTests
         var error = Assert.Single(result.Errors);
         Assert.Equal("ProductPrice.Minimum", error.Code);
         Assert.Equal("Field", error.Field);
-        var exception = Assert.Throws<DomainReconstitutionException>(() => ProductPrice.Rehydrate(0m - 1m));
+        var exception = Assert.Throws<InvalidOperationException>(() => ProductPrice.Rehydrate(0m - 1m));
+        Assert.Contains("Rehydrate", exception.Message);
         Assert.Equal("ProductPrice", exception.ValueObjectType);
         Assert.Contains("ProductPrice.Minimum", exception.InvariantCodes);
     }
@@ -193,7 +198,8 @@ public sealed class ProductServiceDomainTests
         var error = Assert.Single(result.Errors);
         Assert.Equal("ProductPrice.Maximum", error.Code);
         Assert.Equal("Field", error.Field);
-        var exception = Assert.Throws<DomainReconstitutionException>(() => ProductPrice.Rehydrate(999999.99m + 1m));
+        var exception = Assert.Throws<InvalidOperationException>(() => ProductPrice.Rehydrate(999999.99m + 1m));
+        Assert.Contains("Rehydrate", exception.Message);
         Assert.Equal("ProductPrice", exception.ValueObjectType);
         Assert.Contains("ProductPrice.Maximum", exception.InvariantCodes);
     }

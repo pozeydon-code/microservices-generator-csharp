@@ -167,7 +167,8 @@ public sealed class ProductServiceInfrastructureTests
         await using var reloadContext = database.CreateContext();
         var logger = new CaptureLogger<ProductRepository>();
         var repository = new ProductRepository(reloadContext, logger);
-        var exception = await Assert.ThrowsAsync<ProductService.Domain.Primitives.DomainReconstitutionException>(() => repository.GetByIdAsync(id, CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => repository.GetByIdAsync(id, CancellationToken.None));
+        Assert.Contains("Rehydrate", exception.Message);
         Assert.Equal("ProductName", exception.ValueObjectType);
         Assert.Contains("ProductName.Required", exception.InvariantCodes);
         Assert.Contains("Product", logger.LastMessage);
@@ -194,7 +195,8 @@ public sealed class ProductServiceInfrastructureTests
         await using var reloadContext = database.CreateContext();
         var logger = new CaptureLogger<ProductRepository>();
         var repository = new ProductRepository(reloadContext, logger);
-        var exception = await Assert.ThrowsAsync<ProductService.Domain.Primitives.DomainReconstitutionException>(() => repository.GetByIdAsync(id, CancellationToken.None));
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => repository.GetByIdAsync(id, CancellationToken.None));
+        Assert.Contains("Rehydrate", exception.Message);
         Assert.Equal("ProductPrice", exception.ValueObjectType);
         Assert.Contains("ProductPrice.Minimum", exception.InvariantCodes);
         Assert.Contains("Product", logger.LastMessage);

@@ -277,8 +277,6 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 		{path: "ProductService/src/ProductService.Application/Products/Queries/List/ListProductQueryHandler.cs", goldenName: "ListProductQueryHandler.cs"},
 		{path: "ProductService/src/ProductService.Application/Products/Queries/List/ListProductQueryValidator.cs", goldenName: "ListProductQueryValidator.cs"},
 		{path: "ProductService/src/ProductService.Domain/Entities/Product.cs", goldenName: "Product.cs"},
-		{path: "ProductService/src/ProductService.Domain/Primitives/DomainReconstitutionException.cs", goldenName: "DomainReconstitutionException.cs"},
-		{path: "ProductService/src/ProductService.Domain/Primitives/DomainResult.cs", goldenName: "DomainResult.cs"},
 		{path: "ProductService/src/ProductService.Domain/ProductService.Domain.csproj", goldenName: "ProductService.Domain.csproj"},
 		{path: "ProductService/src/ProductService.Domain/ValueObjects/ProductName.cs", goldenName: "ProductName.cs"},
 		{path: "ProductService/src/ProductService.Domain/ValueObjects/ProductPrice.cs", goldenName: "ProductPrice.cs"},
@@ -654,7 +652,7 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	assertNotContains(t, contentByPath["ProductService/src/ProductService.Application/ProductService.Application.csproj"], "ProductService.Infrastructure")
 	assertNotContains(t, contentByPath["ProductService/src/ProductService.Application/ProductService.Application.csproj"], "ProductService.WebApi")
 	assertContains(t, contentByPath["ProductService/src/ProductService.Infrastructure/ProductService.Infrastructure.csproj"], "ProductService.Application.csproj")
-	assertContains(t, contentByPath["ProductService/src/ProductService.Domain/ValueObjects/ProductName.cs"], "DomainResult<ProductName>")
+	assertContains(t, contentByPath["ProductService/src/ProductService.Domain/ValueObjects/ProductName.cs"], "ErrorOr<ProductName>")
 	assertContains(t, contentByPath["ProductService/src/ProductService.Application/Common/UnitOfWork.cs"], "Task<int> SaveChangesAsync(CancellationToken cancellationToken)")
 	assertContains(t, contentByPath["ProductService/src/ProductService.Application/Common/Results.cs"], "public enum MutationPreparationStatus { Prepared, InvalidToken }")
 	assertNotContains(t, contentByPath["ProductService/src/ProductService.Application/Common/Results.cs"], "SaveResultStatus")
@@ -1468,51 +1466,6 @@ func TestGenerateRecordEntityTestsUseDomainAliases(t *testing.T) {
 	}
 }
 
-func TestGenerateRecordRepositoryDiagnosticsAvoidsInstanceAnalyzerWarningWithoutValueObjects(t *testing.T) {
-	gen, err := New()
-	if err != nil {
-		t.Fatalf("new generator: %v", err)
-	}
-
-	tests := []struct {
-		name                 string
-		cfg                  spec.Config
-		expectedSignature    string
-		unexpectedSignature  string
-		expectedDbContextUse string
-	}{
-		{
-			name:                "zero value objects",
-			cfg:                 recordCollisionConfig(false),
-			expectedSignature:   "private static Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync",
-			unexpectedSignature: "private async Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync",
-		},
-		{
-			name:                 "value object backed",
-			cfg:                  recordCollisionConfig(true),
-			expectedSignature:    "private async Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync",
-			unexpectedSignature:  "private static Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync",
-			expectedDbContextUse: "await dbContext.Database.SqlQueryRaw<Guid>(sql, id.Value).ToListAsync(cancellationToken)",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			files, err := gen.Generate(tt.cfg)
-			if err != nil {
-				t.Fatalf("generate: %v", err)
-			}
-			repository := string(generatedContent(t, files, "RecordService/src/RecordService.Infrastructure/Persistence/Features/Records/RecordRepository.cs"))
-
-			assertContains(t, repository, tt.expectedSignature)
-			assertNotContains(t, repository, tt.unexpectedSignature)
-			if tt.expectedDbContextUse != "" {
-				assertContains(t, repository, tt.expectedDbContextUse)
-			}
-		})
-	}
-}
-
 func TestGenerateRecordCollisionZeroValueObjectRuntimeBuild(t *testing.T) {
 	cfg := recordCollisionConfig(false)
 	cfg.Generation.TargetFramework = "net10.0"
@@ -1521,21 +1474,6 @@ func TestGenerateRecordCollisionZeroValueObjectRuntimeBuild(t *testing.T) {
 
 	runDotnetRuntimeCommand(t, dotnet, workspace, "restore", workspace.solutionPath)
 	runDotnetRuntimeCommand(t, dotnet, workspace, "build", "--no-restore", workspace.solutionPath)
-}
-
-func TestGenerateUsesParameterizedRepositoryDiagnostics(t *testing.T) {
-	gen, err := New()
-	if err != nil {
-		t.Fatalf("new generator: %v", err)
-	}
-	files, err := gen.Generate(testConfig())
-	if err != nil {
-		t.Fatalf("generate: %v", err)
-	}
-	repository := string(generatedContent(t, files, "ProductService/src/ProductService.Infrastructure/Persistence/Features/Products/ProductRepository.cs"))
-	assertContains(t, repository, "SqlQueryRaw<Guid>(sql, id.Value)")
-	assertNotContains(t, repository, "$\"SELECT")
-	assertNotContains(t, repository, "'{id.Value}'")
 }
 
 func TestGenerateEntityConfigurationQualifiesValueObjectRehydrateWhenNamesCollide(t *testing.T) {

@@ -1,53 +1,28 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using {{ .Service.Name }}.Application.Common;
 using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Interfaces;
 using {{ .Service.Name }}.Domain.Entities;
-using {{ .Service.Name }}.Domain.Primitives;
 using {{ .Service.Name }}.Infrastructure.Persistence;
 
 namespace {{ .Service.Name }}.Infrastructure.Persistence.Features.{{ .Entity.FeatureName }};
 
-public sealed class {{ .Entity.Name }}Repository({{ .Service.Name }}DbContext dbContext, ILogger<{{ .Entity.Name }}Repository> logger) : I{{ .Entity.Name }}Repository
+public sealed class {{ .Entity.Name }}Repository({{ .Service.Name }}DbContext dbContext) : I{{ .Entity.Name }}Repository
 {
-    private static readonly Action<ILogger, string, string, string, string, string, Exception?> InvalidPersistedValue = LoggerMessage.Define<string, string, string, string, string>(
-        LogLevel.Error,
-        new EventId(1, nameof(InvalidPersistedValue)),
-        "Invalid persisted value while materializing {{ .Service.Name }}/{{ .Entity.Name }}.{Field} during {Operation}. RecordIds={RecordIds}; ValueObject={ValueObject}; InvariantCodes={InvariantCodes}");
-
     public async Task<(IReadOnlyList<EntitySnapshot<{{ .Entity.Name }}>> Items, int TotalCount)> ListAsync(int skip, int take, CancellationToken cancellationToken)
     {
         using var activity = {{ .Service.Name }}.Infrastructure.DependencyInjection.ActivitySource.StartActivity("{{ .Entity.Name }}.list");
         var query = dbContext.{{ .Entity.Name }}s.OrderBy(entity => entity.Id);
         var totalCount = await query.CountAsync(cancellationToken);
-        try
-        {
-            var entities = await query.Skip(skip).Take(take).ToListAsync(cancellationToken);
-            var items = entities.Select(ToSnapshot).ToList();
-            return (items, totalCount);
-        }
-        catch (DomainReconstitutionException ex)
-        {
-            var diagnostics = await FindReconstitutionDiagnosticsAsync(ex, null, cancellationToken);
-            RecordReconstitutionFailure(activity, ex, "list", diagnostics.Field, diagnostics.RecordIds);
-            throw;
-        }
+        var entities = await query.Skip(skip).Take(take).ToListAsync(cancellationToken);
+        var items = entities.Select(ToSnapshot).ToList();
+        return (items, totalCount);
     }
 
     public async Task<EntitySnapshot<{{ .Entity.Name }}>?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
     {
         using var activity = {{ .Service.Name }}.Infrastructure.DependencyInjection.ActivitySource.StartActivity("{{ .Entity.Name }}.get");
-        try
-        {
-            var entity = await dbContext.{{ .Entity.Name }}s.FindAsync([id], cancellationToken);
-            return entity is null ? null : ToSnapshot(entity);
-        }
-        catch (DomainReconstitutionException ex)
-        {
-            var diagnostics = await FindReconstitutionDiagnosticsAsync(ex, id, cancellationToken);
-            RecordReconstitutionFailure(activity, ex, "get", diagnostics.Field, diagnostics.RecordIds);
-            throw;
-        }
+        var entity = await dbContext.{{ .Entity.Name }}s.FindAsync([id], cancellationToken);
+        return entity is null ? null : ToSnapshot(entity);
     }
 
     public async Task AddAsync({{ .Entity.Name }} entity, CancellationToken cancellationToken)
@@ -84,61 +59,6 @@ public sealed class {{ .Entity.Name }}Repository({{ .Service.Name }}DbContext db
 
     private EntitySnapshot<{{ .Entity.Name }}> ToSnapshot({{ .Entity.Name }} entity) =>
         new(entity, Convert.ToBase64String(entity.RowVersion));
-
-{{ if .Entity.HasValueObjectFields }}    private async Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync(DomainReconstitutionException exception, Guid? id, CancellationToken cancellationToken)
-    {
-        await Task.CompletedTask;
-        var code = exception.InvariantCodes.Count > 0 ? exception.InvariantCodes[0] : string.Empty;
-{{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        if (exception.ValueObjectType == "{{ .DomainType }}")
-        {
-            var predicate = code switch
-            {
-{{ if eq .ContractType "string" }}                "{{ .DomainType }}.Required" => "([{{ .Name }}] IS NULL OR LTRIM(RTRIM([{{ .Name }}])) = N'')",
-{{ if .ColumnMaxLength }}                "{{ .DomainType }}.MaxLength" => "([{{ .Name }}] IS NOT NULL AND LEN([{{ .Name }}]) > {{ .ColumnMaxLength }})",
-{{ end }}{{ if .Minimum }}                "{{ .DomainType }}.Minimum" => "LEN([{{ .Name }}]) < {{ .Minimum }}",
-{{ end }}{{ else if or (eq .ContractType "decimal") (eq .ContractType "double") (eq .ContractType "int") (eq .ContractType "long") }}{{ if .Minimum }}                "{{ .DomainType }}.Minimum" => "[{{ .Name }}] < {{ .Minimum }}",
-{{ end }}{{ if .Maximum }}                "{{ .DomainType }}.Maximum" => "[{{ .Name }}] > {{ .Maximum }}",
-{{ end }}{{ else if eq .ContractType "Guid" }}                "{{ .DomainType }}.NotEmpty" => "[{{ .Name }}] = '00000000-0000-0000-0000-000000000000'",
-{{ else if eq .ContractType "DateTime" }}                "{{ .DomainType }}.NotDefault" => "[{{ .Name }}] = '0001-01-01T00:00:00'",
-{{ end }}                _ => string.Empty
-            };
-            if (predicate.Length == 0)
-            {
-                return ("{{ .Name }}", []);
-            }
-            var sql = id.HasValue
-                ? "SELECT TOP(5) [Id] AS [Value] FROM [{{ $.Entity.Name }}s] WHERE [Id] = {0} AND " + predicate + " ORDER BY [Id]"
-                : "SELECT TOP(5) [Id] AS [Value] FROM [{{ $.Entity.Name }}s] WHERE " + predicate + " ORDER BY [Id]";
-            var ids = id.HasValue
-                ? await dbContext.Database.SqlQueryRaw<Guid>(sql, id.Value).ToListAsync(cancellationToken)
-                : await dbContext.Database.SqlQueryRaw<Guid>(sql).ToListAsync(cancellationToken);
-            return ("{{ .Name }}", ids);
-        }
-{{ end }}{{ end }}        return (string.Empty, []);
-    }
-{{ else }}    private static Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync(DomainReconstitutionException exception, Guid? id, CancellationToken cancellationToken)
-    {
-        _ = exception;
-        _ = id;
-        _ = cancellationToken;
-        return Task.FromResult<(string Field, IReadOnlyList<Guid> RecordIds)>((string.Empty, []));
-    }
-{{ end }}
-    private void RecordReconstitutionFailure(System.Diagnostics.Activity? activity, DomainReconstitutionException exception, string operation, string field, IReadOnlyList<Guid> recordIds)
-    {
-        var recordIdsText = string.Join(",", recordIds);
-        activity?.AddEvent(new("domain.reconstitution_failed", tags: new System.Diagnostics.ActivityTagsCollection
-        {
-            ["service"] = "{{ .Service.Name }}",
-            ["entity"] = "{{ .Entity.Name }}",
-            ["field"] = field,
-            ["operation"] = operation,
-            ["value_object"] = exception.ValueObjectType,
-            ["invariant_codes"] = string.Join(",", exception.InvariantCodes),
-            ["record_ids"] = recordIdsText
-        }));
-        InvalidPersistedValue(logger, field, operation, recordIdsText, exception.ValueObjectType, string.Join(",", exception.InvariantCodes), exception);
-    }
 
 {{ range .Service.QueryShapes }}    public async Task<(IReadOnlyList<{{ $.Entity.Name }}> Items, int TotalCount)> ListShaped_{{ .Name }}Async(int skip, int take, CancellationToken cancellationToken)
     {

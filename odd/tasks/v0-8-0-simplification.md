@@ -40,7 +40,7 @@ Implement 5 major improvements to reduce over-engineering and add flexibility to
 - Route: inline (spec model)
 - Commit: `0068c18` feat(spec): add generation mode (simple/enterprise) to config
 
-### T2: Create simple mode templates [S1] - IN PROGRESS
+### T2: Create simple mode templates [S1] ✅
 - Create alternative templates for simple mode:
   - Direct handlers (no MediatR)
   - Simple DTOs (no EntitySnapshot)
@@ -48,6 +48,7 @@ Implement 5 major improvements to reduce over-engineering and add flexibility to
 - Add template selection logic in generator
 - Add tests for both modes
 - Route: inline (templates)
+- Commit: `c65d1d2` feat(t2): create simple mode templates (no CQRS, no EntitySnapshot)
 
 ### T3: Unify error handling with ErrorOr [S2]
 - Remove DomainResult<T> from Domain/Primitives
