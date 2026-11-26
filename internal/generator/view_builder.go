@@ -65,11 +65,9 @@ type ServiceView struct {
 	ApplicationProject         ProjectView
 	InfrastructureProject      ProjectView
 	WebApiProject              ProjectView
-	ApplicationTestsProject    ProjectView
-	WebApiTestsProject         ProjectView
+	UnitTestsProject           ProjectView
+	IntegrationTestsProject    ProjectView
 	ArchitectureTestsProject   ProjectView
-	InfrastructureTestsProject ProjectView
-	DomainTestsProject         ProjectView
 	Projects                   []ProjectView
 	ExpectedSchemaItems        int
 	ValueObjects               []ValueObjectView
@@ -255,12 +253,10 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 		serviceView.ApplicationProject = projectView(service.Name, service.Name+".Application")
 		serviceView.InfrastructureProject = projectView(service.Name, service.Name+".Infrastructure")
 		serviceView.WebApiProject = projectView(service.Name, service.Name+".WebApi")
-		serviceView.ApplicationTestsProject = testProjectView(service.Name, service.Name+".Application.Tests")
-		serviceView.DomainTestsProject = testProjectView(service.Name, service.Name+".Domain.Tests")
-		serviceView.WebApiTestsProject = testProjectView(service.Name, service.Name+".WebApi.Tests")
-		serviceView.ArchitectureTestsProject = testProjectView(service.Name, service.Name+".Architecture.Tests")
-		serviceView.InfrastructureTestsProject = testProjectView(service.Name, service.Name+".Infrastructure.Tests")
-		serviceView.Projects = []ProjectView{serviceView.DomainProject, serviceView.ApplicationProject, serviceView.InfrastructureProject, serviceView.WebApiProject, serviceView.DomainTestsProject, serviceView.ApplicationTestsProject, serviceView.WebApiTestsProject, serviceView.ArchitectureTestsProject, serviceView.InfrastructureTestsProject}
+		serviceView.UnitTestsProject = testProjectView(service.Name, service.Name+".UnitTests")
+		serviceView.IntegrationTestsProject = testProjectView(service.Name, service.Name+".IntegrationTests")
+		serviceView.ArchitectureTestsProject = testProjectView(service.Name, service.Name+".ArchitectureTests")
+		serviceView.Projects = []ProjectView{serviceView.DomainProject, serviceView.ApplicationProject, serviceView.InfrastructureProject, serviceView.WebApiProject, serviceView.UnitTestsProject, serviceView.IntegrationTestsProject, serviceView.ArchitectureTestsProject}
 		sort.Slice(serviceView.Projects, func(i, j int) bool {
 			return serviceView.Projects[i].SolutionPath < serviceView.Projects[j].SolutionPath
 		})

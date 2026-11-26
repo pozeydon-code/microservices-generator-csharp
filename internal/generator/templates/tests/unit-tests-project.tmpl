@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>{{ .TargetFramework }}</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="{{ .PackageVersions.microsoftNetTestSdk }}" />
+    <PackageReference Include="xunit" Version="{{ .PackageVersions.xunit }}" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="{{ .PackageVersions.xunitRunnerVisualstudio }}">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" Version="{{ .PackageVersions.fluentAssertions }}" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\{{ .Name }}.Domain\{{ .Name }}.Domain.csproj" />
+    <ProjectReference Include="..\..\src\{{ .Name }}.Application\{{ .Name }}.Application.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -50,23 +50,23 @@ Implement 5 major improvements to reduce over-engineering and add flexibility to
 - Route: inline (templates)
 - Commit: `c65d1d2` feat(t2): create simple mode templates (no CQRS, no EntitySnapshot)
 
-### T3: Unify error handling with ErrorOr [S2]
+### T3: Unify error handling with ErrorOr [S2] ✅
 - Remove DomainResult<T> from Domain/Primitives
 - Update Value Object templates to use ErrorOr
 - Update Command/Query handlers to use ErrorOr consistently
 - Remove DomainReconstitutionException (use ErrorOr)
 - Update tests
 - Route: inline (templates + domain)
-- Commit: `feat/unify-error-handling`
+- Commit: `99e55a7` feat(t3): unify error handling with ErrorOr only
 
-### T4: Simplify repository logging [S3]
+### T4: Simplify repository logging [S3] ✅
 - Remove SQL diagnostic queries from repository templates
 - Simplify LoggerMessage to standard structured logging
 - Remove FindReconstitutionDiagnosticsAsync method
 - Keep basic error logging
 - Update tests
 - Route: inline (templates)
-- Commit: `feat/simplify-repository-logging`
+- Commit: `99e55a7` (completed as part of T3 - simplified repository)
 
 ### T5: Consolidate test projects [S4]
 - Update solution template to generate 3 test projects:

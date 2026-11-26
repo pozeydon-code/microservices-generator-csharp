@@ -143,28 +143,22 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		if err := g.appendRendered(&files, join(service.Name, "src", service.WebApiProject.Directory, "Controllers", "ApiController.cs"), templatePath(webAPITemplateDir, "api-controller.tmpl"), service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join(service.Name, "tests", service.ApplicationTestsProject.Directory, service.ApplicationTestsProject.FileName), templatePath(testsTemplateDir, "application-tests-project.tmpl"), service); err != nil {
+		if err := g.appendRendered(&files, join(service.Name, "tests", service.UnitTestsProject.Directory, service.UnitTestsProject.FileName), templatePath(testsTemplateDir, "unit-tests-project.tmpl"), service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join(service.Name, "tests", service.WebApiTestsProject.Directory, service.WebApiTestsProject.FileName), templatePath(testsTemplateDir, "webapi-tests-project.tmpl"), service); err != nil {
+		if err := g.appendRendered(&files, join(service.Name, "tests", service.IntegrationTestsProject.Directory, service.IntegrationTestsProject.FileName), templatePath(testsTemplateDir, "integration-tests-project.tmpl"), service); err != nil {
 			return nil, err
 		}
 		if err := g.appendRendered(&files, join(service.Name, "tests", service.ArchitectureTestsProject.Directory, service.ArchitectureTestsProject.FileName), templatePath(testsTemplateDir, "architecture-tests-project.tmpl"), service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join(service.Name, "tests", service.InfrastructureTestsProject.Directory, service.InfrastructureTestsProject.FileName), templatePath(testsTemplateDir, "infrastructure-tests-project.tmpl"), service); err != nil {
-			return nil, err
-		}
-		if err := g.appendRendered(&files, join(service.Name, "tests", service.DomainTestsProject.Directory, service.DomainTestsProject.FileName), templatePath(testsTemplateDir, "domain-tests-project.tmpl"), service); err != nil {
-			return nil, err
-		}
-		if err := g.appendRendered(&files, join(service.Name, "tests", service.DomainTestsProject.Directory, service.Name+"DomainTests.cs"), templatePath(testsTemplateDir, "domain-tests.tmpl"), service); err != nil {
+		if err := g.appendRendered(&files, join(service.Name, "tests", service.UnitTestsProject.Directory, "Domain", service.Name+"DomainTests.cs"), templatePath(testsTemplateDir, "domain-tests.tmpl"), service); err != nil {
 			return nil, err
 		}
 		if err := g.appendRendered(&files, join(service.Name, "tests", service.ArchitectureTestsProject.Directory, service.Name+"ArchitectureTests.cs"), templatePath(testsTemplateDir, "architecture-tests.tmpl"), service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join(service.Name, "tests", service.InfrastructureTestsProject.Directory, service.Name+"InfrastructureTests.cs"), templatePath(testsTemplateDir, "infrastructure-tests.tmpl"), service); err != nil {
+		if err := g.appendRendered(&files, join(service.Name, "tests", service.IntegrationTestsProject.Directory, "Infrastructure", service.Name+"InfrastructureTests.cs"), templatePath(testsTemplateDir, "infrastructure-tests.tmpl"), service); err != nil {
 			return nil, err
 		}
 		for _, valueObject := range service.ValueObjects {
@@ -175,16 +169,16 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		if err := g.appendRendered(&files, join(service.Name, "src", service.WebApiProject.Directory, "Health", "HealthController.cs"), templatePath(webAPITemplateDir, "health-controller.tmpl"), service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join(service.Name, "tests", service.WebApiTestsProject.Directory, "TestWebApiFactory.cs"), templatePath(testsTemplateDir, "webapi-test-factory.tmpl"), service); err != nil {
+		if err := g.appendRendered(&files, join(service.Name, "tests", service.IntegrationTestsProject.Directory, "WebApi", "TestWebApiFactory.cs"), templatePath(testsTemplateDir, "webapi-test-factory.tmpl"), service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join(service.Name, "tests", service.WebApiTestsProject.Directory, "TestJwtTokens.cs"), templatePath(testsTemplateDir, "jwt-test-helper.tmpl"), service); err != nil {
+		if err := g.appendRendered(&files, join(service.Name, "tests", service.IntegrationTestsProject.Directory, "WebApi", "TestJwtTokens.cs"), templatePath(testsTemplateDir, "jwt-test-helper.tmpl"), service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join(service.Name, "tests", service.WebApiTestsProject.Directory, "HealthControllerTests.cs"), templatePath(testsTemplateDir, "webapi-health-tests.tmpl"), service); err != nil {
+		if err := g.appendRendered(&files, join(service.Name, "tests", service.IntegrationTestsProject.Directory, "WebApi", "HealthControllerTests.cs"), templatePath(testsTemplateDir, "webapi-health-tests.tmpl"), service); err != nil {
 			return nil, err
 		}
-		if err := g.appendRendered(&files, join(service.Name, "tests", service.WebApiTestsProject.Directory, "AuthenticationTests.cs"), templatePath(testsTemplateDir, "webapi-auth-tests.tmpl"), service); err != nil {
+		if err := g.appendRendered(&files, join(service.Name, "tests", service.IntegrationTestsProject.Directory, "WebApi", "AuthenticationTests.cs"), templatePath(testsTemplateDir, "webapi-auth-tests.tmpl"), service); err != nil {
 			return nil, err
 		}
 		if err := g.appendRendered(&files, join(service.Name, "src", service.InfrastructureProject.Directory, "DependencyInjection.cs"), templatePath(infrastructureTemplateDir, "infrastructure-di.tmpl"), service); err != nil {
@@ -238,8 +232,8 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 					}
 					return "controller.tmpl"
 				}())},
-				{join(service.Name, "tests", service.ApplicationTestsProject.Directory, "Features", entity.FeatureName, entity.Name+"ApplicationTests.cs"), templatePath(testsTemplateDir, "application-tests.tmpl")},
-				{join(service.Name, "tests", service.WebApiTestsProject.Directory, "Features", entity.FeatureName, entity.Name+"ControllerTests.cs"), templatePath(testsTemplateDir, "webapi-tests.tmpl")},
+				{join(service.Name, "tests", service.UnitTestsProject.Directory, "Application", entity.FeatureName, entity.Name+"ApplicationTests.cs"), templatePath(testsTemplateDir, "application-tests.tmpl")},
+				{join(service.Name, "tests", service.IntegrationTestsProject.Directory, "WebApi", entity.FeatureName, entity.Name+"ControllerTests.cs"), templatePath(testsTemplateDir, "webapi-tests.tmpl")},
 			}
 			
 			// Add mode-specific handler files
