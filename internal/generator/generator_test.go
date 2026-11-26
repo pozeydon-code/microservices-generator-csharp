@@ -1893,6 +1893,108 @@ func assertPathMissing(t *testing.T, path string) {
 	}
 }
 
+func queryShapesConfig() spec.Config {
+	return spec.Config{
+		Solution: spec.Solution{Name: "ShopPlatform", Description: "Shop platform with query shapes."},
+		Services: []spec.Service{
+			{
+				Name: "ProductService",
+				Entities: []spec.Entity{
+					{
+						Name: "Product",
+						Fields: []spec.Field{
+							{Name: "Id", Type: "Guid"},
+							{Name: "Name", Type: "string"},
+							{Name: "Price", Type: "decimal"},
+						},
+					},
+					{
+						Name: "Category",
+						Fields: []spec.Field{
+							{Name: "Id", Type: "Guid"},
+							{Name: "Name", Type: "string"},
+						},
+					},
+				},
+				Relationships: []spec.Relationship{
+					{
+						Name:            "ProductCategory",
+						PrincipalEntity: "Product",
+						DependentEntity: "Category",
+						Multiplicity:    "one-to-many",
+						ForeignKeyName:  "CategoryId",
+						ForeignKeyType:  "Guid",
+					},
+				},
+				QueryShapes: []spec.QueryShape{
+					{Name: "summary", DefaultDepth: 1},
+					{Name: "detail", DefaultDepth: 2},
+				},
+			},
+		},
+	}
+}
+
+func TestGenerateQueryShapesProducesDeterministicOutput(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	cfg := queryShapesConfig()
+
+	first, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate first: %v", err)
+	}
+	second, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate second: %v", err)
+	}
+
+	if len(first) != len(second) {
+		t.Fatalf("expected same file count, got %d and %d", len(first), len(second))
+	}
+	for index := range first {
+		if first[index].Path != second[index].Path || !bytes.Equal(first[index].Content, second[index].Content) {
+			t.Fatalf("generation is not deterministic at index %d", index)
+		}
+	}
+
+	// Verificar que se generen DTOs shaped
+	dtoContent := string(generatedContent(t, first, "ProductService/src/ProductService.Application/Products/Dtos/ProductDto.cs"))
+	if !strings.Contains(dtoContent, "ProductSummaryDto") {
+		t.Error("expected ProductSummaryDto to be generated")
+	}
+	if !strings.Contains(dtoContent, "ProductDetailDto") {
+		t.Error("expected ProductDetailDto to be generated")
+	}
+
+	// Verificar que se generen métodos shaped en repository
+	repoContent := string(generatedContent(t, first, "ProductService/src/ProductService.Infrastructure/Persistence/Features/Products/ProductRepository.cs"))
+	if !strings.Contains(repoContent, "ListShaped_summaryAsync") {
+		t.Error("expected ListShaped_summaryAsync method to be generated")
+	}
+	if !strings.Contains(repoContent, "GetShaped_summaryAsync") {
+		t.Error("expected GetShaped_summaryAsync method to be generated")
+	}
+	if !strings.Contains(repoContent, "ListShaped_detailAsync") {
+		t.Error("expected ListShaped_detailAsync method to be generated")
+	}
+	if !strings.Contains(repoContent, "GetShaped_detailAsync") {
+		t.Error("expected GetShaped_detailAsync method to be generated")
+	}
+
+	// Verificar que controller acepte parámetro shape
+	controllerContent := string(generatedContent(t, first, "ProductService/src/ProductService.WebApi/Controllers/Products/ProductController.cs"))
+	if !strings.Contains(controllerContent, "[FromQuery] string? shape") {
+		t.Error("expected controller to accept shape parameter")
+	}
+	if !strings.Contains(controllerContent, "IsValidShape") {
+		t.Error("expected controller to validate shape")
+	}
+}
+
 func testConfig() spec.Config {
 	return spec.Config{
 		Solution: spec.Solution{Name: "CommercePlatform", Description: "Minimal generated .NET 8 microservice workspace for product management."},

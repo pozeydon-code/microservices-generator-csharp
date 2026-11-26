@@ -67,11 +67,14 @@ Generator automatically:
   - Commit: `d9eb59d` feat(t4): add shaped read methods to repository
   - Slice boundary: 2209 lines on feat/v0.7.0-query-shaping
   
-- **T5**: Update WebAPI templates for shape parameter
-  - Modify `controller.tmpl` to accept `shape` query parameter
-  - Validate shape against configured names
+- **T5**: Update WebAPI templates for shape parameter ✅
+  - Controller accepts shape query parameter with validation
+  - Queries (List, GetById) accept Shape parameter
+  - Handlers use shaped repository methods when shape is provided
+  - Validates shape against configured shapes, returns BadRequest if invalid
   - Route: inline (templates, no high-risk)
-  - Commit: feat/webapi-templates-query-shapes
+  - Commit: `61973d8` feat(t5): add WebAPI shape parameter support
+  - Slice boundary: 2456 lines on feat/v0.7.0-query-shaping
   
 - **T6**: Add golden tests for query shaping
   - Create test config with query shapes

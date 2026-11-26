@@ -1,0 +1,378 @@
+{
+  "generator": "microgen",
+  "version": 2,
+  "files": [
+    {
+      "path": "Directory.Build.props",
+      "sha256": "2393f93f754f0d161cd23c5dea746a25be4f586041ded5c7fc5741bf1ba51d61"
+    },
+    {
+      "path": "Directory.Packages.props",
+      "sha256": "98d6caf77f7e1e403be8d538cff81d6e8226e34906e00188c9b92cb98bdf6993"
+    },
+    {
+      "path": "ProductService/Directory.Build.props",
+      "sha256": "2393f93f754f0d161cd23c5dea746a25be4f586041ded5c7fc5741bf1ba51d61"
+    },
+    {
+      "path": "ProductService/Directory.Packages.props",
+      "sha256": "98d6caf77f7e1e403be8d538cff81d6e8226e34906e00188c9b92cb98bdf6993"
+    },
+    {
+      "path": "ProductService/ProductService.sln",
+      "sha256": "986cca4a0265ceffd71856c9d19d1cfbbd689fcdca46f0c7f2679ef11124257b"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/ApplicationAssemblyReference.cs",
+      "sha256": "e40b0018006ae4ef92dd45a579da2f56a00660b25fe231b3c51226b6636df7e2"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Commands/Create/CreateCategoryCommand.cs",
+      "sha256": "596c39b24f705ab5dd47fed0ab3c380d8880b23405ea147deb27741603e58f58"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Commands/Create/CreateCategoryCommandHandler.cs",
+      "sha256": "c0ae7dcdb162f0af81116ea532e49eab8f10556c933a4ffdace4fa117e1b4934"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Commands/Create/CreateCategoryCommandValidator.cs",
+      "sha256": "b45a0217d865faf25024c53fc7cc19e6565ce794bbc7ba93dd12f8a59933d04f"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Commands/Delete/DeleteCategoryCommand.cs",
+      "sha256": "62a74753144771da415a67e63429cd432bfea90c7e82c7bb37bce69d870fec56"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Commands/Delete/DeleteCategoryCommandHandler.cs",
+      "sha256": "0066f5ed351cd4ecd3d829e4b975c6b4877673030f425a51a9355181d0d734c7"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Commands/Delete/DeleteCategoryCommandValidator.cs",
+      "sha256": "241d650424f209df19955959b3b543727e902fcc10078c28eb3cfe273aaf9ab1"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Commands/Update/UpdateCategoryCommand.cs",
+      "sha256": "fef964a8232eada8526eaf39afdcd5f5e3249c58b03d5d712b42284300deffdc"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Commands/Update/UpdateCategoryCommandHandler.cs",
+      "sha256": "cc3a5fc07f872576a84fbcd890c2d30c7b1a4c2768ce089ee8e0411447f1bc5d"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Commands/Update/UpdateCategoryCommandValidator.cs",
+      "sha256": "7851033e91b2e06dcd6efb2a059937d8530ccbdee47f367b9d268efcecf929ec"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Dtos/CategoryDto.cs",
+      "sha256": "ba104e651dc448e8ba19df7f31e719ba8578776a0f7b34683f0c62546b67d9c2"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Dtos/CreateCategoryRequest.cs",
+      "sha256": "fdf3e97f2e073c096d48d15e9eb00d08bacd8e1d101f33ffbe223a2ce9bb5eac"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Dtos/UpdateCategoryRequest.cs",
+      "sha256": "f712575441f20509424e7863e6510776a7ed8155ffcb061dc685384bb313451f"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Interfaces/ICategoryRepository.cs",
+      "sha256": "8cf84e50e5616e9522f23b3b3d39c9505e5791446682cbae35ad1dab61d823e2"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Queries/GetById/GetCategoryByIdQuery.cs",
+      "sha256": "52d17006fad67cc3cefd6a1d4bb75ef798c6b061d40510a4e9913583e8988b9e"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Queries/GetById/GetCategoryByIdQueryHandler.cs",
+      "sha256": "8c5d240b6f7124576067948a5e92cd9dbc6af2ee0da1d9a04b75a1c655ae1a37"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Queries/List/ListCategoryQuery.cs",
+      "sha256": "43c4c6f503d13447b04cd1f021efade05387c2bf95fef20b79f9b503b8e13367"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Queries/List/ListCategoryQueryHandler.cs",
+      "sha256": "6f6a83c721ef94dfd0041a7f6e3f38a8fa2fb97b84a8b3432fc09fce623a1aa5"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Categories/Queries/List/ListCategoryQueryValidator.cs",
+      "sha256": "88606ef23a72f47150b8f8b19f5501c090d55e5b50079d787afead9544b80349"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Common/PaginationPolicy.cs",
+      "sha256": "75342b94429b678c9267a36c1589cf59bff87eef989bbdfa7be189cb6ef055a6"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Common/Readiness.cs",
+      "sha256": "1396a0f5f8b5db5ac252bcf53510b052166b54e3d6d29a510ab9db5580ae167d"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Common/Results.cs",
+      "sha256": "cf599e4c231fdcd9ea0ee6e56f0f9da1401c22e676c41aa5b3fce3a8bc04411b"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Common/UnitOfWork.cs",
+      "sha256": "cf41a6e9245f203f0274fd5ebec496058baec41610c9d7395ebebbd6a80d67b7"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Common/ValidationBehavior.cs",
+      "sha256": "72487ac74c0c25bcb923f6f77118f0207ffef16b7c8f09c11faa6bbb86afed88"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/DependencyInjection.cs",
+      "sha256": "e14d11ca111f25e04bf53f01f29375e330d931fecc406b7837632133c01a5da7"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/ProductService.Application.csproj",
+      "sha256": "61d17de608c2c0643ee1cb8b3d92d843681506ee48557b9e2b5d2a97fbcbc5ec"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Commands/Create/CreateProductCommand.cs",
+      "sha256": "9ba22a8be973186085666d79d15c3cc5a56402c5ecf7f6255282a28dc712e807"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Commands/Create/CreateProductCommandHandler.cs",
+      "sha256": "269187fc93ccde85b9a8bf425863c660679688746d5cbb01cc6e3c28286fb778"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Commands/Create/CreateProductCommandValidator.cs",
+      "sha256": "dfda3b7f9ece5ff6098a17cd5c6bbe8c807fd5757c11e90d9ecd610766685e20"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Commands/Delete/DeleteProductCommand.cs",
+      "sha256": "2b15744322e43dd9c3e76952b12aaf34e7faf3bfb8f70104343b6efc57271737"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Commands/Delete/DeleteProductCommandHandler.cs",
+      "sha256": "b86fc628e603c1e65cce69cd5a8fcd5f719129be3a5ca7242556a0ae73d7752d"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Commands/Delete/DeleteProductCommandValidator.cs",
+      "sha256": "dd55c887b22e857bf9f93f538dd4624bf930e8bdc67bc0679617fa808eff3ab6"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Commands/Update/UpdateProductCommand.cs",
+      "sha256": "f43796b7502989f3e650e9072e1c1427515b80456a57c9928658609ac5309add"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Commands/Update/UpdateProductCommandHandler.cs",
+      "sha256": "2e68d5bb656b33c838dd5e6d8ffa510f48d696dec9ba238ea3fea214479d404e"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Commands/Update/UpdateProductCommandValidator.cs",
+      "sha256": "59fe7128234afad244724715898387d54f2b7ef32ad43ec6f38a8e462f45d64f"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Dtos/CreateProductRequest.cs",
+      "sha256": "d3eea9a7f34d4269c8e0eaea63f8165b4ae3db7dc18dc32a5f6dbd561ef52086"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Dtos/ProductDto.cs",
+      "sha256": "26e71b9bb8ebd121c74054130591cedfa80742f29944029e38d1f55bd65b5c23"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Dtos/UpdateProductRequest.cs",
+      "sha256": "3b696d636315005695a801e1ba4943df882bf66d5cff587e0aa42d375fc3034f"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Interfaces/IProductRepository.cs",
+      "sha256": "5e5ec8a28c04d4cd31290f87138f0b579b6b293ca75477aaf768638673c53dc6"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Queries/GetById/GetProductByIdQuery.cs",
+      "sha256": "3aa1f9ff4dcf6a7af2348e3ca37aac314c20cec094dbd03f3abcad71eb004ee7"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Queries/GetById/GetProductByIdQueryHandler.cs",
+      "sha256": "6aa7d2f666ecceccd77e73d5524720daabdc55be5c4f5b01daa6cbc77991a313"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Queries/List/ListProductQuery.cs",
+      "sha256": "f6cc8728d90e321cc7e6e4ab5beca61a21fd60ad7bf784b72a2f3c0e044409d3"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Queries/List/ListProductQueryHandler.cs",
+      "sha256": "0e9899ea34a17806ee90a91b2c5ad62d828407c1fda5a1c653c673e018804fed"
+    },
+    {
+      "path": "ProductService/src/ProductService.Application/Products/Queries/List/ListProductQueryValidator.cs",
+      "sha256": "5328a1196a732a3b2861ed948f388af9b6f639516fe9a5e8b24dadce9135bdd3"
+    },
+    {
+      "path": "ProductService/src/ProductService.Domain/Entities/Category.cs",
+      "sha256": "42c18e15e0b42aa8560d78ae9b7cbf54d49353d5218de2e1cd27b9f6b011cf28"
+    },
+    {
+      "path": "ProductService/src/ProductService.Domain/Entities/Product.cs",
+      "sha256": "5d7f244daa48b665455fbb3f9ad4804351aea813491358e84db7ebcb7763883d"
+    },
+    {
+      "path": "ProductService/src/ProductService.Domain/Primitives/DomainReconstitutionException.cs",
+      "sha256": "45bedd8fd5f29d202cf193f297e2a47dfbffb62ff4d64f0253e46518cac33770"
+    },
+    {
+      "path": "ProductService/src/ProductService.Domain/Primitives/DomainResult.cs",
+      "sha256": "919be8f0a7215bfa5ab44b86fb732fadf6c841c1222d739be3d1ba7839b1a579"
+    },
+    {
+      "path": "ProductService/src/ProductService.Domain/ProductService.Domain.csproj",
+      "sha256": "3702bcd64b09004893c0afdb530b6b91249de567d2b8708f8ac16dab0c9dd561"
+    },
+    {
+      "path": "ProductService/src/ProductService.Infrastructure/DependencyInjection.cs",
+      "sha256": "93ae6d2a746f35e380d2d4b196d2faafd06c164137eb43b7308551155854dfce"
+    },
+    {
+      "path": "ProductService/src/ProductService.Infrastructure/Health/SqlReadinessProbe.cs",
+      "sha256": "ecc3eb4e6c76832e1bc6ed8b74e86073b443edcfa757aed589e2afa1a1281fb2"
+    },
+    {
+      "path": "ProductService/src/ProductService.Infrastructure/Persistence/Configurations/CategoryConfiguration.cs",
+      "sha256": "52eb8cc8c27fb8c2c037275c3707b530aad730b548b7728d38ae1d20395e16cc"
+    },
+    {
+      "path": "ProductService/src/ProductService.Infrastructure/Persistence/Configurations/ProductConfiguration.cs",
+      "sha256": "e616db2f8ce279af27f297e66b0cb7aa6858be3652f3356e5eefbf264d8a3d09"
+    },
+    {
+      "path": "ProductService/src/ProductService.Infrastructure/Persistence/Features/Categories/CategoryRepository.cs",
+      "sha256": "96f323499302c0084b906630e4c68740ecefa5bc4dcae5a78e1b1eac647a8809"
+    },
+    {
+      "path": "ProductService/src/ProductService.Infrastructure/Persistence/Features/Products/ProductRepository.cs",
+      "sha256": "4164ef809d6a1cfc35d073ba24e1713a1ec2de1ebf135705fe1a074fcd6b81e4"
+    },
+    {
+      "path": "ProductService/src/ProductService.Infrastructure/Persistence/ProductServiceDbContext.cs",
+      "sha256": "f5ffff6f75c6a694c59a791fdfe36af51b7f4a598fde7bd6f9a485b76947ed40"
+    },
+    {
+      "path": "ProductService/src/ProductService.Infrastructure/Persistence/ProductServiceDbContextFactory.cs",
+      "sha256": "b87d75505c510bbee9a350ea004ca6ed3df06dfba7fb134486017995744beb52"
+    },
+    {
+      "path": "ProductService/src/ProductService.Infrastructure/Persistence/UnitOfWork.cs",
+      "sha256": "b40d5a11da3ff0dd91d7b53fadebc6fbc8cbb53b2310545a359dbc30501da5fc"
+    },
+    {
+      "path": "ProductService/src/ProductService.Infrastructure/ProductService.Infrastructure.csproj",
+      "sha256": "62bd7d27623b4fb4947765dde10757493de65d28157f3312601678d12f5a8959"
+    },
+    {
+      "path": "ProductService/src/ProductService.WebApi/Common/Errors/ApiProblemDetailsFactory.cs",
+      "sha256": "dab6647c839128c30f6c7d000001dd5b739a7ce7aed935f8563be68cb26ac884"
+    },
+    {
+      "path": "ProductService/src/ProductService.WebApi/Common/Errors/HttpContextItemKeys.cs",
+      "sha256": "618cfff7e080375a75f1d095e42651bbdaf65cc023988094c0768f6a923e9d47"
+    },
+    {
+      "path": "ProductService/src/ProductService.WebApi/Controllers/ApiController.cs",
+      "sha256": "ebc25d15a539b7fe6f417a11761b8fdc255c6555ccd308256c89ee2c4e663a33"
+    },
+    {
+      "path": "ProductService/src/ProductService.WebApi/Controllers/Categories/CategoryController.cs",
+      "sha256": "3cd0296ab75f1a9968846f0f7978f75b0e975cbdf82f4f8edc9a70dff0482488"
+    },
+    {
+      "path": "ProductService/src/ProductService.WebApi/Controllers/Products/ProductController.cs",
+      "sha256": "f2e56980f348ca3745f937cd2101f0bdb8a980e7c129e67f0dc927bc2c7d90ef"
+    },
+    {
+      "path": "ProductService/src/ProductService.WebApi/DependencyInjection.cs",
+      "sha256": "c99d3eaae408628f253d52a3b14edb8e2f161de4280763ae5d0df9bedac715e6"
+    },
+    {
+      "path": "ProductService/src/ProductService.WebApi/Health/HealthController.cs",
+      "sha256": "59373d419a414edca53e4463be5a7691e61b9d1ff4cf8ee7ecd06b70e3f83f29"
+    },
+    {
+      "path": "ProductService/src/ProductService.WebApi/ProductService.WebApi.csproj",
+      "sha256": "5ab0d405a217bfe90131e2a740e5c1ef0a7e13b023d4f3f412a87e716dc54c5f"
+    },
+    {
+      "path": "ProductService/src/ProductService.WebApi/Program.cs",
+      "sha256": "7e23c253a7603144e2d9b6f5ea4f6eab7920c33e9d2fd32d0574e4cea97a4a49"
+    },
+    {
+      "path": "ProductService/src/ProductService.WebApi/appsettings.Development.json",
+      "sha256": "f201580a64267f22b68897ea39e42424cf76802043fa062a34d0875bd4d56a1c"
+    },
+    {
+      "path": "ProductService/src/ProductService.WebApi/appsettings.json",
+      "sha256": "f201580a64267f22b68897ea39e42424cf76802043fa062a34d0875bd4d56a1c"
+    },
+    {
+      "path": "ProductService/tests/ProductService.Application.Tests/Features/Categories/CategoryApplicationTests.cs",
+      "sha256": "ceb68e06e920810013a964d89d5d364c5c310e235ccff40abbabfd6543f72662"
+    },
+    {
+      "path": "ProductService/tests/ProductService.Application.Tests/Features/Products/ProductApplicationTests.cs",
+      "sha256": "6f5451888176a9386d5694a8e9cbda3a1d73a9edfa4db8325522b3da6310bc1e"
+    },
+    {
+      "path": "ProductService/tests/ProductService.Application.Tests/ProductService.Application.Tests.csproj",
+      "sha256": "6415cb7d420dca613ca4bc2b6bcdf644a918bcd97d49163cbec2a727a882f38e"
+    },
+    {
+      "path": "ProductService/tests/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj",
+      "sha256": "d79a5464b7a163bf76037a5f2819b97caab95793008f35005bdfcb3d9b456fc1"
+    },
+    {
+      "path": "ProductService/tests/ProductService.Architecture.Tests/ProductServiceArchitectureTests.cs",
+      "sha256": "1d8ad2cb1a13550b5fe6455fd6af65d163bc23ff634bc35da43345915b49a863"
+    },
+    {
+      "path": "ProductService/tests/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj",
+      "sha256": "2ae722a55e6f47b28fc35b004e3586549850815a706658b18b7f2518bdb7f604"
+    },
+    {
+      "path": "ProductService/tests/ProductService.Domain.Tests/ProductServiceDomainTests.cs",
+      "sha256": "90287602af3856d86e32933e941bb1feafc7eadaae9792903da48c5b9dce6d39"
+    },
+    {
+      "path": "ProductService/tests/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj",
+      "sha256": "5193273f10a34cd4466ed10095672fac821ae4d89bd2dd6595e151b27804a32b"
+    },
+    {
+      "path": "ProductService/tests/ProductService.Infrastructure.Tests/ProductServiceInfrastructureTests.cs",
+      "sha256": "b55138c599f06cf9b1a5be1031f705f46894399c072231dd63933292068e6ae9"
+    },
+    {
+      "path": "ProductService/tests/ProductService.WebApi.Tests/AuthenticationTests.cs",
+      "sha256": "d48505cc7239a0a28b12b3242db6026acba7d9e054176aa6fe9b9ff15ac8bf63"
+    },
+    {
+      "path": "ProductService/tests/ProductService.WebApi.Tests/Features/Categories/CategoryControllerTests.cs",
+      "sha256": "f6f86b88f7f49b50c0d19a25d617116f8ab9f0229a6a434920c2cf278f234058"
+    },
+    {
+      "path": "ProductService/tests/ProductService.WebApi.Tests/Features/Products/ProductControllerTests.cs",
+      "sha256": "1b67653f5bc95b3762330dc4f5466fa1ecdfae67f5865aa8638b1cdb3714ad98"
+    },
+    {
+      "path": "ProductService/tests/ProductService.WebApi.Tests/HealthControllerTests.cs",
+      "sha256": "b7ce7b479ffb6a2ec03a387ccebacff7b3cfe7bdc177ae4a758ff72fcb5bf06c"
+    },
+    {
+      "path": "ProductService/tests/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj",
+      "sha256": "9c518073fe3e528e5f68c68a4eb0f7714c464e5d830b58b54b494db28bba986c"
+    },
+    {
+      "path": "ProductService/tests/ProductService.WebApi.Tests/TestJwtTokens.cs",
+      "sha256": "0a837e8e54adb3f7dc99e46c0749a06f24564be400df8e763946d06911b4cadf"
+    },
+    {
+      "path": "ProductService/tests/ProductService.WebApi.Tests/TestWebApiFactory.cs",
+      "sha256": "f7ffc2584ba1853602009a7293011db3136f4a33f1188ec05fb098058b16a08c"
+    },
+    {
+      "path": "README.md",
+      "sha256": "924cef2ea46f805a3fb126973587d85e06fa910a0b9c6998de3ce869a24e1d3e"
+    },
+    {
+      "path": "microgen.json",
+      "sha256": "a81d5cad5d8320cde6e1985c74d1c063323162f7fdd669787768f3acadec457f"
+    }
+  ]
+}

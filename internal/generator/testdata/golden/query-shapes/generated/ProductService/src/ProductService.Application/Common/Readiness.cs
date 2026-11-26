@@ -1,0 +1,9 @@
+namespace ProductService.Application.Common;
+
+public enum ReadinessStatus { Ready, NotReady }
+public sealed record ReadinessResult(ReadinessStatus Status);
+
+public interface IReadinessProbe
+{
+    Task<ReadinessResult> CheckAsync(CancellationToken cancellationToken);
+}
