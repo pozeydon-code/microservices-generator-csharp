@@ -246,6 +246,51 @@ func countFieldViewsNamedFold(fields []FieldView, name string) int {
 	return count
 }
 
+func TestBuildSolutionViewPropagatesQueryShapes(t *testing.T) {
+	cfg := relationshipTestConfig()
+	cfg.Services[0].QueryShapes = []spec.QueryShape{
+		{Name: "summary", DefaultDepth: 1},
+		{Name: "detail", DefaultDepth: 2},
+	}
+	view, err := buildSolutionView(cfg)
+	if err != nil {
+		t.Fatalf("expected valid view, got %v", err)
+	}
+	if len(view.Services) != 1 {
+		t.Fatalf("expected 1 service, got %d", len(view.Services))
+	}
+	service := view.Services[0]
+	if !service.HasQueryShapes {
+		t.Fatal("expected HasQueryShapes to be true")
+	}
+	if len(service.QueryShapes) != 2 {
+		t.Fatalf("expected 2 query shapes, got %d", len(service.QueryShapes))
+	}
+	if service.QueryShapes[0].Name != "summary" || service.QueryShapes[0].DefaultDepth != 1 {
+		t.Errorf("expected first shape summary/1, got %s/%d", service.QueryShapes[0].Name, service.QueryShapes[0].DefaultDepth)
+	}
+	if service.QueryShapes[1].Name != "detail" || service.QueryShapes[1].DefaultDepth != 2 {
+		t.Errorf("expected second shape detail/2, got %s/%d", service.QueryShapes[1].Name, service.QueryShapes[1].DefaultDepth)
+	}
+}
+
+func TestBuildSolutionViewWithoutQueryShapesHasFlagFalse(t *testing.T) {
+	cfg := relationshipTestConfig()
+	view, err := buildSolutionView(cfg)
+	if err != nil {
+		t.Fatalf("expected valid view, got %v", err)
+	}
+	if len(view.Services) != 1 {
+		t.Fatalf("expected 1 service, got %d", len(view.Services))
+	}
+	if view.Services[0].HasQueryShapes {
+		t.Error("expected HasQueryShapes to be false when no query shapes configured")
+	}
+	if len(view.Services[0].QueryShapes) != 0 {
+		t.Errorf("expected 0 query shapes, got %d", len(view.Services[0].QueryShapes))
+	}
+}
+
 func gatewayTestConfig() spec.Config {
 	return spec.Config{
 		Solution: spec.Solution{Name: "ShopPlatform", Description: "Shop platform."},
