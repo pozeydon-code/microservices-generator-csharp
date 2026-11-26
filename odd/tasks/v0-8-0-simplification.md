@@ -81,14 +81,17 @@ Implement 5 major improvements to reduce over-engineering and add flexibility to
 - Route: inline (templates + solution structure)
 - Commit: `4f5e8a3` feat(t5): consolidate test projects to simpler structure (5 → 3 projects)
 
-### T6: Implement incremental generation [S5]
-- Add manifest tracking to detect changes
-- Compare config hash with previous generation
-- Only regenerate files affected by changes
-- Add `--force` flag to force full regeneration
-- Add tests for incremental behavior
-- Route: inline (generator logic)
-- Commit: `feat/incremental-generation`
+### T6: Implement incremental generation [S5] - DELEGATED
+- **Status**: Delegated to subagent (post-RDD validation)
+- **Scope**: Implement file-level incremental generation to preserve manual changes
+- **Requirements**:
+  * Track config dependencies per file in manifest
+  * Detect granular config changes
+  * Regenerate only affected files
+  * Preserve unmodified files (even with manual changes)
+  * Add --force flag for full regeneration
+- **Approach**: Build on manifest.go foundation, implement selective regeneration logic
+- **Note**: Will be implemented in separate session with subagent to avoid context bloat
 
 ### T7: Update documentation and examples [S1-S5]
 - Update README with new generation modes
