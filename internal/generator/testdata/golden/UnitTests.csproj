@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <ProjectReference Include="..\..\src\ProductService.Application\ProductService.Application.csproj" />
     <ProjectReference Include="..\..\src\ProductService.Domain\ProductService.Domain.csproj" />
   </ItemGroup>
   <ItemGroup>
@@ -9,8 +10,11 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="FluentAssertions" />
   </ItemGroup>
   <PropertyGroup>
     <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 </Project>

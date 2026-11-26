@@ -3,7 +3,7 @@ using ProductService.Domain.ValueObjects;
 
 using Xunit;
 
-namespace ProductService.Domain.Tests;
+namespace ProductService.UnitTests.Domain;
 
 public sealed class ProductServiceDomainTests
 {

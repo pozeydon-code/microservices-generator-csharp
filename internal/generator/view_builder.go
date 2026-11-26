@@ -253,9 +253,9 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 		serviceView.ApplicationProject = projectView(service.Name, service.Name+".Application")
 		serviceView.InfrastructureProject = projectView(service.Name, service.Name+".Infrastructure")
 		serviceView.WebApiProject = projectView(service.Name, service.Name+".WebApi")
-		serviceView.UnitTestsProject = testProjectView(service.Name, service.Name+".UnitTests")
-		serviceView.IntegrationTestsProject = testProjectView(service.Name, service.Name+".IntegrationTests")
-		serviceView.ArchitectureTestsProject = testProjectView(service.Name, service.Name+".ArchitectureTests")
+		serviceView.UnitTestsProject = testProjectView(service.Name, "UnitTests")
+		serviceView.IntegrationTestsProject = testProjectView(service.Name, "IntegrationTests")
+		serviceView.ArchitectureTestsProject = testProjectView(service.Name, "ArchitectureTests")
 		serviceView.Projects = []ProjectView{serviceView.DomainProject, serviceView.ApplicationProject, serviceView.InfrastructureProject, serviceView.WebApiProject, serviceView.UnitTestsProject, serviceView.IntegrationTestsProject, serviceView.ArchitectureTestsProject}
 		sort.Slice(serviceView.Projects, func(i, j int) bool {
 			return serviceView.Projects[i].SolutionPath < serviceView.Projects[j].SolutionPath

@@ -13,7 +13,7 @@ using ProductService.Domain.ValueObjects;
 using ProductService.Infrastructure.Persistence;
 using Xunit;
 
-namespace ProductService.Infrastructure.Tests;
+namespace ProductService.IntegrationTests.Infrastructure;
 
 public sealed class ProductServiceInfrastructureTests
 {

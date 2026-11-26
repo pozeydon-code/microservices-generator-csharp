@@ -68,16 +68,18 @@ Implement 5 major improvements to reduce over-engineering and add flexibility to
 - Route: inline (templates)
 - Commit: `99e55a7` (completed as part of T3 - simplified repository)
 
-### T5: Consolidate test projects [S4]
-- Update solution template to generate 3 test projects:
-  - {Service}.UnitTests (Domain + Application)
-  - {Service}.IntegrationTests (Infrastructure + WebApi)
-  - {Service}.ArchitectureTests (optional, controlled by flag)
-- Move existing tests to appropriate projects
-- Update test templates
-- Update generator tests
+### T5: Consolidate test projects [S4] ✅
+- Consolidated 5 test projects into 3:
+  * UnitTests (Domain + Application tests)
+  * IntegrationTests (Infrastructure + WebApi tests)
+  * ArchitectureTests (Architecture tests)
+- src/ keeps full service prefixes (ProductService.Domain, etc.) - .NET convention
+- tests/ uses simple names (UnitTests, IntegrationTests, ArchitectureTests)
+- Updated view_builder.go, generator.go, scaffold_plan.go
+- Updated all test templates with new namespaces
+- Updated generator_test.go and golden files
 - Route: inline (templates + solution structure)
-- Commit: `feat/consolidate-test-projects`
+- Commit: `4f5e8a3` feat(t5): consolidate test projects to simpler structure (5 → 3 projects)
 
 ### T6: Implement incremental generation [S5]
 - Add manifest tracking to detect changes

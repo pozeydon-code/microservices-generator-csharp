@@ -1,28 +1,24 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
-  <PropertyGroup>
-    <TargetFramework>{{ .TargetFramework }}</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <IsPackable>false</IsPackable>
-  </PropertyGroup>
-
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="{{ .PackageVersions.microsoftNetTestSdk }}" />
-    <PackageReference Include="xunit" Version="{{ .PackageVersions.xunit }}" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="{{ .PackageVersions.xunitRunnerVisualstudio }}">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    <ProjectReference Include="..\..\src\{{ .InfrastructureProject.Directory }}\{{ .InfrastructureProject.FileName }}" />
+    <ProjectReference Include="..\..\src\{{ .ApplicationProject.Directory }}\{{ .ApplicationProject.FileName }}" />
+    <ProjectReference Include="..\..\src\{{ .DomainProject.Directory }}\{{ .DomainProject.FileName }}" />
+    <ProjectReference Include="..\..\src\{{ .WebApiProject.Directory }}\{{ .WebApiProject.FileName }}" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
       <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="FluentAssertions" Version="{{ .PackageVersions.fluentAssertions }}" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="{{ .PackageVersions.aspnetCoreMvcTesting }}" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
   </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\{{ .Name }}.Domain\{{ .Name }}.Domain.csproj" />
-    <ProjectReference Include="..\..\src\{{ .Name }}.Application\{{ .Name }}.Application.csproj" />
-    <ProjectReference Include="..\..\src\{{ .Name }}.Infrastructure\{{ .Name }}.Infrastructure.csproj" />
-    <ProjectReference Include="..\..\src\{{ .Name }}.WebApi\{{ .Name }}.WebApi.csproj" />
-  </ItemGroup>
-
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
 </Project>
