@@ -668,7 +668,7 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.EntityFrameworkCore.Tools\" Version=\"8.0.28")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.AspNetCore.Mvc.Testing\" Version=\"8.0.28")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Microsoft.Data.SqlClient\" Version=\"6.1.1")
-	assertContains(t, contentByPath["Directory.Packages.props"], "System.Security.Cryptography.Xml\" Version=\"8.0.4")
+	assertContains(t, contentByPath["Directory.Packages.props"], "System.Security.Cryptography.Xml\" Version=\"8.0.5")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Package versions are generated from one target-framework policy table.")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Allows central PackageVersion entries to override vulnerable transitives; NuGet rejects downgrades with NU1109.")
 	assertContains(t, contentByPath["Directory.Packages.props"], "Pinned for NuGet audit safety when EF/Core build transitives request vulnerable XML versions.")
@@ -1005,11 +1005,12 @@ func TestGenerateDirectoryPackagesPropsUsesDependencyPolicy(t *testing.T) {
 		aspNetCoreTest    string
 		entityFramework   string
 		sqlClient         string
+		cryptographyPKCS  string
 		cryptographyXML   string
 	}{
-		{name: "net8", targetFramework: "net8.0", aspNetCore: "8.0.28", aspNetCoreOpenAPI: "8.0.28", aspNetCoreTest: "8.0.28", entityFramework: "8.0.28", sqlClient: "6.1.1", cryptographyXML: "8.0.4"},
-		{name: "net9", targetFramework: "net9.0", aspNetCore: "9.0.7", aspNetCoreOpenAPI: "9.0.7", aspNetCoreTest: "9.0.7", entityFramework: "9.0.7", sqlClient: "6.1.1", cryptographyXML: "9.0.18"},
-		{name: "net10", targetFramework: "net10.0", aspNetCore: "10.0.0", aspNetCoreOpenAPI: "10.0.0", aspNetCoreTest: "10.0.0", entityFramework: "10.0.0", sqlClient: "6.1.1", cryptographyXML: "10.0.10"},
+		{name: "net8", targetFramework: "net8.0", aspNetCore: "8.0.28", aspNetCoreOpenAPI: "8.0.28", aspNetCoreTest: "8.0.28", entityFramework: "8.0.28", sqlClient: "6.1.1", cryptographyPKCS: "8.0.2", cryptographyXML: "8.0.5"},
+		{name: "net9", targetFramework: "net9.0", aspNetCore: "9.0.7", aspNetCoreOpenAPI: "9.0.7", aspNetCoreTest: "9.0.7", entityFramework: "9.0.7", sqlClient: "6.1.1", cryptographyPKCS: "9.0.21", cryptographyXML: "9.0.21"},
+		{name: "net10", targetFramework: "net10.0", aspNetCore: "10.0.0", aspNetCoreOpenAPI: "10.0.0", aspNetCoreTest: "10.0.0", entityFramework: "10.0.0", sqlClient: "6.1.1", cryptographyPKCS: "10.0.13", cryptographyXML: "10.0.13"},
 	}
 
 	for _, tt := range tests {
@@ -1032,6 +1033,7 @@ func TestGenerateDirectoryPackagesPropsUsesDependencyPolicy(t *testing.T) {
 			assertContains(t, packages, `Microsoft.EntityFrameworkCore.Tools" Version="`+tt.entityFramework+`"`)
 			assertContains(t, packages, `Microsoft.EntityFrameworkCore.SqlServer" Version="`+tt.entityFramework+`"`)
 			assertContains(t, packages, `Microsoft.Data.SqlClient" Version="`+tt.sqlClient+`"`)
+			assertContains(t, packages, `System.Security.Cryptography.Pkcs" Version="`+tt.cryptographyPKCS+`"`)
 			assertContains(t, packages, `System.Security.Cryptography.Xml" Version="`+tt.cryptographyXML+`"`)
 		})
 	}
@@ -1141,7 +1143,7 @@ func TestGenerateUsesSelectedTargetFramework(t *testing.T) {
 	assertContains(t, props, "<TargetFramework>net9.0</TargetFramework>")
 	assertContains(t, packages, `Microsoft.AspNetCore.Mvc.Testing" Version="9.0.7`)
 	assertContains(t, packages, `Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.7`)
-	assertContains(t, packages, `System.Security.Cryptography.Xml" Version="9.0.18`)
+	assertContains(t, packages, `System.Security.Cryptography.Xml" Version="9.0.21`)
 	assertContains(t, metadata, `"targetFramework": "net9.0"`)
 	assertNotContains(t, props, "net8.0")
 	assertNotContains(t, packages, "Version=\"8.0.28")
@@ -1238,7 +1240,7 @@ func TestGenerateSlnxReferencesAllProjectsDeterministically(t *testing.T) {
 	assertContains(t, slnx, `  <Project Path="tests/IntegrationTests/IntegrationTests.csproj" />`)
 	assertNotContains(t, slnx, "OrderService")
 	assertNotContains(t, slnx, "ProjectConfigurationPlatforms")
-	assertContains(t, packages, `System.Security.Cryptography.Xml" Version="10.0.10`)
+	assertContains(t, packages, `System.Security.Cryptography.Xml" Version="10.0.13`)
 }
 
 func TestGenerateCreatesOneSolutionPerMicroservice(t *testing.T) {

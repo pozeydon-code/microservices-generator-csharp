@@ -26,8 +26,9 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.16.0" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.16.20" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.14.0" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="8.0.2" />
     <!-- Pinned for NuGet audit safety when EF/Core build transitives request vulnerable XML versions. -->
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="8.0.4" />
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="8.0.5" />
     <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />

@@ -46,6 +46,7 @@ var targetSpecificPackageNames = []string{
 	"Microsoft.EntityFrameworkCore.Tools",
 	"Microsoft.EntityFrameworkCore.SqlServer",
 	"Microsoft.Data.SqlClient",
+	"System.Security.Cryptography.Pkcs",
 	"System.Security.Cryptography.Xml",
 }
 

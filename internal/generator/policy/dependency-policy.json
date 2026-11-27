@@ -20,6 +20,7 @@
     "OpenTelemetry.Instrumentation.Http",
     "Scalar.AspNetCore",
     "System.IdentityModel.Tokens.Jwt",
+    "System.Security.Cryptography.Pkcs",
     "System.Security.Cryptography.Xml",
     "Yarp.ReverseProxy",
     "xunit",
@@ -54,7 +55,8 @@
         "Microsoft.EntityFrameworkCore.Tools": "8.0.28",
         "Microsoft.EntityFrameworkCore.SqlServer": "8.0.28",
         "Microsoft.Data.SqlClient": "6.1.1",
-        "System.Security.Cryptography.Xml": "8.0.4"
+        "System.Security.Cryptography.Pkcs": "8.0.2",
+        "System.Security.Cryptography.Xml": "8.0.5"
       }
     },
     {
@@ -68,7 +70,8 @@
         "Microsoft.EntityFrameworkCore.Tools": "9.0.7",
         "Microsoft.EntityFrameworkCore.SqlServer": "9.0.7",
         "Microsoft.Data.SqlClient": "6.1.1",
-        "System.Security.Cryptography.Xml": "9.0.18"
+        "System.Security.Cryptography.Pkcs": "9.0.21",
+        "System.Security.Cryptography.Xml": "9.0.21"
       }
     },
     {
@@ -82,7 +85,8 @@
         "Microsoft.EntityFrameworkCore.Tools": "10.0.0",
         "Microsoft.EntityFrameworkCore.SqlServer": "10.0.0",
         "Microsoft.Data.SqlClient": "6.1.1",
-        "System.Security.Cryptography.Xml": "10.0.10"
+        "System.Security.Cryptography.Pkcs": "10.0.13",
+        "System.Security.Cryptography.Xml": "10.0.13"
       }
     }
   ]

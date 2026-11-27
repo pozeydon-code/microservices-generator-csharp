@@ -24,8 +24,8 @@ func TestDependencyPolicyManifestLoads(t *testing.T) {
 	if len(commonPackages) != 15 {
 		t.Fatalf("expected fifteen common package pins, got %d", len(commonPackages))
 	}
-	if len(packageOrder) != 23 {
-		t.Fatalf("expected twenty-three package names in manifest order, got %d", len(packageOrder))
+	if len(packageOrder) != 24 {
+		t.Fatalf("expected twenty-four package names in manifest order, got %d", len(packageOrder))
 	}
 	if got := commonPackages["Yarp.ReverseProxy"]; got != "2.3.0" {
 		t.Fatalf("expected Yarp.ReverseProxy 2.3.0 common package pin, got %q", got)
@@ -93,7 +93,8 @@ func TestLoadDependencyPoliciesRejectsInvalidManifests(t *testing.T) {
 			"Microsoft.EntityFrameworkCore.Tools":           "8.0.28",
 			"Microsoft.EntityFrameworkCore.SqlServer":       "8.0.28",
 			"Microsoft.Data.SqlClient":                      "6.1.1",
-			"System.Security.Cryptography.Xml":              "8.0.4",
+			"System.Security.Cryptography.Pkcs":             "8.0.2",
+			"System.Security.Cryptography.Xml":              "8.0.5",
 		},
 	}
 	tests := []struct {
@@ -145,7 +146,8 @@ func TestLoadDependencyPoliciesRejectsInvalidCommonPackages(t *testing.T) {
 			"Microsoft.EntityFrameworkCore.Tools":           "8.0.28",
 			"Microsoft.EntityFrameworkCore.SqlServer":       "8.0.28",
 			"Microsoft.Data.SqlClient":                      "6.1.1",
-			"System.Security.Cryptography.Xml":              "8.0.4",
+			"System.Security.Cryptography.Pkcs":             "8.0.2",
+			"System.Security.Cryptography.Xml":              "8.0.5",
 		},
 	}
 	tests := []struct {
@@ -215,6 +217,7 @@ func TestDependencyPolicyForTargetFramework(t *testing.T) {
 		aspNetCoreTest    string
 		entityFramework   string
 		sqlClient         string
+		cryptographyPKCS  string
 		cryptographyXML   string
 	}{
 		{
@@ -227,7 +230,8 @@ func TestDependencyPolicyForTargetFramework(t *testing.T) {
 			aspNetCoreTest:    "8.0.28",
 			entityFramework:   "8.0.28",
 			sqlClient:         "6.1.1",
-			cryptographyXML:   "8.0.4",
+			cryptographyPKCS:  "8.0.2",
+			cryptographyXML:   "8.0.5",
 		},
 		{
 			name:              "net9",
@@ -239,7 +243,8 @@ func TestDependencyPolicyForTargetFramework(t *testing.T) {
 			aspNetCoreTest:    "9.0.7",
 			entityFramework:   "9.0.7",
 			sqlClient:         "6.1.1",
-			cryptographyXML:   "9.0.18",
+			cryptographyPKCS:  "9.0.21",
+			cryptographyXML:   "9.0.21",
 		},
 		{
 			name:              "net10",
@@ -251,7 +256,8 @@ func TestDependencyPolicyForTargetFramework(t *testing.T) {
 			aspNetCoreTest:    "10.0.0",
 			entityFramework:   "10.0.0",
 			sqlClient:         "6.1.1",
-			cryptographyXML:   "10.0.10",
+			cryptographyPKCS:  "10.0.13",
+			cryptographyXML:   "10.0.13",
 		},
 		{name: "net11", target: "net11.0"},
 		{name: "unknown major", target: "net99.0"},
@@ -281,6 +287,7 @@ func TestDependencyPolicyForTargetFramework(t *testing.T) {
 					"Microsoft.EntityFrameworkCore.Tools":           tt.entityFramework,
 					"Microsoft.EntityFrameworkCore.SqlServer":       tt.entityFramework,
 					"Microsoft.Data.SqlClient":                      tt.sqlClient,
+					"System.Security.Cryptography.Pkcs":             tt.cryptographyPKCS,
 					"System.Security.Cryptography.Xml":              tt.cryptographyXML,
 				},
 			}
