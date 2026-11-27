@@ -31,6 +31,13 @@ Implement 5 major improvements to reduce over-engineering and add flexibility to
 - Value Objects with validation
 - Full audit trail
 
+## RDD Validation
+- **Status**: Skipped - lens_context_budget_exceeded
+- **Reason**: The complete change set (8632 lines, 29 commits) exceeds the native reviewer context budget
+- **Attempts**: Tried with 4, 2, and 1 lenses - all failed with same error
+- **Decision**: User explicitly chose to proceed without RDD validation
+- **Note**: T1-T5 are fully implemented and tested. RDD limitation is technical, not code quality.
+
 ## Tasks
 
 ### T1: Add generation mode to spec [S1] ✅
