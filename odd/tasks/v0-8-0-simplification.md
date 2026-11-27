@@ -88,8 +88,9 @@ Implement 5 major improvements to reduce over-engineering and add flexibility to
 - Route: inline (templates + solution structure)
 - Commit: `4f5e8a3` feat(t5): consolidate test projects to simpler structure (5 → 3 projects)
 
-### T6: Implement incremental generation [S5] - DELEGATED
+### T6: Implement incremental generation [S5] - DELEGATED (v0.8.1)
 - **Status**: Delegated to subagent (post-RDD validation)
+- **Target Release**: v0.8.1 (separate patch release)
 - **Scope**: Implement file-level incremental generation to preserve manual changes
 - **Requirements**:
   * Track config dependencies per file in manifest
