@@ -12,17 +12,21 @@ public sealed class UpdateProductCommandValidator : AbstractValidator<UpdateProd
         RuleFor(command => command.Name).Custom((value, context) =>
         {
             var result = ProductName.Create(value, "name");
+            if (!result.IsError) return;
+
             foreach (var error in result.Errors)
             {
-                context.AddFailure(new ValidationFailure(context.PropertyPath, error.Message) { ErrorCode = error.Code });
+                context.AddFailure(new ValidationFailure(context.PropertyPath, error.Description) { ErrorCode = error.Code });
             }
         });
         RuleFor(command => command.Price).Custom((value, context) =>
         {
             var result = ProductPrice.Create(value, "price");
+            if (!result.IsError) return;
+
             foreach (var error in result.Errors)
             {
-                context.AddFailure(new ValidationFailure(context.PropertyPath, error.Message) { ErrorCode = error.Code });
+                context.AddFailure(new ValidationFailure(context.PropertyPath, error.Description) { ErrorCode = error.Code });
             }
         });
         RuleFor(command => command.ConcurrencyToken).Custom((value, context) =>

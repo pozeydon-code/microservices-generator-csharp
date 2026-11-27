@@ -111,7 +111,7 @@ public sealed class {{ .Name }}InfrastructureTests
         await using var createContext = database.CreateContext();
 {{ if .RelationshipScalarFields }}        await SeedRequiredRelationshipsFor{{ .Name }}Async(createContext);
 
-{{ end }}        var repository = new {{ .Name }}Repository(createContext, NullLogger<{{ .Name }}Repository>.Instance);
+{{ end }}        var repository = new {{ .Name }}Repository(createContext);
         var unitOfWork = new UnitOfWork(createContext);
         var entity = Domain{{ .Name }}.Create(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }}{{ range .RelationshipScalarFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
         await repository.AddAsync(entity, CancellationToken.None);
@@ -122,7 +122,7 @@ public sealed class {{ .Name }}InfrastructureTests
 {{ range .NonIDFields }}        Assert.True(EqualityComparer<{{ .ContractType }}>.Default.Equals({{ .SampleValue }}, created.Entity.{{ .ValueAccess }}));
 {{ end }}
         await using var reloadContext = database.CreateContext();
-        var reloadRepository = new {{ .Name }}Repository(reloadContext, NullLogger<{{ .Name }}Repository>.Instance);
+        var reloadRepository = new {{ .Name }}Repository(reloadContext);
         var reloadUnitOfWork = new UnitOfWork(reloadContext);
         var reloaded = await reloadRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None);
         Assert.NotNull(reloaded);
@@ -174,7 +174,7 @@ public sealed class {{ .Name }}InfrastructureTests
         await using var seedContext = database.CreateContext();
 {{ if .RelationshipScalarFields }}        await SeedRequiredRelationshipsFor{{ .Name }}Async(seedContext);
 
-{{ end }}        var seedRepository = new {{ .Name }}Repository(seedContext, NullLogger<{{ .Name }}Repository>.Instance);
+{{ end }}        var seedRepository = new {{ .Name }}Repository(seedContext);
         var seedUnitOfWork = new UnitOfWork(seedContext);
         var seed = Domain{{ .Name }}.Create(new {{ .Name }}State { {{ range .NonIDFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }}{{ range .RelationshipScalarFields }}{{ .Name }} = {{ .DomainSampleValue }}, {{ end }} });
         await seedRepository.AddAsync(seed, CancellationToken.None);
@@ -184,8 +184,8 @@ public sealed class {{ .Name }}InfrastructureTests
 
         await using var firstContext = database.CreateContext();
         await using var secondContext = database.CreateContext();
-        var firstRepository = new {{ .Name }}Repository(firstContext, NullLogger<{{ .Name }}Repository>.Instance);
-        var secondRepository = new {{ .Name }}Repository(secondContext, NullLogger<{{ .Name }}Repository>.Instance);
+        var firstRepository = new {{ .Name }}Repository(firstContext);
+        var secondRepository = new {{ .Name }}Repository(secondContext);
         var firstUnitOfWork = new UnitOfWork(firstContext);
         var secondUnitOfWork = new UnitOfWork(secondContext);
         var first = await firstRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None);
@@ -218,16 +218,10 @@ public sealed class {{ .Name }}InfrastructureTests
         }
 
         await using var reloadContext = database.CreateContext();
-        var logger = new CaptureLogger<{{ $entity.Name }}Repository>();
-        var repository = new {{ $entity.Name }}Repository(reloadContext, logger);
+        var repository = new {{ $entity.Name }}Repository(reloadContext);
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => repository.GetByIdAsync(id, CancellationToken.None));
-        Assert.Contains("Rehydrate", exception.Message);
-        Assert.Equal("{{ $corrupt.DomainType }}", exception.ValueObjectType);
-        Assert.Contains("{{ $corrupt.InvalidCode }}", exception.InvariantCodes);
-        Assert.Contains("{{ $entity.Name }}", logger.LastMessage);
-        Assert.Contains("{{ $corrupt.Name }}", logger.LastMessage);
-        Assert.Contains("{{ $corrupt.InvalidCode }}", logger.LastMessage);
-        Assert.Contains(id.ToString(), logger.LastMessage);
+        Assert.Contains("Failed to rehydrate {{ $corrupt.DomainType }}:", exception.Message);
+        Assert.Contains("{{ $corrupt.InvalidCode }}", exception.Message);
     }
 
 {{ end }}{{ end }}
@@ -268,14 +262,6 @@ public sealed class {{ .Name }}InfrastructureTests
     }
 
 {{ end }}{{ end }}
-    private sealed class CaptureLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
-    {
-        public string LastMessage { get; private set; } = string.Empty;
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
-        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) => LastMessage = formatter(state, exception);
-    }
-
     private sealed class SqlTestDatabase(string databaseName) : IAsyncDisposable
     {
         public static bool IsConfigured => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("MICROGEN_TEST_SQLSERVER"));

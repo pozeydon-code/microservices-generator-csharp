@@ -54,7 +54,7 @@ public sealed class ProductServiceInfrastructureTests
         await database.InitializeAsync();
 
         await using var createContext = database.CreateContext();
-        var repository = new ProductRepository(createContext, NullLogger<ProductRepository>.Instance);
+        var repository = new ProductRepository(createContext);
         var unitOfWork = new UnitOfWork(createContext);
         var entity = DomainProduct.Create(new ProductState { IsActive = true, Name = ProductName.Create("Product Prime").Value!, Price = ProductPrice.Create(0m).Value!,  });
         await repository.AddAsync(entity, CancellationToken.None);
@@ -67,7 +67,7 @@ public sealed class ProductServiceInfrastructureTests
         Assert.True(EqualityComparer<decimal>.Default.Equals(0m, created.Entity.Price.Value));
 
         await using var reloadContext = database.CreateContext();
-        var reloadRepository = new ProductRepository(reloadContext, NullLogger<ProductRepository>.Instance);
+        var reloadRepository = new ProductRepository(reloadContext);
         var reloadUnitOfWork = new UnitOfWork(reloadContext);
         var reloaded = await reloadRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None);
         Assert.NotNull(reloaded);
@@ -121,7 +121,7 @@ public sealed class ProductServiceInfrastructureTests
         await database.InitializeAsync();
 
         await using var seedContext = database.CreateContext();
-        var seedRepository = new ProductRepository(seedContext, NullLogger<ProductRepository>.Instance);
+        var seedRepository = new ProductRepository(seedContext);
         var seedUnitOfWork = new UnitOfWork(seedContext);
         var seed = DomainProduct.Create(new ProductState { IsActive = true, Name = ProductName.Create("Product Prime").Value!, Price = ProductPrice.Create(0m).Value!,  });
         await seedRepository.AddAsync(seed, CancellationToken.None);
@@ -131,8 +131,8 @@ public sealed class ProductServiceInfrastructureTests
 
         await using var firstContext = database.CreateContext();
         await using var secondContext = database.CreateContext();
-        var firstRepository = new ProductRepository(firstContext, NullLogger<ProductRepository>.Instance);
-        var secondRepository = new ProductRepository(secondContext, NullLogger<ProductRepository>.Instance);
+        var firstRepository = new ProductRepository(firstContext);
+        var secondRepository = new ProductRepository(secondContext);
         var firstUnitOfWork = new UnitOfWork(firstContext);
         var secondUnitOfWork = new UnitOfWork(secondContext);
         var first = await firstRepository.GetByIdAsync(created.Entity.Id, CancellationToken.None);
@@ -165,16 +165,10 @@ public sealed class ProductServiceInfrastructureTests
         }
 
         await using var reloadContext = database.CreateContext();
-        var logger = new CaptureLogger<ProductRepository>();
-        var repository = new ProductRepository(reloadContext, logger);
+        var repository = new ProductRepository(reloadContext);
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => repository.GetByIdAsync(id, CancellationToken.None));
-        Assert.Contains("Rehydrate", exception.Message);
-        Assert.Equal("ProductName", exception.ValueObjectType);
-        Assert.Contains("ProductName.Required", exception.InvariantCodes);
-        Assert.Contains("Product", logger.LastMessage);
-        Assert.Contains("Name", logger.LastMessage);
-        Assert.Contains("ProductName.Required", logger.LastMessage);
-        Assert.Contains(id.ToString(), logger.LastMessage);
+        Assert.Contains("Failed to rehydrate ProductName:", exception.Message);
+        Assert.Contains("ProductName.Required", exception.Message);
     }
 
     [Fact]
@@ -193,28 +187,14 @@ public sealed class ProductServiceInfrastructureTests
         }
 
         await using var reloadContext = database.CreateContext();
-        var logger = new CaptureLogger<ProductRepository>();
-        var repository = new ProductRepository(reloadContext, logger);
+        var repository = new ProductRepository(reloadContext);
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => repository.GetByIdAsync(id, CancellationToken.None));
-        Assert.Contains("Rehydrate", exception.Message);
-        Assert.Equal("ProductPrice", exception.ValueObjectType);
-        Assert.Contains("ProductPrice.Minimum", exception.InvariantCodes);
-        Assert.Contains("Product", logger.LastMessage);
-        Assert.Contains("Price", logger.LastMessage);
-        Assert.Contains("ProductPrice.Minimum", logger.LastMessage);
-        Assert.Contains(id.ToString(), logger.LastMessage);
+        Assert.Contains("Failed to rehydrate ProductPrice:", exception.Message);
+        Assert.Contains("ProductPrice.Minimum", exception.Message);
     }
 
 
 
-
-    private sealed class CaptureLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
-    {
-        public string LastMessage { get; private set; } = string.Empty;
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
-        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
-        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) => LastMessage = formatter(state, exception);
-    }
 
     private sealed class SqlTestDatabase(string databaseName) : IAsyncDisposable
     {

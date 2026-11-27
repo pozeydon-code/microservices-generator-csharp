@@ -1,5 +1,4 @@
-{{ if .HasValueObjects }}using {{ .Name }}.Domain.Primitives;
-using {{ .Name }}.Domain.ValueObjects;
+{{ if .HasValueObjects }}using {{ .Name }}.Domain.ValueObjects;
 {{ end }}
 using Xunit;
 
@@ -44,10 +43,10 @@ public sealed class {{ .Name }}DomainTests
     {
         var result = {{ .Name }}.Create(null, "Field");
 
-        Assert.False(result.IsSuccess);
+        Assert.True(result.IsError);
         var error = Assert.Single(result.Errors);
         Assert.Equal("{{ .Name }}.Null", error.Code);
-        Assert.Equal("Field", error.Field);
+        Assert.Equal("Field", error.Metadata!["field"]);
     }
 
 {{ if .MinLength }}    [Fact]
@@ -55,7 +54,7 @@ public sealed class {{ .Name }}DomainTests
     {
         var value = new string('x', {{ .MinLength }});
         var result = {{ .Name }}.Create(value);
-        Assert.True(result.IsSuccess);
+        Assert.False(result.IsError);
         Assert.Equal(value, result.Value!.Value);
     }
 
@@ -64,7 +63,7 @@ public sealed class {{ .Name }}DomainTests
     {
         var value = new string('x', {{ .MaxLength }});
         var result = {{ .Name }}.Create(value);
-        Assert.True(result.IsSuccess);
+        Assert.False(result.IsError);
         Assert.Equal(value, result.Value!.Value);
     }
 
@@ -73,7 +72,7 @@ public sealed class {{ .Name }}DomainTests
     public void {{ .Name }}AcceptsMinimumBoundary()
     {
         var result = {{ .Name }}.Create({{ .Minimum }});
-        Assert.True(result.IsSuccess);
+        Assert.False(result.IsError);
         Assert.Equal({{ .Minimum }}, result.Value!.Value);
     }
 
@@ -81,14 +80,14 @@ public sealed class {{ .Name }}DomainTests
     public void {{ .Name }}AcceptsMaximumBoundary()
     {
         var result = {{ .Name }}.Create({{ .Maximum }});
-        Assert.True(result.IsSuccess);
+        Assert.False(result.IsError);
         Assert.Equal({{ .Maximum }}, result.Value!.Value);
     }
 
 {{ end }}{{ if .PatternInvalidValue }}    [Fact]
     public void {{ .Name }}AcceptsValidPatternExampleAndRejectsInvalidPatternExample()
     {
-        Assert.True({{ .Name }}.Create({{ .SampleValue }}).IsSuccess);
+        Assert.False({{ .Name }}.Create({{ .SampleValue }}).IsError);
         Assert.Equal("{{ .Name }}.Pattern", Assert.Single({{ .Name }}.Create({{ .PatternInvalidValue }}).Errors).Code);
     }
 
@@ -98,14 +97,12 @@ public sealed class {{ .Name }}DomainTests
     {
         var result = {{ $vo.Name }}.Create({{ .FieldValue }}, "Field");
 
-        Assert.False(result.IsSuccess);
+        Assert.True(result.IsError);
         var error = Assert.Single(result.Errors);
         Assert.Equal("{{ .Code }}", error.Code);
-        Assert.Equal("Field", error.Field);
+        Assert.Equal("Field", error.Metadata!["field"]);
         var exception = Assert.Throws<InvalidOperationException>(() => {{ $vo.Name }}.Rehydrate({{ .FieldValue }}));
-        Assert.Contains("Rehydrate", exception.Message);
-        Assert.Equal("{{ $vo.Name }}", exception.ValueObjectType);
-        Assert.Contains("{{ .Code }}", exception.InvariantCodes);
+        Assert.Equal("Failed to rehydrate {{ $vo.Name }}: {{ .Code }}", exception.Message);
     }
 
 {{ end }}{{ end }}}

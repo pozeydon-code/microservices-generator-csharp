@@ -12,9 +12,11 @@ public sealed class Update{{ .Entity.Name }}CommandValidator : AbstractValidator
 {{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        RuleFor(command => command.{{ .Name }}).Custom((value, context) =>
         {
             var result = {{ .DomainType }}.Create(value, "{{ .CamelName }}");
+            if (!result.IsError) return;
+
             foreach (var error in result.Errors)
             {
-                context.AddFailure(new ValidationFailure(context.PropertyPath, error.Message) { ErrorCode = error.Code });
+                context.AddFailure(new ValidationFailure(context.PropertyPath, error.Description) { ErrorCode = error.Code });
             }
         });
 {{ end }}{{ end }}        RuleFor(command => command.ConcurrencyToken).Custom((value, context) =>

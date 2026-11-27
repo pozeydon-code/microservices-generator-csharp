@@ -1,2 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-</Project>
+{{ if .HasValueObjects }}  <ItemGroup>
+    <PackageReference Include="ErrorOr" />
+  </ItemGroup>
+{{ end }}</Project>

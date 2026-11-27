@@ -31,13 +31,13 @@ public sealed class List{{ .Entity.Name }}QueryHandler(I{{ .Entity.Name }}Reposi
         return new PagedResult<{{ .Entity.Name }}Dto>(result.Items.Select(ToDto).ToList(), normalized.Page, normalized.PageSize, result.TotalCount);
     }
 
-    private static {{ .Entity.Name }}Dto ToDtoFromEntity({{ .Entity.Name }} entity) => new(
+{{ if .Service.HasQueryShapes }}    private static {{ .Entity.Name }}Dto ToDtoFromEntity({{ .Entity.Name }} entity) => new(
 {{ range $index, $field := .Entity.Fields }}{{ if $index }},
 {{ end }}        entity.{{ $field.ValueAccess }}{{ end }}{{ range .Entity.RelationshipScalarFields }},
         entity.{{ .ValueAccess }}{{ end }},
         Convert.ToBase64String(entity.RowVersion));
 
-    private static {{ .Entity.Name }}Dto ToDto(EntitySnapshot<{{ .Entity.Name }}> snapshot) => new(
+{{ end }}    private static {{ .Entity.Name }}Dto ToDto(EntitySnapshot<{{ .Entity.Name }}> snapshot) => new(
 {{ range $index, $field := .Entity.Fields }}{{ if $index }},
 {{ end }}        snapshot.Entity.{{ $field.ValueAccess }}{{ end }}{{ range .Entity.RelationshipScalarFields }},
         snapshot.Entity.{{ .ValueAccess }}{{ end }},

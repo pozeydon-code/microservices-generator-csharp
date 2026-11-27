@@ -11,6 +11,7 @@ using ProductService.Application.Products.Commands.Update;
 using ProductService.Application.Products.Dtos;
 using ProductService.Application.Products.Queries.GetById;
 using ProductService.Application.Products.Queries.List;
+using ProductService.WebApi.Tests;
 using ErrorOr;
 using MediatR;
 using Xunit;

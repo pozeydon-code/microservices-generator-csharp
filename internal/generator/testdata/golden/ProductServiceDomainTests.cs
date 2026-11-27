@@ -1,4 +1,3 @@
-using ProductService.Domain.Primitives;
 using ProductService.Domain.ValueObjects;
 
 using Xunit;
@@ -38,10 +37,10 @@ public sealed class ProductServiceDomainTests
     {
         var result = ProductName.Create(null, "Field");
 
-        Assert.False(result.IsSuccess);
+        Assert.True(result.IsError);
         var error = Assert.Single(result.Errors);
         Assert.Equal("ProductName.Null", error.Code);
-        Assert.Equal("Field", error.Field);
+        Assert.Equal("Field", error.Metadata!["field"]);
     }
 
     [Fact]
@@ -49,7 +48,7 @@ public sealed class ProductServiceDomainTests
     {
         var value = new string('x', 3);
         var result = ProductName.Create(value);
-        Assert.True(result.IsSuccess);
+        Assert.False(result.IsError);
         Assert.Equal(value, result.Value!.Value);
     }
 
@@ -58,7 +57,7 @@ public sealed class ProductServiceDomainTests
     {
         var value = new string('x', 100);
         var result = ProductName.Create(value);
-        Assert.True(result.IsSuccess);
+        Assert.False(result.IsError);
         Assert.Equal(value, result.Value!.Value);
     }
 
@@ -66,7 +65,7 @@ public sealed class ProductServiceDomainTests
     [Fact]
     public void ProductNameAcceptsValidPatternExampleAndRejectsInvalidPatternExample()
     {
-        Assert.True(ProductName.Create("Product Prime").IsSuccess);
+        Assert.False(ProductName.Create("Product Prime").IsError);
         Assert.Equal("ProductName.Pattern", Assert.Single(ProductName.Create("***").Errors).Code);
     }
 
@@ -76,14 +75,12 @@ public sealed class ProductServiceDomainTests
     {
         var result = ProductName.Create("", "Field");
 
-        Assert.False(result.IsSuccess);
+        Assert.True(result.IsError);
         var error = Assert.Single(result.Errors);
         Assert.Equal("ProductName.Required", error.Code);
-        Assert.Equal("Field", error.Field);
+        Assert.Equal("Field", error.Metadata!["field"]);
         var exception = Assert.Throws<InvalidOperationException>(() => ProductName.Rehydrate(""));
-        Assert.Contains("Rehydrate", exception.Message);
-        Assert.Equal("ProductName", exception.ValueObjectType);
-        Assert.Contains("ProductName.Required", exception.InvariantCodes);
+        Assert.Equal("Failed to rehydrate ProductName: ProductName.Required", exception.Message);
     }
 
     [Fact]
@@ -91,14 +88,12 @@ public sealed class ProductServiceDomainTests
     {
         var result = ProductName.Create("x", "Field");
 
-        Assert.False(result.IsSuccess);
+        Assert.True(result.IsError);
         var error = Assert.Single(result.Errors);
         Assert.Equal("ProductName.MinLength", error.Code);
-        Assert.Equal("Field", error.Field);
+        Assert.Equal("Field", error.Metadata!["field"]);
         var exception = Assert.Throws<InvalidOperationException>(() => ProductName.Rehydrate("x"));
-        Assert.Contains("Rehydrate", exception.Message);
-        Assert.Equal("ProductName", exception.ValueObjectType);
-        Assert.Contains("ProductName.MinLength", exception.InvariantCodes);
+        Assert.Equal("Failed to rehydrate ProductName: ProductName.MinLength", exception.Message);
     }
 
     [Fact]
@@ -106,14 +101,12 @@ public sealed class ProductServiceDomainTests
     {
         var result = ProductName.Create(new string('x', 100 + 1), "Field");
 
-        Assert.False(result.IsSuccess);
+        Assert.True(result.IsError);
         var error = Assert.Single(result.Errors);
         Assert.Equal("ProductName.MaxLength", error.Code);
-        Assert.Equal("Field", error.Field);
+        Assert.Equal("Field", error.Metadata!["field"]);
         var exception = Assert.Throws<InvalidOperationException>(() => ProductName.Rehydrate(new string('x', 100 + 1)));
-        Assert.Contains("Rehydrate", exception.Message);
-        Assert.Equal("ProductName", exception.ValueObjectType);
-        Assert.Contains("ProductName.MaxLength", exception.InvariantCodes);
+        Assert.Equal("Failed to rehydrate ProductName: ProductName.MaxLength", exception.Message);
     }
 
     [Fact]
@@ -121,14 +114,12 @@ public sealed class ProductServiceDomainTests
     {
         var result = ProductName.Create("***", "Field");
 
-        Assert.False(result.IsSuccess);
+        Assert.True(result.IsError);
         var error = Assert.Single(result.Errors);
         Assert.Equal("ProductName.Pattern", error.Code);
-        Assert.Equal("Field", error.Field);
+        Assert.Equal("Field", error.Metadata!["field"]);
         var exception = Assert.Throws<InvalidOperationException>(() => ProductName.Rehydrate("***"));
-        Assert.Contains("Rehydrate", exception.Message);
-        Assert.Equal("ProductName", exception.ValueObjectType);
-        Assert.Contains("ProductName.Pattern", exception.InvariantCodes);
+        Assert.Equal("Failed to rehydrate ProductName: ProductName.Pattern", exception.Message);
     }
 
     [Fact]
@@ -161,7 +152,7 @@ public sealed class ProductServiceDomainTests
     public void ProductPriceAcceptsMinimumBoundary()
     {
         var result = ProductPrice.Create(0m);
-        Assert.True(result.IsSuccess);
+        Assert.False(result.IsError);
         Assert.Equal(0m, result.Value!.Value);
     }
 
@@ -169,7 +160,7 @@ public sealed class ProductServiceDomainTests
     public void ProductPriceAcceptsMaximumBoundary()
     {
         var result = ProductPrice.Create(999999.99m);
-        Assert.True(result.IsSuccess);
+        Assert.False(result.IsError);
         Assert.Equal(999999.99m, result.Value!.Value);
     }
 
@@ -179,14 +170,12 @@ public sealed class ProductServiceDomainTests
     {
         var result = ProductPrice.Create(0m - 1m, "Field");
 
-        Assert.False(result.IsSuccess);
+        Assert.True(result.IsError);
         var error = Assert.Single(result.Errors);
         Assert.Equal("ProductPrice.Minimum", error.Code);
-        Assert.Equal("Field", error.Field);
+        Assert.Equal("Field", error.Metadata!["field"]);
         var exception = Assert.Throws<InvalidOperationException>(() => ProductPrice.Rehydrate(0m - 1m));
-        Assert.Contains("Rehydrate", exception.Message);
-        Assert.Equal("ProductPrice", exception.ValueObjectType);
-        Assert.Contains("ProductPrice.Minimum", exception.InvariantCodes);
+        Assert.Equal("Failed to rehydrate ProductPrice: ProductPrice.Minimum", exception.Message);
     }
 
     [Fact]
@@ -194,14 +183,12 @@ public sealed class ProductServiceDomainTests
     {
         var result = ProductPrice.Create(999999.99m + 1m, "Field");
 
-        Assert.False(result.IsSuccess);
+        Assert.True(result.IsError);
         var error = Assert.Single(result.Errors);
         Assert.Equal("ProductPrice.Maximum", error.Code);
-        Assert.Equal("Field", error.Field);
+        Assert.Equal("Field", error.Metadata!["field"]);
         var exception = Assert.Throws<InvalidOperationException>(() => ProductPrice.Rehydrate(999999.99m + 1m));
-        Assert.Contains("Rehydrate", exception.Message);
-        Assert.Equal("ProductPrice", exception.ValueObjectType);
-        Assert.Contains("ProductPrice.Maximum", exception.InvariantCodes);
+        Assert.Equal("Failed to rehydrate ProductPrice: ProductPrice.Maximum", exception.Message);
     }
 
 }

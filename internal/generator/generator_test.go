@@ -313,6 +313,12 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 		{path: "README.md", goldenName: "README.md"},
 		{path: "microgen.json", goldenName: "microgen.json"},
 	}
+	for _, file := range first {
+		switch file.Path {
+		case "ProductService/tests/UnitTests/UnitTests.csproj", "ProductService/tests/IntegrationTests/IntegrationTests.csproj":
+			assertNotContains(t, string(file.Content), `Include="FluentAssertions"`)
+		}
+	}
 	actualPaths := make([]string, 0, len(first))
 	for _, file := range first {
 		actualPaths = append(actualPaths, file.Path)
@@ -2293,17 +2299,17 @@ func TestGenerateRepositoryWithoutQueryShapesDoesNotGenerateShapedMethods(t *tes
 func TestGenerateEnterpriseModeUsesMediatR(t *testing.T) {
 	cfg := testConfig()
 	cfg.Generation.Mode = "enterprise"
-	
+
 	gen, err := New()
 	if err != nil {
 		t.Fatalf("new generator: %v", err)
 	}
-	
+
 	files, err := gen.Generate(cfg)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	
+
 	// Verificar que se generen archivos de Commands/Queries
 	found := false
 	for _, f := range files {
@@ -2323,17 +2329,17 @@ func TestGenerateEnterpriseModeUsesMediatR(t *testing.T) {
 func TestGenerateSimpleModeUsesDirectServices(t *testing.T) {
 	cfg := testConfig()
 	cfg.Generation.Mode = "simple"
-	
+
 	gen, err := New()
 	if err != nil {
 		t.Fatalf("new generator: %v", err)
 	}
-	
+
 	files, err := gen.Generate(cfg)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	
+
 	// Verificar que se generen Services en lugar de Commands/Queries
 	foundService := false
 	foundCommand := false
@@ -2351,7 +2357,7 @@ func TestGenerateSimpleModeUsesDirectServices(t *testing.T) {
 			foundCommand = true
 		}
 	}
-	
+
 	if !foundService {
 		t.Error("simple mode should generate Service files")
 	}
@@ -2363,17 +2369,17 @@ func TestGenerateSimpleModeUsesDirectServices(t *testing.T) {
 func TestGenerateSimpleModeDtoHasNoConcurrencyToken(t *testing.T) {
 	cfg := testConfig()
 	cfg.Generation.Mode = "simple"
-	
+
 	gen, err := New()
 	if err != nil {
 		t.Fatalf("new generator: %v", err)
 	}
-	
+
 	files, err := gen.Generate(cfg)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	
+
 	// Verificar que el DTO no tenga ConcurrencyToken
 	for _, f := range files {
 		if strings.HasSuffix(f.Path, "Dto.cs") && !strings.Contains(f.Path, "Create") && !strings.Contains(f.Path, "Update") {
