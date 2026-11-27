@@ -225,13 +225,13 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 		for _, entity := range service.Entities {
 			data := EntityTemplateData{Service: service, Entity: entity}
 			applicationFeaturePath := join(service.Name, "src", service.ApplicationProject.Directory, entity.FeatureName)
-				dtoTemplate := "dto.tmpl"
-				if service.GenerationMode == "simple" {
-					dtoTemplate = "dto-simple.tmpl"
-				}
-				entityFiles := []struct{ path, template string }{
-					{join(service.Name, "src", service.DomainProject.Directory, "Entities", entity.Name+".cs"), templatePath(domainTemplateDir, "entity.tmpl")},
-					{join(applicationFeaturePath, "Dtos", entity.Name+"Dto.cs"), templatePath(applicationTemplateDir, dtoTemplate)},
+			dtoTemplate := "dto.tmpl"
+			if service.GenerationMode == "simple" {
+				dtoTemplate = "dto-simple.tmpl"
+			}
+			entityFiles := []struct{ path, template string }{
+				{join(service.Name, "src", service.DomainProject.Directory, "Entities", entity.Name+".cs"), templatePath(domainTemplateDir, "entity.tmpl")},
+				{join(applicationFeaturePath, "Dtos", entity.Name+"Dto.cs"), templatePath(applicationTemplateDir, dtoTemplate)},
 				{join(applicationFeaturePath, "Dtos", "Create"+entity.Name+"Request.cs"), templatePath(applicationTemplateDir, "create-request.tmpl")},
 				{join(applicationFeaturePath, "Dtos", "Update"+entity.Name+"Request.cs"), templatePath(applicationTemplateDir, "update-request.tmpl")},
 				{join(applicationFeaturePath, "Interfaces", "I"+entity.Name+"Repository.cs"), templatePath(applicationTemplateDir, "repository-port.tmpl")},
@@ -246,7 +246,7 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 				{join(service.Name, "tests", service.UnitTestsProject.Directory, "Application", entity.FeatureName, entity.Name+"ApplicationTests.cs"), templatePath(testsTemplateDir, "application-tests.tmpl")},
 				{join(service.Name, "tests", service.IntegrationTestsProject.Directory, "WebApi", entity.FeatureName, entity.Name+"ControllerTests.cs"), templatePath(testsTemplateDir, "webapi-tests.tmpl")},
 			}
-			
+
 			// Add mode-specific handler files
 			if service.GenerationMode == "simple" {
 				entityFiles = append(entityFiles,

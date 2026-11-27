@@ -119,31 +119,15 @@ jobs:
             test -f "$trx_path"
             grep -Eq "total=\"$expected\"" "$trx_path"
           }
-          test_project ./generated-example/ProductService/tests/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj ProductService.Domain.Tests.trx 16
-          test_project ./generated-example/ProductService/tests/ProductService.Application.Tests/ProductService.Application.Tests.csproj ProductService.Application.Tests.trx 11
-          test_project ./generated-example/ProductService/tests/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj ProductService.WebApi.Tests.trx 22
-          test_project ./generated-example/ProductService/tests/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj ProductService.Architecture.Tests.trx 4
-          test_project ./generated-example/ProductService/tests/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj ProductService.Infrastructure.Tests.trx 5
-          test_project ./generated-catalog-example/CatalogService/tests/CatalogService.Domain.Tests/CatalogService.Domain.Tests.csproj CatalogService.Domain.Tests.trx 22
-          test_project ./generated-catalog-example/CatalogService/tests/CatalogService.Application.Tests/CatalogService.Application.Tests.csproj CatalogService.Application.Tests.trx 22
-          test_project ./generated-catalog-example/CatalogService/tests/CatalogService.WebApi.Tests/CatalogService.WebApi.Tests.csproj CatalogService.WebApi.Tests.trx 31
-          test_project ./generated-catalog-example/CatalogService/tests/CatalogService.Architecture.Tests/CatalogService.Architecture.Tests.csproj CatalogService.Architecture.Tests.trx 4
-          test_project ./generated-catalog-example/CatalogService/tests/CatalogService.Infrastructure.Tests/CatalogService.Infrastructure.Tests.csproj CatalogService.Infrastructure.Tests.trx 10
-          test_project ./generated-record-zero-vo-example/RecordService/tests/RecordService.Domain.Tests/RecordService.Domain.Tests.csproj RecordService.Domain.Tests.trx 1
-          test_project ./generated-record-zero-vo-example/RecordService/tests/RecordService.Application.Tests/RecordService.Application.Tests.csproj RecordService.Application.Tests.trx 9
-          test_project ./generated-record-zero-vo-example/RecordService/tests/RecordService.WebApi.Tests/RecordService.WebApi.Tests.csproj RecordService.WebApi.Tests.trx 21
-          test_project ./generated-record-zero-vo-example/RecordService/tests/RecordService.Architecture.Tests/RecordService.Architecture.Tests.csproj RecordService.Architecture.Tests.trx 4
-          test_project ./generated-record-zero-vo-example/RecordService/tests/RecordService.Infrastructure.Tests/RecordService.Infrastructure.Tests.csproj RecordService.Infrastructure.Tests.trx 3
-          test_project ./generated-record-vo-example/RecordService/tests/RecordService.Domain.Tests/RecordService.Domain.Tests.csproj RecordService.Domain.Tests.trx 8
-          test_project ./generated-record-vo-example/RecordService/tests/RecordService.Application.Tests/RecordService.Application.Tests.csproj RecordService.Application.Tests.trx 11
-          test_project ./generated-record-vo-example/RecordService/tests/RecordService.WebApi.Tests/RecordService.WebApi.Tests.csproj RecordService.WebApi.Tests.trx 22
-          test_project ./generated-record-vo-example/RecordService/tests/RecordService.Architecture.Tests/RecordService.Architecture.Tests.csproj RecordService.Architecture.Tests.trx 4
-          test_project ./generated-record-vo-example/RecordService/tests/RecordService.Infrastructure.Tests/RecordService.Infrastructure.Tests.csproj RecordService.Infrastructure.Tests.trx 4
-          test_project ./generated-hundred-field-example/HundredFieldService/tests/HundredFieldService.Domain.Tests/HundredFieldService.Domain.Tests.csproj HundredFieldService.Domain.Tests.trx 1
-          test_project ./generated-hundred-field-example/HundredFieldService/tests/HundredFieldService.Application.Tests/HundredFieldService.Application.Tests.csproj HundredFieldService.Application.Tests.trx 9
-          test_project ./generated-hundred-field-example/HundredFieldService/tests/HundredFieldService.WebApi.Tests/HundredFieldService.WebApi.Tests.csproj HundredFieldService.WebApi.Tests.trx 21
-          test_project ./generated-hundred-field-example/HundredFieldService/tests/HundredFieldService.Architecture.Tests/HundredFieldService.Architecture.Tests.csproj HundredFieldService.Architecture.Tests.trx 4
-          test_project ./generated-hundred-field-example/HundredFieldService/tests/HundredFieldService.Infrastructure.Tests/HundredFieldService.Infrastructure.Tests.csproj HundredFieldService.Infrastructure.Tests.trx 3
-          test_project ./generated-relationship-example/RelationshipService/tests/RelationshipService.Domain.Tests/RelationshipService.Domain.Tests.csproj RelationshipService.Domain.Tests.trx 1
-          test_project ./generated-relationship-example/RelationshipService/tests/RelationshipService.Application.Tests/RelationshipService.Application.Tests.csproj RelationshipService.Application.Tests.trx 18
-          test_project ./generated-relationship-example/RelationshipService/tests/RelationshipService.Architecture.Tests/RelationshipService.Architecture.Tests.csproj RelationshipService.Architecture.Tests.trx 4
+          test_service() {
+            local tests="$1/tests"
+            test_project "$tests/UnitTests/UnitTests.csproj" UnitTests.trx "$2"
+            test_project "$tests/IntegrationTests/IntegrationTests.csproj" IntegrationTests.trx "$3"
+            test_project "$tests/ArchitectureTests/ArchitectureTests.csproj" ArchitectureTests.trx "$4"
+          }
+          test_service ./generated-example/ProductService 27 27 4
+          test_service ./generated-catalog-example/CatalogService 44 41 4
+          test_service ./generated-record-zero-vo-example/RecordService 10 24 4
+          test_service ./generated-record-vo-example/RecordService 19 26 4
+          test_service ./generated-hundred-field-example/HundredFieldService 10 24 4
+          test_service ./generated-relationship-example/RelationshipService 19 34 4

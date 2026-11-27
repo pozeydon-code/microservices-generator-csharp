@@ -20,10 +20,10 @@ const (
 	MaxEntitiesPerService       = 100
 	MaxFieldsPerEntity          = 100
 	MaxQueryShapeDepth          = 3
-	
-	GenerationModeSimple      = "simple"
-	GenerationModeEnterprise  = "enterprise"
-	DefaultGenerationMode     = GenerationModeEnterprise
+
+	GenerationModeSimple     = "simple"
+	GenerationModeEnterprise = "enterprise"
+	DefaultGenerationMode    = GenerationModeEnterprise
 )
 
 var reservedRelationshipForeignKeyNames = []string{"Id", "RowVersion", "ConcurrencyToken"}
