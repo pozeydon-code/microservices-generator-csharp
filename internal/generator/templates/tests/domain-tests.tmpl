@@ -3,7 +3,7 @@ using {{ .Name }}.Domain.ValueObjects;
 {{ end }}
 using Xunit;
 
-namespace {{ .Name }}.Domain.Tests;
+namespace {{ .Name }}.UnitTests.Domain;
 
 public sealed class {{ .Name }}DomainTests
 {
@@ -102,7 +102,8 @@ public sealed class {{ .Name }}DomainTests
         var error = Assert.Single(result.Errors);
         Assert.Equal("{{ .Code }}", error.Code);
         Assert.Equal("Field", error.Field);
-        var exception = Assert.Throws<DomainReconstitutionException>(() => {{ $vo.Name }}.Rehydrate({{ .FieldValue }}));
+        var exception = Assert.Throws<InvalidOperationException>(() => {{ $vo.Name }}.Rehydrate({{ .FieldValue }}));
+        Assert.Contains("Rehydrate", exception.Message);
         Assert.Equal("{{ $vo.Name }}", exception.ValueObjectType);
         Assert.Contains("{{ .Code }}", exception.InvariantCodes);
     }

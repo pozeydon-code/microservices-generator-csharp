@@ -1,0 +1,114 @@
+# Feature: v0.8.0 Simplification & Flexibility
+
+## Summary
+Implement 5 major improvements to reduce over-engineering and add flexibility to the generated code.
+
+## Spec
+- **S1**: Add generation mode (simple/enterprise) to control code generation complexity
+- **S2**: Unify error handling system using only ErrorOr (remove custom DomainResult<T>)
+- **S3**: Simplify logging by removing SQL diagnostic queries for Value Objects
+- **S4**: Consolidate test projects from 5 to 2-3 projects
+- **S5**: Implement incremental generation (only regenerate what changed)
+
+## Config Structure (S1)
+```json
+{
+  "generation": {
+    "mode": "simple" | "enterprise"
+  }
+}
+```
+
+**Simple mode**:
+- Direct handlers (no CQRS)
+- No EntitySnapshot pattern
+- Direct repository access
+- Simpler error handling
+
+**Enterprise mode** (current behavior):
+- CQRS with MediatR
+- EntitySnapshot pattern
+- Value Objects with validation
+- Full audit trail
+
+## RDD Validation
+- **Status**: Skipped - lens_context_budget_exceeded
+- **Reason**: The complete change set (8632 lines, 29 commits) exceeds the native reviewer context budget
+- **Attempts**: Tried with 4, 2, and 1 lenses - all failed with same error
+- **Decision**: User explicitly chose to proceed without RDD validation
+- **Note**: T1-T5 are fully implemented and tested. RDD limitation is technical, not code quality.
+
+## Tasks
+
+### T1: Add generation mode to spec [S1] ✅
+- Add `Mode` field to GenerationOptions in spec/config.go
+- Validate mode is "simple" or "enterprise" (default: "enterprise")
+- Add tests for validation
+- Route: inline (spec model)
+- Commit: `0068c18` feat(spec): add generation mode (simple/enterprise) to config
+
+### T2: Create simple mode templates [S1] ✅
+- Create alternative templates for simple mode:
+  - Direct handlers (no MediatR)
+  - Simple DTOs (no EntitySnapshot)
+  - Direct repository methods
+- Add template selection logic in generator
+- Add tests for both modes
+- Route: inline (templates)
+- Commit: `c65d1d2` feat(t2): create simple mode templates (no CQRS, no EntitySnapshot)
+
+### T3: Unify error handling with ErrorOr [S2] ✅
+- Remove DomainResult<T> from Domain/Primitives
+- Update Value Object templates to use ErrorOr
+- Update Command/Query handlers to use ErrorOr consistently
+- Remove DomainReconstitutionException (use ErrorOr)
+- Update tests
+- Route: inline (templates + domain)
+- Commit: `99e55a7` feat(t3): unify error handling with ErrorOr only
+
+### T4: Simplify repository logging [S3] ✅
+- Remove SQL diagnostic queries from repository templates
+- Simplify LoggerMessage to standard structured logging
+- Remove FindReconstitutionDiagnosticsAsync method
+- Keep basic error logging
+- Update tests
+- Route: inline (templates)
+- Commit: `99e55a7` (completed as part of T3 - simplified repository)
+
+### T5: Consolidate test projects [S4] ✅
+- Consolidated 5 test projects into 3:
+  * UnitTests (Domain + Application tests)
+  * IntegrationTests (Infrastructure + WebApi tests)
+  * ArchitectureTests (Architecture tests)
+- src/ keeps full service prefixes (ProductService.Domain, etc.) - .NET convention
+- tests/ uses simple names (UnitTests, IntegrationTests, ArchitectureTests)
+- Updated view_builder.go, generator.go, scaffold_plan.go
+- Updated all test templates with new namespaces
+- Updated generator_test.go and golden files
+- Route: inline (templates + solution structure)
+- Commit: `4f5e8a3` feat(t5): consolidate test projects to simpler structure (5 → 3 projects)
+
+### T6: Implement incremental generation [S5] - DELEGATED
+- **Status**: Delegated to subagent (post-RDD validation)
+- **Scope**: Implement file-level incremental generation to preserve manual changes
+- **Requirements**:
+  * Track config dependencies per file in manifest
+  * Detect granular config changes
+  * Regenerate only affected files
+  * Preserve unmodified files (even with manual changes)
+  * Add --force flag for full regeneration
+- **Approach**: Build on manifest.go foundation, implement selective regeneration logic
+- **Note**: Will be implemented in separate session with subagent to avoid context bloat
+
+### T7: Update documentation and examples [S1-S5]
+- Update README with new generation modes
+- Add examples for simple mode
+- Document incremental generation
+- Update CHANGELOG
+- Route: inline (docs)
+- Commit: `docs/update-documentation`
+
+## Log
+L1: User requested implementation of 5 simplification recommendations
+L2: Created feature document with 7 tasks
+L3: Starting T1 - add generation mode to spec

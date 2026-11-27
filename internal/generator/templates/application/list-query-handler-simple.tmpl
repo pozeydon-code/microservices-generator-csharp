@@ -1,0 +1,22 @@
+using ErrorOr;
+using {{ .Service.Name }}.Application.Common;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Dtos;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Interfaces;
+
+namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Services;
+
+public sealed class List{{ .Entity.PluralName }}Service(I{{ .Entity.Name }}Repository repository)
+{
+    public async Task<ErrorOr<PagedResult<{{ .Entity.Name }}Dto>>> Execute(int? page, int? pageSize, CancellationToken cancellationToken)
+    {
+        var normalized = PaginationPolicy.Normalize(page, pageSize);
+        var result = await repository.ListAsync(normalized.Offset, normalized.PageSize, cancellationToken);
+        return new PagedResult<{{ .Entity.Name }}Dto>(result.Items.Select(ToDto).ToList(), normalized.Page, normalized.PageSize, result.TotalCount);
+    }
+
+    private static {{ .Entity.Name }}Dto ToDto(EntitySnapshot<{{ .Entity.Name }}> snapshot) => new(
+{{ range $index, $field := .Entity.Fields }}{{ if $index }},
+{{ end }}        snapshot.Entity.{{ $field.ValueAccess }}{{ end }}{{ range .Entity.RelationshipScalarFields }},
+        snapshot.Entity.{{ .ValueAccess }}{{ end }},
+        snapshot.ConcurrencyToken);
+}

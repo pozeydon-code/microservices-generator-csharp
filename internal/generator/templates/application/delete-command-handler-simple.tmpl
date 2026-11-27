@@ -1,0 +1,28 @@
+using ErrorOr;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Interfaces;
+
+namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Services;
+
+public sealed class Delete{{ .Entity.Name }}Service(I{{ .Entity.Name }}Repository repository, IUnitOfWork unitOfWork)
+{
+    public async Task<ErrorOr<Deleted>> Execute(Guid id, string concurrencyToken, CancellationToken cancellationToken)
+    {
+        var snapshot = await repository.GetByIdAsync(id, cancellationToken);
+        if (snapshot is null)
+        {
+            return Error.NotFound(code: "{{ .Entity.Name }}.NotFound", description: "{{ .Entity.Name }} was not found.");
+        }
+
+        await repository.DeleteAsync(snapshot.Entity, concurrencyToken, cancellationToken);
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            return Error.Conflict(code: "{{ .Entity.Name }}.ConcurrencyConflict", description: "{{ .Entity.Name }} was changed by another request.");
+        }
+
+        return Result.Deleted;
+    }
+}

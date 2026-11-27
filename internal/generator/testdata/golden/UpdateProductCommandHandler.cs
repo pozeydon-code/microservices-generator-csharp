@@ -13,21 +13,18 @@ public sealed class UpdateProductCommandHandler(IProductRepository repository, I
 {
     public async Task<ErrorOr<ProductDto>> Handle(UpdateProductCommand request, CancellationToken cancellationToken)
     {
-        List<Error> errors = [];
         var nameResult = ProductName.Create(request.Name, "name");
-        errors.AddRange(nameResult.Errors.Select(error => Error.Validation(
-            code: error.Code,
-            description: error.Message,
-            metadata: new Dictionary<string, object> { ["field"] = error.Field ?? "name" })));
-        var priceResult = ProductPrice.Create(request.Price, "price");
-        errors.AddRange(priceResult.Errors.Select(error => Error.Validation(
-            code: error.Code,
-            description: error.Message,
-            metadata: new Dictionary<string, object> { ["field"] = error.Field ?? "price" })));
-        if (errors.Count > 0)
+        if (nameResult.IsError)
         {
-            return errors;
+            return nameResult.Errors;
         }
+
+        var priceResult = ProductPrice.Create(request.Price, "price");
+        if (priceResult.IsError)
+        {
+            return priceResult.Errors;
+        }
+
         if (string.IsNullOrWhiteSpace(request.ConcurrencyToken))
         {
             return Error.Validation(

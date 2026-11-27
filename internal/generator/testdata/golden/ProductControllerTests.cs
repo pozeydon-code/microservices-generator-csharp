@@ -15,7 +15,7 @@ using ErrorOr;
 using MediatR;
 using Xunit;
 
-namespace ProductService.WebApi.Tests.Features.Products;
+namespace ProductService.IntegrationTests.WebApi.Products;
 
 public sealed class ProductEndpointsTests
 {

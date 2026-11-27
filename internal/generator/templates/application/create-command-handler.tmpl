@@ -13,18 +13,13 @@ public sealed class Create{{ .Entity.Name }}CommandHandler(I{{ .Entity.Name }}Re
 {
     public async Task<ErrorOr<{{ .Entity.Name }}Dto>> Handle(Create{{ .Entity.Name }}Command request, CancellationToken cancellationToken)
     {
-        List<Error> errors = [];
 {{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        var {{ .CamelName }}Result = {{ .DomainType }}.Create(request.{{ .Name }}, "{{ .CamelName }}");
-        errors.AddRange({{ .CamelName }}Result.Errors.Select(error => Error.Validation(
-            code: error.Code,
-            description: error.Message,
-            metadata: new Dictionary<string, object> { ["field"] = error.Field ?? "{{ .CamelName }}" })));
-{{ end }}{{ end }}        if (errors.Count > 0)
+        if ({{ .CamelName }}Result.IsError)
         {
-            return errors;
+            return {{ .CamelName }}Result.Errors;
         }
 
-        var entity = {{ .Entity.Name }}.Create(new {{ .Entity.Name }}State
+{{ end }}{{ end }}        var entity = {{ .Entity.Name }}.Create(new {{ .Entity.Name }}State
         {
 {{ range .Entity.NonIDFields }}            {{ .Name }} = {{ if .IsValueObject }}{{ .CamelName }}Result.Value!{{ else }}request.{{ .Name }}{{ end }},
 {{ end }}{{ range .Entity.RelationshipScalarFields }}            {{ .Name }} = request.{{ .Name }},

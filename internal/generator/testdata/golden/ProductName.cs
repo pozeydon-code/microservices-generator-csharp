@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-using ProductService.Domain.Primitives;
+using ErrorOr;
 
 namespace ProductService.Domain.ValueObjects;
 
@@ -12,20 +12,22 @@ public sealed class ProductName : IEquatable<ProductName>
 
     public string Value { get; }
 
-    public static DomainResult<ProductName> Create(string? value, string? field = null)
+    public static ErrorOr<ProductName> Create(string? value, string? field = null)
     {
-        if (value is null) return DomainResult.Failure<ProductName>(new DomainError("ProductName.Null", "ProductName must not be null.", field));
-        if (string.IsNullOrWhiteSpace(value)) return DomainResult.Failure<ProductName>(new DomainError("ProductName.Required", "ProductName is required.", field));
-        if (value!.Length < 3) return DomainResult.Failure<ProductName>(new DomainError("ProductName.MinLength", "ProductName must be at least 3 characters.", field));
-        if (value.Length > 100) return DomainResult.Failure<ProductName>(new DomainError("ProductName.MaxLength", "ProductName must be at most 100 characters.", field));
-        if (!Pattern.IsMatch(value)) return DomainResult.Failure<ProductName>(new DomainError("ProductName.Pattern", "ProductName has an invalid format.", field));
-        return DomainResult.Success(new ProductName(value));
+        if (value is null) return Error.Validation(code: "ProductName.Null", description: "ProductName must not be null.", metadata: new Dictionary<string, object> { ["field"] = field ?? "value" });
+        if (string.IsNullOrWhiteSpace(value)) return Error.Validation(code: "ProductName.Required", description: "ProductName is required.", metadata: new Dictionary<string, object> { ["field"] = field ?? "value" });
+        if (value!.Length < 3) return Error.Validation(code: "ProductName.MinLength", description: "ProductName must be at least 3 characters.", metadata: new Dictionary<string, object> { ["field"] = field ?? "value" });
+        if (value.Length > 100) return Error.Validation(code: "ProductName.MaxLength", description: "ProductName must be at most 100 characters.", metadata: new Dictionary<string, object> { ["field"] = field ?? "value" });
+        if (!Pattern.IsMatch(value)) return Error.Validation(code: "ProductName.Pattern", description: "ProductName has an invalid format.", metadata: new Dictionary<string, object> { ["field"] = field ?? "value" });
+        return new ProductName(value);
     }
 
     public static ProductName Rehydrate(string value)
     {
         var result = Create(value);
-        return result.Value ?? throw new DomainReconstitutionException("ProductName", result.Errors.Select(error => error.Code).ToArray());
+        return result.IsError
+            ? throw new InvalidOperationException($"Failed to rehydrate ProductName: {string.Join(", ", result.Errors.Select(e => e.Code))}")
+            : result.Value;
     }
 
     public bool Equals(ProductName? other) => other is not null && EqualityComparer<string>.Default.Equals(Value, other.Value);

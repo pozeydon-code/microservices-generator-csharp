@@ -47,14 +47,12 @@ func buildScaffoldPlan(solution SolutionTemplateData) ScaffoldPlan {
 			newProjectCommand("classlib", solution.TargetFramework, service.ApplicationProject),
 			newProjectCommand("classlib", solution.TargetFramework, service.InfrastructureProject),
 			newProjectCommand("webapi --use-controllers", solution.TargetFramework, service.WebApiProject),
-			newProjectCommand("xunit", solution.TargetFramework, service.DomainTestsProject),
-			newProjectCommand("xunit", solution.TargetFramework, service.ApplicationTestsProject),
-			newProjectCommand("xunit", solution.TargetFramework, service.WebApiTestsProject),
+			newProjectCommand("xunit", solution.TargetFramework, service.UnitTestsProject),
+			newProjectCommand("xunit", solution.TargetFramework, service.IntegrationTestsProject),
 			newProjectCommand("xunit", solution.TargetFramework, service.ArchitectureTestsProject),
-			newProjectCommand("xunit", solution.TargetFramework, service.InfrastructureTestsProject),
 		)
 
-		for _, project := range []ProjectView{service.DomainProject, service.ApplicationProject, service.InfrastructureProject, service.WebApiProject, service.DomainTestsProject, service.ApplicationTestsProject, service.WebApiTestsProject, service.ArchitectureTestsProject, service.InfrastructureTestsProject} {
+		for _, project := range []ProjectView{service.DomainProject, service.ApplicationProject, service.InfrastructureProject, service.WebApiProject, service.UnitTestsProject, service.IntegrationTestsProject, service.ArchitectureTestsProject} {
 			plan.Commands = append(plan.Commands, ScaffoldCommand{Command: shellCommand("dotnet", "sln", "./"+service.Name+"/"+service.SolutionFileName, "add", "./"+project.Path)})
 		}
 
@@ -64,19 +62,16 @@ func buildScaffoldPlan(solution SolutionTemplateData) ScaffoldPlan {
 			projectReferenceCommand(service.InfrastructureProject, service.DomainProject),
 			projectReferenceCommand(service.WebApiProject, service.ApplicationProject),
 			projectReferenceCommand(service.WebApiProject, service.InfrastructureProject),
-			projectReferenceCommand(service.DomainTestsProject, service.DomainProject),
-			projectReferenceCommand(service.ApplicationTestsProject, service.ApplicationProject),
-			projectReferenceCommand(service.ApplicationTestsProject, service.DomainProject),
-			projectReferenceCommand(service.WebApiTestsProject, service.WebApiProject),
-			projectReferenceCommand(service.WebApiTestsProject, service.ApplicationProject),
-			projectReferenceCommand(service.WebApiTestsProject, service.DomainProject),
+			projectReferenceCommand(service.UnitTestsProject, service.DomainProject),
+			projectReferenceCommand(service.UnitTestsProject, service.ApplicationProject),
+			projectReferenceCommand(service.IntegrationTestsProject, service.InfrastructureProject),
+			projectReferenceCommand(service.IntegrationTestsProject, service.WebApiProject),
+			projectReferenceCommand(service.IntegrationTestsProject, service.ApplicationProject),
+			projectReferenceCommand(service.IntegrationTestsProject, service.DomainProject),
 			projectReferenceCommand(service.ArchitectureTestsProject, service.DomainProject),
 			projectReferenceCommand(service.ArchitectureTestsProject, service.ApplicationProject),
 			projectReferenceCommand(service.ArchitectureTestsProject, service.WebApiProject),
 			projectReferenceCommand(service.ArchitectureTestsProject, service.InfrastructureProject),
-			projectReferenceCommand(service.InfrastructureTestsProject, service.InfrastructureProject),
-			projectReferenceCommand(service.InfrastructureTestsProject, service.ApplicationProject),
-			projectReferenceCommand(service.InfrastructureTestsProject, service.DomainProject),
 		)
 
 		plan.PackageEntries = append(plan.PackageEntries,
@@ -95,8 +90,8 @@ func buildScaffoldPlan(solution SolutionTemplateData) ScaffoldPlan {
 			packageEntry(service.InfrastructureProject, "Microsoft.EntityFrameworkCore.Tools"),
 			packageEntry(service.InfrastructureProject, "Microsoft.EntityFrameworkCore.SqlServer"),
 			packageEntry(service.InfrastructureProject, "Microsoft.Data.SqlClient"),
-			packageEntry(service.WebApiTestsProject, "Microsoft.AspNetCore.Mvc.Testing"),
-			packageEntry(service.WebApiTestsProject, "System.IdentityModel.Tokens.Jwt"),
+			packageEntry(service.IntegrationTestsProject, "Microsoft.AspNetCore.Mvc.Testing"),
+			packageEntry(service.IntegrationTestsProject, "System.IdentityModel.Tokens.Jwt"),
 		)
 		if solution.SupportsOpenApiEndpoints {
 			plan.PackageEntries = append(plan.PackageEntries,
@@ -105,7 +100,7 @@ func buildScaffoldPlan(solution SolutionTemplateData) ScaffoldPlan {
 			)
 		}
 
-		for _, project := range []ProjectView{service.DomainTestsProject, service.ApplicationTestsProject, service.WebApiTestsProject, service.ArchitectureTestsProject, service.InfrastructureTestsProject} {
+		for _, project := range []ProjectView{service.UnitTestsProject, service.IntegrationTestsProject, service.ArchitectureTestsProject} {
 			plan.PackageEntries = append(plan.PackageEntries,
 				packageEntry(project, "Microsoft.NET.Test.Sdk"),
 				packageEntry(project, "xunit"),
@@ -113,8 +108,8 @@ func buildScaffoldPlan(solution SolutionTemplateData) ScaffoldPlan {
 			)
 		}
 		plan.PackageEntries = append(plan.PackageEntries,
-			packageEntry(service.InfrastructureTestsProject, "Microsoft.EntityFrameworkCore.SqlServer"),
-			packageEntry(service.InfrastructureTestsProject, "Microsoft.Data.SqlClient"),
+			packageEntry(service.IntegrationTestsProject, "Microsoft.EntityFrameworkCore.SqlServer"),
+			packageEntry(service.IntegrationTestsProject, "Microsoft.Data.SqlClient"),
 		)
 	}
 

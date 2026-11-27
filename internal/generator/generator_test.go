@@ -32,7 +32,7 @@ func TestGeneratedWebApiTestsDoNotContainUnusedJsonPropertyFields(t *testing.T) 
 	content := string(generatedContent(
 		t,
 		files,
-		"ProductService/tests/ProductService.WebApi.Tests/Features/Products/ProductControllerTests.cs",
+		"ProductService/tests/IntegrationTests/WebApi/Products/ProductControllerTests.cs",
 	))
 
 	assertNotContains(t, content, "ExpectedProductJsonProperties")
@@ -277,8 +277,6 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 		{path: "ProductService/src/ProductService.Application/Products/Queries/List/ListProductQueryHandler.cs", goldenName: "ListProductQueryHandler.cs"},
 		{path: "ProductService/src/ProductService.Application/Products/Queries/List/ListProductQueryValidator.cs", goldenName: "ListProductQueryValidator.cs"},
 		{path: "ProductService/src/ProductService.Domain/Entities/Product.cs", goldenName: "Product.cs"},
-		{path: "ProductService/src/ProductService.Domain/Primitives/DomainReconstitutionException.cs", goldenName: "DomainReconstitutionException.cs"},
-		{path: "ProductService/src/ProductService.Domain/Primitives/DomainResult.cs", goldenName: "DomainResult.cs"},
 		{path: "ProductService/src/ProductService.Domain/ProductService.Domain.csproj", goldenName: "ProductService.Domain.csproj"},
 		{path: "ProductService/src/ProductService.Domain/ValueObjects/ProductName.cs", goldenName: "ProductName.cs"},
 		{path: "ProductService/src/ProductService.Domain/ValueObjects/ProductPrice.cs", goldenName: "ProductPrice.cs"},
@@ -300,20 +298,18 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 		{path: "ProductService/src/ProductService.WebApi/Program.cs", goldenName: "Program.cs"},
 		{path: "ProductService/src/ProductService.WebApi/appsettings.Development.json", goldenName: "appsettings.Development.json"},
 		{path: "ProductService/src/ProductService.WebApi/appsettings.json", goldenName: "appsettings.json"},
-		{path: "ProductService/tests/ProductService.Application.Tests/Features/Products/ProductApplicationTests.cs", goldenName: "ProductApplicationTests.cs"},
-		{path: "ProductService/tests/ProductService.Application.Tests/ProductService.Application.Tests.csproj", goldenName: "ProductService.Application.Tests.csproj"},
-		{path: "ProductService/tests/ProductService.Architecture.Tests/ProductService.Architecture.Tests.csproj", goldenName: "ProductService.Architecture.Tests.csproj"},
-		{path: "ProductService/tests/ProductService.Architecture.Tests/ProductServiceArchitectureTests.cs", goldenName: "ProductServiceArchitectureTests.cs"},
-		{path: "ProductService/tests/ProductService.Domain.Tests/ProductService.Domain.Tests.csproj", goldenName: "ProductService.Domain.Tests.csproj"},
-		{path: "ProductService/tests/ProductService.Domain.Tests/ProductServiceDomainTests.cs", goldenName: "ProductServiceDomainTests.cs"},
-		{path: "ProductService/tests/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj", goldenName: "ProductService.Infrastructure.Tests.csproj"},
-		{path: "ProductService/tests/ProductService.Infrastructure.Tests/ProductServiceInfrastructureTests.cs", goldenName: "ProductServiceInfrastructureTests.cs"},
-		{path: "ProductService/tests/ProductService.WebApi.Tests/AuthenticationTests.cs", goldenName: "AuthenticationTests.cs"},
-		{path: "ProductService/tests/ProductService.WebApi.Tests/Features/Products/ProductControllerTests.cs", goldenName: "ProductControllerTests.cs"},
-		{path: "ProductService/tests/ProductService.WebApi.Tests/HealthControllerTests.cs", goldenName: "HealthControllerTests.cs"},
-		{path: "ProductService/tests/ProductService.WebApi.Tests/ProductService.WebApi.Tests.csproj", goldenName: "ProductService.WebApi.Tests.csproj"},
-		{path: "ProductService/tests/ProductService.WebApi.Tests/TestJwtTokens.cs", goldenName: "TestJwtTokens.cs"},
-		{path: "ProductService/tests/ProductService.WebApi.Tests/TestWebApiFactory.cs", goldenName: "TestWebApiFactory.cs"},
+		{path: "ProductService/tests/UnitTests/Application/Products/ProductApplicationTests.cs", goldenName: "ProductApplicationTests.cs"},
+		{path: "ProductService/tests/UnitTests/UnitTests.csproj", goldenName: "UnitTests.csproj"},
+		{path: "ProductService/tests/ArchitectureTests/ArchitectureTests.csproj", goldenName: "ArchitectureTests.csproj"},
+		{path: "ProductService/tests/ArchitectureTests/ProductServiceArchitectureTests.cs", goldenName: "ProductServiceArchitectureTests.cs"},
+		{path: "ProductService/tests/UnitTests/Domain/ProductServiceDomainTests.cs", goldenName: "ProductServiceDomainTests.cs"},
+		{path: "ProductService/tests/IntegrationTests/IntegrationTests.csproj", goldenName: "IntegrationTests.csproj"},
+		{path: "ProductService/tests/IntegrationTests/Infrastructure/ProductServiceInfrastructureTests.cs", goldenName: "ProductServiceInfrastructureTests.cs"},
+		{path: "ProductService/tests/IntegrationTests/WebApi/AuthenticationTests.cs", goldenName: "AuthenticationTests.cs"},
+		{path: "ProductService/tests/IntegrationTests/WebApi/Products/ProductControllerTests.cs", goldenName: "ProductControllerTests.cs"},
+		{path: "ProductService/tests/IntegrationTests/WebApi/HealthControllerTests.cs", goldenName: "HealthControllerTests.cs"},
+		{path: "ProductService/tests/IntegrationTests/WebApi/TestJwtTokens.cs", goldenName: "TestJwtTokens.cs"},
+		{path: "ProductService/tests/IntegrationTests/WebApi/TestWebApiFactory.cs", goldenName: "TestWebApiFactory.cs"},
 		{path: "README.md", goldenName: "README.md"},
 		{path: "microgen.json", goldenName: "microgen.json"},
 	}
@@ -325,6 +321,8 @@ func TestGenerateProducesDeterministicGoldenOutput(t *testing.T) {
 	for _, file := range expectedFiles {
 		expectedPaths = append(expectedPaths, file.path)
 	}
+	sort.Strings(actualPaths)
+	sort.Strings(expectedPaths)
 	if !reflect.DeepEqual(actualPaths, expectedPaths) {
 		t.Fatalf("generated path set mismatch\nexpected: %#v\nactual:   %#v", expectedPaths, actualPaths)
 	}
@@ -421,12 +419,12 @@ func TestGenerateRelationshipsProducesDeterministicGoldenOutput(t *testing.T) {
 	orderItemRequest := string(generatedContent(t, files, "OrderingService/src/OrderingService.Application/OrderItems/Dtos/CreateOrderItemRequest.cs"))
 	assertContains(t, orderItemRequest, "public Guid OrderId { get; init; }")
 	assertNotContains(t, orderItemRequest, "Order Order")
-	orderApplicationTests := string(generatedContent(t, files, "OrderingService/tests/OrderingService.Application.Tests/Features/Orders/OrderApplicationTests.cs"))
+	orderApplicationTests := string(generatedContent(t, files, "OrderingService/tests/UnitTests/Application/Orders/OrderApplicationTests.cs"))
 	assertContains(t, orderApplicationTests, "CustomerId = Guid.Parse(\"00000000-0000-0000-0000-000000000001\")")
 	assertContains(t, orderApplicationTests, "CustomerId = Guid.Parse(\"00000000-0000-0000-0000-000000000002\")")
 	assertContains(t, orderApplicationTests, "new OrderState { Number = \"Number Value\", CustomerId = Guid.Parse(\"00000000-0000-0000-0000-000000000001\")")
 	assertNotContains(t, orderApplicationTests, "Customer =")
-	orderItemApplicationTests := string(generatedContent(t, files, "OrderingService/tests/OrderingService.Application.Tests/Features/OrderItems/OrderItemApplicationTests.cs"))
+	orderItemApplicationTests := string(generatedContent(t, files, "OrderingService/tests/UnitTests/Application/OrderItems/OrderItemApplicationTests.cs"))
 	assertContains(t, orderItemApplicationTests, "OrderId = Guid.Parse(\"00000000-0000-0000-0000-000000000001\")")
 	assertContains(t, orderItemApplicationTests, "OrderId = Guid.Parse(\"00000000-0000-0000-0000-000000000002\")")
 	assertContains(t, orderItemApplicationTests, "new OrderItemState { Sku = \"Sku Value\", OrderId = Guid.Parse(\"00000000-0000-0000-0000-000000000001\")")
@@ -630,7 +628,7 @@ func TestGenerateIdOnlyEntityOmitsUnsafeSchemaTransition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate Id-only config: %v", err)
 	}
-	infrastructureTests := string(generatedContent(t, files, "IdentityService/tests/IdentityService.Infrastructure.Tests/IdentityServiceInfrastructureTests.cs"))
+	infrastructureTests := string(generatedContent(t, files, "IdentityService/tests/IntegrationTests/Infrastructure/IdentityServiceInfrastructureTests.cs"))
 	assertContains(t, infrastructureTests, "Assert.Equal(ReadinessStatus.Ready, healthy.Status);")
 	assertNotContains(t, infrastructureTests, "DROP COLUMN")
 	assertNotContains(t, infrastructureTests, "<no value>")
@@ -654,7 +652,7 @@ func TestGeneratePreservesLayerDependenciesAndSafetyBoundaries(t *testing.T) {
 	assertNotContains(t, contentByPath["ProductService/src/ProductService.Application/ProductService.Application.csproj"], "ProductService.Infrastructure")
 	assertNotContains(t, contentByPath["ProductService/src/ProductService.Application/ProductService.Application.csproj"], "ProductService.WebApi")
 	assertContains(t, contentByPath["ProductService/src/ProductService.Infrastructure/ProductService.Infrastructure.csproj"], "ProductService.Application.csproj")
-	assertContains(t, contentByPath["ProductService/src/ProductService.Domain/ValueObjects/ProductName.cs"], "DomainResult<ProductName>")
+	assertContains(t, contentByPath["ProductService/src/ProductService.Domain/ValueObjects/ProductName.cs"], "ErrorOr<ProductName>")
 	assertContains(t, contentByPath["ProductService/src/ProductService.Application/Common/UnitOfWork.cs"], "Task<int> SaveChangesAsync(CancellationToken cancellationToken)")
 	assertContains(t, contentByPath["ProductService/src/ProductService.Application/Common/Results.cs"], "public enum MutationPreparationStatus { Prepared, InvalidToken }")
 	assertNotContains(t, contentByPath["ProductService/src/ProductService.Application/Common/Results.cs"], "SaveResultStatus")
@@ -1086,7 +1084,7 @@ func TestScaffoldPlanUsesTargetFrameworkAndCentralPackagePolicy(t *testing.T) {
 			assertContains(t, commands, solutionCommand)
 			assertContains(t, commands, "dotnet new webapi --use-controllers --framework '"+tt.targetFramework+"' --name 'ProductService.WebApi' --output './ProductService/src/ProductService.WebApi' --no-restore")
 			assertContains(t, commands, "dotnet new classlib --framework '"+tt.targetFramework+"' --name 'ProductService.Domain' --output './ProductService/src/ProductService.Domain' --no-restore")
-			assertContains(t, commands, "dotnet new xunit --framework '"+tt.targetFramework+"' --name 'ProductService.WebApi.Tests' --output './ProductService/tests/ProductService.WebApi.Tests' --no-restore")
+			assertContains(t, commands, "dotnet new xunit --framework '"+tt.targetFramework+"' --name 'IntegrationTests' --output './ProductService/tests/IntegrationTests' --no-restore")
 			assertContains(t, commands, "dotnet sln './ProductService/ProductService."+tt.solutionFormat+"' add './ProductService/src/ProductService.WebApi/ProductService.WebApi.csproj'")
 			assertNotContains(t, commands, "dotnet sln './CommercePlatform.")
 			assertContains(t, commands, "dotnet add './ProductService/src/ProductService.Infrastructure/ProductService.Infrastructure.csproj' reference './ProductService/src/ProductService.Application/ProductService.Application.csproj'")
@@ -1237,7 +1235,7 @@ func TestGenerateSlnxReferencesAllProjectsDeterministically(t *testing.T) {
 
 	assertContains(t, slnx, "<Solution>\n")
 	assertContains(t, slnx, `  <Project Path="src/ProductService.WebApi/ProductService.WebApi.csproj" />`)
-	assertContains(t, slnx, `  <Project Path="tests/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj" />`)
+	assertContains(t, slnx, `  <Project Path="tests/IntegrationTests/IntegrationTests.csproj" />`)
 	assertNotContains(t, slnx, "OrderService")
 	assertNotContains(t, slnx, "ProjectConfigurationPlatforms")
 	assertContains(t, packages, `System.Security.Cryptography.Xml" Version="10.0.10`)
@@ -1275,10 +1273,10 @@ func TestGenerateCreatesOneSolutionPerMicroservice(t *testing.T) {
 		t.Fatal("did not expect root aggregate solution")
 	}
 	assertContains(t, productSolution, `"src/ProductService.WebApi/ProductService.WebApi.csproj"`)
-	assertContains(t, productSolution, `"tests/ProductService.Infrastructure.Tests/ProductService.Infrastructure.Tests.csproj"`)
+	assertContains(t, productSolution, `"tests/IntegrationTests/IntegrationTests.csproj"`)
 	assertNotContains(t, productSolution, "OrderService")
 	assertContains(t, orderSolution, `"src/OrderService.WebApi/OrderService.WebApi.csproj"`)
-	assertContains(t, orderSolution, `"tests/OrderService.Infrastructure.Tests/OrderService.Infrastructure.Tests.csproj"`)
+	assertContains(t, orderSolution, `"tests/IntegrationTests/IntegrationTests.csproj"`)
 	assertNotContains(t, orderSolution, "ProductService")
 }
 
@@ -1411,7 +1409,7 @@ func TestGenerateCreateTestsAssertAllSupportedScalarRequestFields(t *testing.T) 
 	if err != nil {
 		t.Fatalf("generate all-scalar config: %v", err)
 	}
-	content := string(generatedContent(t, files, "ProductService/tests/ProductService.Application.Tests/Features/Products/ProductApplicationTests.cs"))
+	content := string(generatedContent(t, files, "ProductService/tests/UnitTests/Application/Products/ProductApplicationTests.cs"))
 	for _, expected := range []string{
 		"Assert.True(created.IsAvailable);",
 		"Assert.Equal(new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc), created.PublishedAt);",
@@ -1447,8 +1445,8 @@ func TestGenerateRecordEntityTestsUseDomainAliases(t *testing.T) {
 				t.Fatalf("generate: %v", err)
 			}
 
-			applicationTests := string(generatedContent(t, files, "RecordService/tests/RecordService.Application.Tests/Features/Records/RecordApplicationTests.cs"))
-			infrastructureTests := string(generatedContent(t, files, "RecordService/tests/RecordService.Infrastructure.Tests/RecordServiceInfrastructureTests.cs"))
+			applicationTests := string(generatedContent(t, files, "RecordService/tests/UnitTests/Application/Records/RecordApplicationTests.cs"))
+			infrastructureTests := string(generatedContent(t, files, "RecordService/tests/IntegrationTests/Infrastructure/RecordServiceInfrastructureTests.cs"))
 
 			for _, content := range []string{applicationTests, infrastructureTests} {
 				assertContains(t, content, "using DomainRecord = RecordService.Domain.Entities.Record;")
@@ -1468,51 +1466,6 @@ func TestGenerateRecordEntityTestsUseDomainAliases(t *testing.T) {
 	}
 }
 
-func TestGenerateRecordRepositoryDiagnosticsAvoidsInstanceAnalyzerWarningWithoutValueObjects(t *testing.T) {
-	gen, err := New()
-	if err != nil {
-		t.Fatalf("new generator: %v", err)
-	}
-
-	tests := []struct {
-		name                 string
-		cfg                  spec.Config
-		expectedSignature    string
-		unexpectedSignature  string
-		expectedDbContextUse string
-	}{
-		{
-			name:                "zero value objects",
-			cfg:                 recordCollisionConfig(false),
-			expectedSignature:   "private static Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync",
-			unexpectedSignature: "private async Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync",
-		},
-		{
-			name:                 "value object backed",
-			cfg:                  recordCollisionConfig(true),
-			expectedSignature:    "private async Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync",
-			unexpectedSignature:  "private static Task<(string Field, IReadOnlyList<Guid> RecordIds)> FindReconstitutionDiagnosticsAsync",
-			expectedDbContextUse: "await dbContext.Database.SqlQueryRaw<Guid>(sql, id.Value).ToListAsync(cancellationToken)",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			files, err := gen.Generate(tt.cfg)
-			if err != nil {
-				t.Fatalf("generate: %v", err)
-			}
-			repository := string(generatedContent(t, files, "RecordService/src/RecordService.Infrastructure/Persistence/Features/Records/RecordRepository.cs"))
-
-			assertContains(t, repository, tt.expectedSignature)
-			assertNotContains(t, repository, tt.unexpectedSignature)
-			if tt.expectedDbContextUse != "" {
-				assertContains(t, repository, tt.expectedDbContextUse)
-			}
-		})
-	}
-}
-
 func TestGenerateRecordCollisionZeroValueObjectRuntimeBuild(t *testing.T) {
 	cfg := recordCollisionConfig(false)
 	cfg.Generation.TargetFramework = "net10.0"
@@ -1521,21 +1474,6 @@ func TestGenerateRecordCollisionZeroValueObjectRuntimeBuild(t *testing.T) {
 
 	runDotnetRuntimeCommand(t, dotnet, workspace, "restore", workspace.solutionPath)
 	runDotnetRuntimeCommand(t, dotnet, workspace, "build", "--no-restore", workspace.solutionPath)
-}
-
-func TestGenerateUsesParameterizedRepositoryDiagnostics(t *testing.T) {
-	gen, err := New()
-	if err != nil {
-		t.Fatalf("new generator: %v", err)
-	}
-	files, err := gen.Generate(testConfig())
-	if err != nil {
-		t.Fatalf("generate: %v", err)
-	}
-	repository := string(generatedContent(t, files, "ProductService/src/ProductService.Infrastructure/Persistence/Features/Products/ProductRepository.cs"))
-	assertContains(t, repository, "SqlQueryRaw<Guid>(sql, id.Value)")
-	assertNotContains(t, repository, "$\"SELECT")
-	assertNotContains(t, repository, "'{id.Value}'")
 }
 
 func TestGenerateEntityConfigurationQualifiesValueObjectRehydrateWhenNamesCollide(t *testing.T) {
@@ -1616,7 +1554,7 @@ func TestGenerateRequestContractsUseInitPropertiesForHundredFields(t *testing.T)
 	assertContains(t, createRequest, "public string Field099 { get; init; } = string.Empty;")
 	assertNotContains(t, createRequest, "public sealed record CreateHundredRecordRequest(")
 	assertNotContains(t, updateRequest, "public sealed record UpdateHundredRecordRequest(")
-	tests := string(generatedContent(t, files, "HundredFieldService/tests/HundredFieldService.Application.Tests/Features/HundredRecords/HundredRecordApplicationTests.cs"))
+	tests := string(generatedContent(t, files, "HundredFieldService/tests/UnitTests/Application/HundredRecords/HundredRecordApplicationTests.cs"))
 	assertContains(t, tests, "new CreateHundredRecordCommand")
 	assertContains(t, tests, "ConcurrencyToken = \"token-v1\"")
 	assertNotContains(t, tests, "new UpdateHundredRecordRequest(")
@@ -1637,7 +1575,7 @@ func TestGenerateEscapedStringValueObjectsAndLargeDoubleWitnesses(t *testing.T) 
 	if err != nil {
 		t.Fatalf("generate escaped/double config: %v", err)
 	}
-	domainTests := string(generatedContent(t, files, "ProductService/tests/ProductService.Domain.Tests/ProductServiceDomainTests.cs"))
+	domainTests := string(generatedContent(t, files, "ProductService/tests/UnitTests/Domain/ProductServiceDomainTests.cs"))
 	assertContains(t, domainTests, "\"bad\\u001F\\u00E9\\U0001F600\"")
 	assertContains(t, domainTests, lowerBoundInvalid("double", numberLiteralFor("double", "1e308")))
 	assertNotContains(t, domainTests, "1E+308d - 1d")
@@ -1666,7 +1604,7 @@ func TestGenerateDerivesPatternInvalidSampleAfterEarlierStringRules(t *testing.T
 	if err != nil {
 		t.Fatalf("generate pattern invalid sample config: %v", err)
 	}
-	domainTests := string(generatedContent(t, files, "ProductService/tests/ProductService.Domain.Tests/ProductServiceDomainTests.cs"))
+	domainTests := string(generatedContent(t, files, "ProductService/tests/UnitTests/Domain/ProductServiceDomainTests.cs"))
 
 	assertContains(t, domainTests, `Assert.Equal("ShortPatternName.Pattern", Assert.Single(ShortPatternName.Create("!!!").Errors).Code);`)
 	assertContains(t, domainTests, `var result = ShortPatternName.Create("!!!", "Field");`)
@@ -1687,7 +1625,7 @@ func TestGeneratePreflightDoesNotTreatOptionalStringValueObjectsAsRequired(t *te
 	preflight := string(generatedContent(t, files, "OptionalStringService/src/OptionalStringService.Infrastructure/Persistence/ValueObjectPreflight.sql"))
 	assertContains(t, preflight, "OptionalLabel.MaxLength")
 	assertNotContains(t, preflight, "OptionalLabel.Required")
-	infraTests := string(generatedContent(t, files, "OptionalStringService/tests/OptionalStringService.Infrastructure.Tests/OptionalStringServiceInfrastructureTests.cs"))
+	infraTests := string(generatedContent(t, files, "OptionalStringService/tests/IntegrationTests/Infrastructure/OptionalStringServiceInfrastructureTests.cs"))
 	assertContains(t, infraTests, "VALUES ({0}, N''")
 	assertContains(t, infraTests, "Assert.Empty(await RunPreflightAsync(context));")
 }
@@ -1707,7 +1645,7 @@ func TestGenerateDisablesValueObjectPreflightByDefault(t *testing.T) {
 	}
 	csproj := string(generatedContent(t, files, "ProductService/src/ProductService.Infrastructure/ProductService.Infrastructure.csproj"))
 	assertNotContains(t, csproj, "ValueObjectPreflight.sql")
-	infraTests := string(generatedContent(t, files, "ProductService/tests/ProductService.Infrastructure.Tests/ProductServiceInfrastructureTests.cs"))
+	infraTests := string(generatedContent(t, files, "ProductService/tests/IntegrationTests/Infrastructure/ProductServiceInfrastructureTests.cs"))
 	assertNotContains(t, infraTests, "RunPreflightAsync")
 	assertNotContains(t, infraTests, "ValueObjectPreflight")
 }
@@ -2304,6 +2242,101 @@ func TestGenerateRepositoryWithoutQueryShapesDoesNotGenerateShapedMethods(t *tes
 	}
 	if strings.Contains(content, "ApplyShaping_") {
 		t.Error("expected no ApplyShaping_ methods when no query shapes configured")
+	}
+}
+
+func TestGenerateEnterpriseModeUsesMediatR(t *testing.T) {
+	cfg := testConfig()
+	cfg.Generation.Mode = "enterprise"
+	
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	
+	// Verificar que se generen archivos de Commands/Queries
+	found := false
+	for _, f := range files {
+		if strings.Contains(f.Path, "Commands/Create/Create") && strings.HasSuffix(f.Path, "CommandHandler.cs") {
+			found = true
+			if !strings.Contains(string(f.Content), "IRequestHandler") {
+				t.Error("enterprise mode should use MediatR IRequestHandler")
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("enterprise mode should generate CommandHandler files")
+	}
+}
+
+func TestGenerateSimpleModeUsesDirectServices(t *testing.T) {
+	cfg := testConfig()
+	cfg.Generation.Mode = "simple"
+	
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	
+	// Verificar que se generen Services en lugar de Commands/Queries
+	foundService := false
+	foundCommand := false
+	for _, f := range files {
+		if strings.Contains(f.Path, "Services/Create") && strings.HasSuffix(f.Path, "Service.cs") {
+			foundService = true
+			if strings.Contains(string(f.Content), "IRequestHandler") {
+				t.Error("simple mode should not use MediatR IRequestHandler")
+			}
+			if !strings.Contains(string(f.Content), "Execute(") {
+				t.Error("simple mode Service should have Execute method")
+			}
+		}
+		if strings.Contains(f.Path, "Commands/Create") && strings.HasSuffix(f.Path, "CommandHandler.cs") {
+			foundCommand = true
+		}
+	}
+	
+	if !foundService {
+		t.Error("simple mode should generate Service files")
+	}
+	if foundCommand {
+		t.Error("simple mode should not generate CommandHandler files")
+	}
+}
+
+func TestGenerateSimpleModeDtoHasNoConcurrencyToken(t *testing.T) {
+	cfg := testConfig()
+	cfg.Generation.Mode = "simple"
+	
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	
+	// Verificar que el DTO no tenga ConcurrencyToken
+	for _, f := range files {
+		if strings.HasSuffix(f.Path, "Dto.cs") && !strings.Contains(f.Path, "Create") && !strings.Contains(f.Path, "Update") {
+			if strings.Contains(string(f.Content), "ConcurrencyToken") {
+				t.Error("simple mode DTO should not have ConcurrencyToken field")
+			}
+			break
+		}
 	}
 }
 

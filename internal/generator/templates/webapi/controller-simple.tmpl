@@ -1,0 +1,74 @@
+using {{ .Service.Name }}.Application.Common;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Dtos;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+namespace {{ .Service.Name }}.WebApi.Controllers.{{ .Entity.FeatureName }};
+
+[ApiController]
+[Authorize]
+[Route("{{ .Entity.Route }}")]
+public sealed class {{ .Entity.Name }}Controller(
+    List{{ .Entity.PluralName }}Service listService,
+    Get{{ .Entity.Name }}ByIdService getByIdService,
+    Create{{ .Entity.Name }}Service createService,
+    Update{{ .Entity.Name }}Service updateService,
+    Delete{{ .Entity.Name }}Service deleteService) : ApiController
+{
+    [HttpGet(Name = "List{{ .Entity.PluralName }}")]
+    public async Task<ActionResult<PagedResult<{{ .Entity.Name }}Dto>>> List([FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await listService.Execute(page, pageSize, cancellationToken);
+            return result.IsError
+                ? Problem(result.Errors)
+                : Ok(result.Value);
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("{id:guid}", Name = "Get{{ .Entity.Name }}ById")]
+    public async Task<ActionResult<{{ .Entity.Name }}Dto>> Get(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await getByIdService.Execute(id, cancellationToken);
+        return result.IsError
+            ? Problem(result.Errors)
+            : Ok(result.Value);
+    }
+
+    [HttpPost(Name = "Create{{ .Entity.Name }}")]
+    public async Task<ActionResult<{{ .Entity.Name }}Dto>> Create([FromBody] Create{{ .Entity.Name }}Request request, CancellationToken cancellationToken)
+    {
+        var created = await createService.Execute(request, cancellationToken);
+        if (created.IsError)
+        {
+            return Problem(created.Errors);
+        }
+        return CreatedAtRoute("Get{{ .Entity.Name }}ById", new { id = created.Value.Id }, created.Value);
+    }
+
+    [HttpPut("{id:guid}", Name = "Update{{ .Entity.Name }}")]
+    public async Task<ActionResult<{{ .Entity.Name }}Dto>> Update(Guid id, [FromBody] Update{{ .Entity.Name }}Request request, CancellationToken cancellationToken)
+    {
+        var updated = await updateService.Execute(id, request, cancellationToken);
+        return updated.IsError
+            ? Problem(updated.Errors)
+            : Ok(updated.Value);
+    }
+
+    [HttpDelete("{id:guid}", Name = "Delete{{ .Entity.Name }}")]
+    public async Task<IActionResult> Delete(Guid id, [FromQuery] string? concurrencyToken, CancellationToken cancellationToken)
+    {
+        var deleted = await deleteService.Execute(id, concurrencyToken ?? string.Empty, cancellationToken);
+        if (deleted.IsError)
+        {
+            return Problem(deleted.Errors);
+        }
+        return NoContent();
+    }
+}

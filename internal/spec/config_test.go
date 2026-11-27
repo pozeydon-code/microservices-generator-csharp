@@ -771,6 +771,43 @@ func TestConfigValidateRejectsInvalidRelationshipMetadata(t *testing.T) {
 	}
 }
 
+func TestConfigValidateAcceptsGenerationModes(t *testing.T) {
+	for _, mode := range []string{"simple", "enterprise", ""} {
+		cfg := validConfig()
+		cfg.Generation.Mode = mode
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("expected valid config with mode %q, got %v", mode, err)
+		}
+	}
+}
+
+func TestConfigValidateRejectsInvalidGenerationMode(t *testing.T) {
+	cfg := validConfig()
+	cfg.Generation.Mode = "invalid"
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "generation.mode") {
+		t.Fatalf("expected error about generation.mode, got %v", err)
+	}
+}
+
+func TestConfigGenerationModeDefaultsToEnterprise(t *testing.T) {
+	cfg := validConfig()
+	if cfg.GenerationMode() != "enterprise" {
+		t.Fatalf("expected default mode 'enterprise', got %q", cfg.GenerationMode())
+	}
+}
+
+func TestConfigGenerationModeReturnsConfiguredValue(t *testing.T) {
+	cfg := validConfig()
+	cfg.Generation.Mode = "simple"
+	if cfg.GenerationMode() != "simple" {
+		t.Fatalf("expected mode 'simple', got %q", cfg.GenerationMode())
+	}
+}
+
 func TestConfigValidateAcceptsValidQueryShapes(t *testing.T) {
 	cfg := validConfig()
 	cfg.Services[0].QueryShapes = []QueryShape{

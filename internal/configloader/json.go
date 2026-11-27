@@ -144,7 +144,7 @@ var queryShapeSchema = objectSchema{name: "queryShape", allowedKeys: allowed("na
 var serviceSchema = objectSchema{name: "service", allowedKeys: allowed("name", "valueObjects", "entities", "relationships", "queryShapes"), arrayTargets: map[string]objectSchema{"valueObjects": valueObjectSchema, "entities": entitySchema, "relationships": relationshipSchema, "queryShapes": queryShapeSchema}}
 var rootSchema = objectSchema{name: "root", allowedKeys: allowed("schemaVersion", "generation", "solution", "services"), arrayTargets: map[string]objectSchema{"services": serviceSchema}}
 var gatewaySchema = objectSchema{name: "gateway", allowedKeys: allowed("enabled")}
-var generationSchema = objectSchema{name: "generation", allowedKeys: allowed("targetFramework", "solutionFormat", "enableValueObjectPreflight", "gateway"), objectTargets: map[string]objectSchema{"gateway": gatewaySchema}}
+var generationSchema = objectSchema{name: "generation", allowedKeys: allowed("targetFramework", "solutionFormat", "mode", "enableValueObjectPreflight", "gateway"), objectTargets: map[string]objectSchema{"gateway": gatewaySchema}}
 var solutionSchema = objectSchema{name: "solution", allowedKeys: allowed("name", "description")}
 
 func allowed(keys ...string) map[string]string {

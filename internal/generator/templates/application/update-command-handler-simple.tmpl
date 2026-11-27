@@ -1,0 +1,55 @@
+using ErrorOr;
+using {{ .Service.Name }}.Application.Common;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Dtos;
+using {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Interfaces;
+using {{ .Service.Name }}.Domain.Entities;
+{{ if .Entity.HasValueObjectFields }}using {{ .Service.Name }}.Domain.ValueObjects;
+{{ end }}
+
+namespace {{ .Service.Name }}.Application.{{ .Entity.FeatureName }}.Services;
+
+public sealed class Update{{ .Entity.Name }}Service(I{{ .Entity.Name }}Repository repository, IUnitOfWork unitOfWork)
+{
+    public async Task<ErrorOr<{{ .Entity.Name }}Dto>> Execute(Guid id, Update{{ .Entity.Name }}Request request, CancellationToken cancellationToken)
+    {
+        var snapshot = await repository.GetByIdAsync(id, cancellationToken);
+        if (snapshot is null)
+        {
+            return Error.NotFound(code: "{{ .Entity.Name }}.NotFound", description: "{{ .Entity.Name }} was not found.");
+        }
+
+{{ range .Entity.NonIDFields }}{{ if .IsValueObject }}        var {{ .CamelName }}Result = {{ .DomainType }}.Create(request.{{ .Name }}, "{{ .CamelName }}");
+        if ({{ .CamelName }}Result.IsFailure)
+        {
+            return {{ .CamelName }}Result.Errors.Select(e => Error.Validation(
+                code: e.Code,
+                description: e.Message,
+                metadata: new Dictionary<string, object> { ["field"] = e.Field ?? "{{ .CamelName }}" })).ToList();
+        }
+
+{{ end }}{{ end }}        snapshot.Entity.Update(new {{ .Entity.Name }}State
+        {
+{{ range .Entity.NonIDFields }}            {{ .Name }} = {{ if .IsValueObject }}{{ .CamelName }}Result.Value{{ else }}request.{{ .Name }}{{ end }},
+{{ end }}{{ range .Entity.RelationshipScalarFields }}            {{ .Name }} = request.{{ .Name }},
+{{ end }}        });
+        
+        await repository.UpdateAsync(snapshot.Entity, request.ConcurrencyToken, cancellationToken);
+        try
+        {
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            return Error.Conflict(code: "{{ .Entity.Name }}.ConcurrencyConflict", description: "{{ .Entity.Name }} was changed by another request.");
+        }
+
+        var updated = await repository.GetByIdAsync(id, cancellationToken);
+        return ToDto(updated ?? snapshot);
+    }
+
+    private static {{ .Entity.Name }}Dto ToDto(EntitySnapshot<{{ .Entity.Name }}> snapshot) => new(
+{{ range $index, $field := .Entity.Fields }}{{ if $index }},
+{{ end }}        snapshot.Entity.{{ $field.ValueAccess }}{{ end }}{{ range .Entity.RelationshipScalarFields }},
+        snapshot.Entity.{{ .ValueAccess }}{{ end }},
+        snapshot.ConcurrencyToken);
+}

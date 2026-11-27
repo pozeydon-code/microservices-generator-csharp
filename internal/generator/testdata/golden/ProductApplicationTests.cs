@@ -14,7 +14,7 @@ using FluentValidation;
 using ErrorOr;
 using Xunit;
 
-namespace ProductService.Application.Tests.Features.Products;
+namespace ProductService.UnitTests.Application.Products;
 
 public sealed class ProductApplicationTests
 {
