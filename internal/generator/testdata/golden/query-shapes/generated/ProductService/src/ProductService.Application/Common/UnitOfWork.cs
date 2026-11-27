@@ -1,0 +1,8 @@
+namespace ProductService.Application.Common;
+
+public interface IUnitOfWork
+{
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken);
+}
+
+public sealed class ConcurrencyConflictException() : Exception("A concurrency conflict occurred while saving changes.");

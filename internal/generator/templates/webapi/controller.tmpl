@@ -19,11 +19,17 @@ namespace {{ .Service.Name }}.WebApi.Controllers.{{ .Entity.FeatureName }};
 public sealed class {{ .Entity.Name }}Controller(ISender sender) : ApiController
 {
     [HttpGet(Name = "List{{ .Entity.PluralName }}")]
-    public async Task<ActionResult<PagedResult<{{ .Entity.Name }}Dto>>> List([FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken)
+    public async Task<ActionResult<PagedResult<{{ .Entity.Name }}Dto>>> List([FromQuery] int? page, [FromQuery] int? pageSize, [FromQuery] string? shape, CancellationToken cancellationToken)
     {
+{{- if .Service.HasQueryShapes }}
+        if (shape is not null && !IsValidShape(shape))
+        {
+            return BadRequest(new { error = $"Invalid shape: {shape}. Valid shapes are: {string.Join(", ", ValidShapes())}" });
+        }
+{{- end }}
         try
         {
-            var result = await sender.Send(new List{{ .Entity.Name }}Query(page, pageSize), cancellationToken);
+            var result = await sender.Send(new List{{ .Entity.Name }}Query(page, pageSize, shape), cancellationToken);
             return result.IsError
                 ? Problem(result.Errors)
                 : Ok(result.Value);
@@ -35,9 +41,15 @@ public sealed class {{ .Entity.Name }}Controller(ISender sender) : ApiController
     }
 
     [HttpGet("{id:guid}", Name = "Get{{ .Entity.Name }}ById")]
-    public async Task<ActionResult<{{ .Entity.Name }}Dto>> Get(Guid id, CancellationToken cancellationToken)
+    public async Task<ActionResult<{{ .Entity.Name }}Dto>> Get(Guid id, [FromQuery] string? shape, CancellationToken cancellationToken)
     {
-        var result = await sender.Send(new Get{{ .Entity.Name }}ByIdQuery(id), cancellationToken);
+{{- if .Service.HasQueryShapes }}
+        if (shape is not null && !IsValidShape(shape))
+        {
+            return BadRequest(new { error = $"Invalid shape: {shape}. Valid shapes are: {string.Join(", ", ValidShapes())}" });
+        }
+{{- end }}
+        var result = await sender.Send(new Get{{ .Entity.Name }}ByIdQuery(id, shape), cancellationToken);
         return result.IsError
             ? Problem(result.Errors)
             : Ok(result.Value);
@@ -83,4 +95,27 @@ public sealed class {{ .Entity.Name }}Controller(ISender sender) : ApiController
         }
         return NoContent();
     }
+{{- if .Service.HasQueryShapes }}
+
+    private static bool IsValidShape(string shape)
+    {
+        return shape switch
+        {
+{{- range .Service.QueryShapes }}
+            "{{ .Name }}" => true,
+{{- end }}
+            _ => false
+        };
+    }
+
+    private static string[] ValidShapes()
+    {
+        return new[]
+        {
+{{- range .Service.QueryShapes }}
+            "{{ .Name }}",
+{{- end }}
+        };
+    }
+{{- end }}
 }

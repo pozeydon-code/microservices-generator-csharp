@@ -39,6 +39,164 @@ func TestGeneratedWebApiTestsDoNotContainUnusedJsonPropertyFields(t *testing.T) 
 	assertNotContains(t, content, "AllowedValidationProblemProperties")
 }
 
+func TestGeneratedControllerAcceptsShapeParameter(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	cfg := testConfig()
+	cfg.Services[0].QueryShapes = []spec.QueryShape{
+		{Name: "summary", DefaultDepth: 1},
+		{Name: "detail", DefaultDepth: 2},
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	content := string(generatedContent(
+		t,
+		files,
+		"ProductService/src/ProductService.WebApi/Controllers/Products/ProductController.cs",
+	))
+
+	// Controller should accept shape parameter in List and Get endpoints
+	if !strings.Contains(content, "[FromQuery] string? shape") {
+		t.Error("expected controller to accept shape parameter")
+	}
+
+	// Controller should validate shape against configured shapes
+	if !strings.Contains(content, "IsValidShape") {
+		t.Error("expected controller to validate shape")
+	}
+
+	// Controller should return BadRequest for invalid shape
+	if !strings.Contains(content, "Invalid shape:") {
+		t.Error("expected controller to return error for invalid shape")
+	}
+
+	// Controller should have helper methods for shape validation
+	if !strings.Contains(content, "private static bool IsValidShape") {
+		t.Error("expected IsValidShape helper method")
+	}
+	if !strings.Contains(content, "private static string[] ValidShapes") {
+		t.Error("expected ValidShapes helper method")
+	}
+}
+
+func TestGeneratedQueriesAcceptShapeParameter(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	cfg := testConfig()
+	cfg.Services[0].QueryShapes = []spec.QueryShape{
+		{Name: "summary", DefaultDepth: 1},
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	// Check List query accepts shape parameter
+	listQueryContent := string(generatedContent(
+		t,
+		files,
+		"ProductService/src/ProductService.Application/Products/Queries/List/ListProductQuery.cs",
+	))
+	if !strings.Contains(listQueryContent, "string? Shape") {
+		t.Error("expected List query to accept Shape parameter")
+	}
+
+	// Check GetById query accepts shape parameter
+	getByIdQueryContent := string(generatedContent(
+		t,
+		files,
+		"ProductService/src/ProductService.Application/Products/Queries/GetById/GetProductByIdQuery.cs",
+	))
+	if !strings.Contains(getByIdQueryContent, "string? Shape") {
+		t.Error("expected GetById query to accept Shape parameter")
+	}
+}
+
+func TestGeneratedHandlersUseShapedMethods(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	cfg := testConfig()
+	cfg.Services[0].Entities = []spec.Entity{
+		{
+			Name: "Product",
+			Fields: []spec.Field{
+				{Name: "Id", Type: "Guid"},
+				{Name: "Name", Type: "string"},
+			},
+		},
+		{
+			Name: "Category",
+			Fields: []spec.Field{
+				{Name: "Id", Type: "Guid"},
+				{Name: "Name", Type: "string"},
+			},
+		},
+	}
+	cfg.Services[0].Relationships = []spec.Relationship{
+		{
+			Name:            "ProductCategory",
+			PrincipalEntity: "Product",
+			DependentEntity: "Category",
+			Multiplicity:    "one-to-many",
+		},
+	}
+	cfg.Services[0].QueryShapes = []spec.QueryShape{
+		{Name: "summary", DefaultDepth: 1},
+		{Name: "detail", DefaultDepth: 2},
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	// Check List handler uses shaped methods
+	listHandlerContent := string(generatedContent(
+		t,
+		files,
+		"ProductService/src/ProductService.Application/Products/Queries/List/ListProductQueryHandler.cs",
+	))
+	if !strings.Contains(listHandlerContent, "request.Shape switch") {
+		t.Error("expected List handler to switch on shape")
+	}
+	if !strings.Contains(listHandlerContent, "ListShaped_summaryAsync") {
+		t.Error("expected List handler to call ListShaped_summaryAsync")
+	}
+	if !strings.Contains(listHandlerContent, "ListShaped_detailAsync") {
+		t.Error("expected List handler to call ListShaped_detailAsync")
+	}
+
+	// Check GetById handler uses shaped methods
+	getByIdHandlerContent := string(generatedContent(
+		t,
+		files,
+		"ProductService/src/ProductService.Application/Products/Queries/GetById/GetProductByIdQueryHandler.cs",
+	))
+	if !strings.Contains(getByIdHandlerContent, "request.Shape switch") {
+		t.Error("expected GetById handler to switch on shape")
+	}
+	if !strings.Contains(getByIdHandlerContent, "GetShaped_summaryAsync") {
+		t.Error("expected GetById handler to call GetShaped_summaryAsync")
+	}
+	if !strings.Contains(getByIdHandlerContent, "GetShaped_detailAsync") {
+		t.Error("expected GetById handler to call GetShaped_detailAsync")
+	}
+}
+
 func TestGeneratedReadmeUsesSimpleLocalMigrationCommands(t *testing.T) {
 	gen, err := New()
 	if err != nil {
@@ -822,8 +980,8 @@ func TestGenerateReadCQRSSliceUsesQueriesAndPreservesLegacyPaginationContract(t 
 	assertContains(t, repository, "namespace ProductService.Application.Products.Interfaces")
 	assertContains(t, repository, "Task<MutationPreparationStatus> UpdateAsync")
 	assertNotContains(t, repository, "SaveResultStatus")
-	assertContains(t, controller, "sender.Send(new ListProductQuery(page, pageSize)")
-	assertContains(t, controller, "sender.Send(new GetProductByIdQuery(id)")
+	assertContains(t, controller, "sender.Send(new ListProductQuery(page, pageSize, shape)")
+	assertContains(t, controller, "sender.Send(new GetProductByIdQuery(id, shape)")
 	assertNotContains(t, controller, "useCases.ListAsync")
 	assertNotContains(t, controller, "useCases.GetByIdAsync")
 	assertContains(t, controller, "sender.Send(new UpdateProductCommand")
@@ -1735,6 +1893,108 @@ func assertPathMissing(t *testing.T, path string) {
 	}
 }
 
+func queryShapesConfig() spec.Config {
+	return spec.Config{
+		Solution: spec.Solution{Name: "ShopPlatform", Description: "Shop platform with query shapes."},
+		Services: []spec.Service{
+			{
+				Name: "ProductService",
+				Entities: []spec.Entity{
+					{
+						Name: "Product",
+						Fields: []spec.Field{
+							{Name: "Id", Type: "Guid"},
+							{Name: "Name", Type: "string"},
+							{Name: "Price", Type: "decimal"},
+						},
+					},
+					{
+						Name: "Category",
+						Fields: []spec.Field{
+							{Name: "Id", Type: "Guid"},
+							{Name: "Name", Type: "string"},
+						},
+					},
+				},
+				Relationships: []spec.Relationship{
+					{
+						Name:            "ProductCategory",
+						PrincipalEntity: "Product",
+						DependentEntity: "Category",
+						Multiplicity:    "one-to-many",
+						ForeignKeyName:  "CategoryId",
+						ForeignKeyType:  "Guid",
+					},
+				},
+				QueryShapes: []spec.QueryShape{
+					{Name: "summary", DefaultDepth: 1},
+					{Name: "detail", DefaultDepth: 2},
+				},
+			},
+		},
+	}
+}
+
+func TestGenerateQueryShapesProducesDeterministicOutput(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	cfg := queryShapesConfig()
+
+	first, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate first: %v", err)
+	}
+	second, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate second: %v", err)
+	}
+
+	if len(first) != len(second) {
+		t.Fatalf("expected same file count, got %d and %d", len(first), len(second))
+	}
+	for index := range first {
+		if first[index].Path != second[index].Path || !bytes.Equal(first[index].Content, second[index].Content) {
+			t.Fatalf("generation is not deterministic at index %d", index)
+		}
+	}
+
+	// Verificar que se generen DTOs shaped
+	dtoContent := string(generatedContent(t, first, "ProductService/src/ProductService.Application/Products/Dtos/ProductDto.cs"))
+	if !strings.Contains(dtoContent, "ProductSummaryDto") {
+		t.Error("expected ProductSummaryDto to be generated")
+	}
+	if !strings.Contains(dtoContent, "ProductDetailDto") {
+		t.Error("expected ProductDetailDto to be generated")
+	}
+
+	// Verificar que se generen métodos shaped en repository
+	repoContent := string(generatedContent(t, first, "ProductService/src/ProductService.Infrastructure/Persistence/Features/Products/ProductRepository.cs"))
+	if !strings.Contains(repoContent, "ListShaped_summaryAsync") {
+		t.Error("expected ListShaped_summaryAsync method to be generated")
+	}
+	if !strings.Contains(repoContent, "GetShaped_summaryAsync") {
+		t.Error("expected GetShaped_summaryAsync method to be generated")
+	}
+	if !strings.Contains(repoContent, "ListShaped_detailAsync") {
+		t.Error("expected ListShaped_detailAsync method to be generated")
+	}
+	if !strings.Contains(repoContent, "GetShaped_detailAsync") {
+		t.Error("expected GetShaped_detailAsync method to be generated")
+	}
+
+	// Verificar que controller acepte parámetro shape
+	controllerContent := string(generatedContent(t, first, "ProductService/src/ProductService.WebApi/Controllers/Products/ProductController.cs"))
+	if !strings.Contains(controllerContent, "[FromQuery] string? shape") {
+		t.Error("expected controller to accept shape parameter")
+	}
+	if !strings.Contains(controllerContent, "IsValidShape") {
+		t.Error("expected controller to validate shape")
+	}
+}
+
 func testConfig() spec.Config {
 	return spec.Config{
 		Solution: spec.Solution{Name: "CommercePlatform", Description: "Minimal generated .NET 8 microservice workspace for product management."},
@@ -1826,6 +2086,225 @@ func optionalMaxLengthStringConfig() spec.Config {
 
 func relationshipGeneratorConfig() spec.Config {
 	return relationshipTestConfig()
+}
+
+func TestGenerateProducesShapeSpecificDtos(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	cfg := spec.Config{
+		Solution: spec.Solution{Name: "ShopPlatform", Description: "Shop platform."},
+		Services: []spec.Service{{
+			Name: "ProductService",
+			Entities: []spec.Entity{{
+				Name:   "Product",
+				Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}},
+			}},
+			QueryShapes: []spec.QueryShape{
+				{Name: "summary", DefaultDepth: 1},
+				{Name: "detail", DefaultDepth: 2},
+			},
+		}},
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	var dtoFile *GeneratedFile
+	for i := range files {
+		if files[i].Path == "ProductService/src/ProductService.Application/Products/Dtos/ProductDto.cs" {
+			dtoFile = &files[i]
+			break
+		}
+	}
+
+	if dtoFile == nil {
+		t.Fatal("expected ProductDto.cs to be generated")
+	}
+
+	content := string(dtoFile.Content)
+
+	// Verificar que se genere el DTO base
+	if !strings.Contains(content, "public sealed record ProductDto(") {
+		t.Error("expected base ProductDto to be generated")
+	}
+
+	// Verificar que se generen DTOs por shape
+	if !strings.Contains(content, "public sealed record ProductSummaryDto(") {
+		t.Error("expected ProductSummaryDto to be generated for 'summary' shape")
+	}
+	if !strings.Contains(content, "public sealed record ProductDetailDto(") {
+		t.Error("expected ProductDetailDto to be generated for 'detail' shape")
+	}
+}
+
+func TestGenerateWithoutQueryShapesProducesOnlyBaseDto(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	cfg := spec.Config{
+		Solution: spec.Solution{Name: "ShopPlatform", Description: "Shop platform."},
+		Services: []spec.Service{{
+			Name: "ProductService",
+			Entities: []spec.Entity{{
+				Name:   "Product",
+				Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Name", Type: "string"}},
+			}},
+		}},
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	var dtoFile *GeneratedFile
+	for i := range files {
+		if files[i].Path == "ProductService/src/ProductService.Application/Products/Dtos/ProductDto.cs" {
+			dtoFile = &files[i]
+			break
+		}
+	}
+
+	if dtoFile == nil {
+		t.Fatal("expected ProductDto.cs to be generated")
+	}
+
+	content := string(dtoFile.Content)
+
+	// Verificar que solo se genere el DTO base
+	if !strings.Contains(content, "public sealed record ProductDto(") {
+		t.Error("expected base ProductDto to be generated")
+	}
+
+	// Verificar que NO se generen DTOs adicionales
+	if strings.Contains(content, "Dto(") && strings.Count(content, "public sealed record") > 1 {
+		t.Error("expected only base ProductDto when no query shapes configured")
+	}
+}
+
+func TestGenerateRepositoryWithQueryShapesGeneratesShapedMethods(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	cfg := spec.Config{
+		Solution: spec.Solution{Name: "ShopPlatform", Description: "Shop platform."},
+		Services: []spec.Service{{
+			Name: "OrderService",
+			Entities: []spec.Entity{
+				{Name: "Order", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Number", Type: "string"}}},
+				{Name: "OrderItem", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Sku", Type: "string"}}},
+			},
+			Relationships: []spec.Relationship{
+				{Multiplicity: "one-to-many", PrincipalEntity: "Order", DependentEntity: "OrderItem", ForeignKeyName: "OrderId", PrincipalNavigation: "Items", DependentNavigation: "Order"},
+			},
+			QueryShapes: []spec.QueryShape{
+				{Name: "summary", DefaultDepth: 1},
+				{Name: "detail", DefaultDepth: 2},
+			},
+		}},
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	var orderRepo *GeneratedFile
+	for i := range files {
+		if files[i].Path == "OrderService/src/OrderService.Infrastructure/Persistence/Features/Orders/OrderRepository.cs" {
+			orderRepo = &files[i]
+			break
+		}
+	}
+
+	if orderRepo == nil {
+		t.Fatal("expected OrderRepository.cs to be generated")
+	}
+
+	content := string(orderRepo.Content)
+
+	// Verify shaped methods are generated
+	if !strings.Contains(content, "ListShaped_summaryAsync") {
+		t.Error("expected ListShaped_summaryAsync method to be generated")
+	}
+	if !strings.Contains(content, "GetShaped_summaryAsync") {
+		t.Error("expected GetShaped_summaryAsync method to be generated")
+	}
+	if !strings.Contains(content, "ListShaped_detailAsync") {
+		t.Error("expected ListShaped_detailAsync method to be generated")
+	}
+	if !strings.Contains(content, "GetShaped_detailAsync") {
+		t.Error("expected GetShaped_detailAsync method to be generated")
+	}
+
+	// Verify ApplyShaping methods are generated for depth > 0
+	if !strings.Contains(content, "ApplyShaping_summary") {
+		t.Error("expected ApplyShaping_summary method to be generated")
+	}
+	if !strings.Contains(content, "ApplyShaping_detail") {
+		t.Error("expected ApplyShaping_detail method to be generated")
+	}
+
+	// Verify Include statements are present
+	if !strings.Contains(content, ".Include(e => e.Items)") {
+		t.Error("expected Include for Items navigation to be present")
+	}
+}
+
+func TestGenerateRepositoryWithoutQueryShapesDoesNotGenerateShapedMethods(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+
+	cfg := spec.Config{
+		Solution: spec.Solution{Name: "ShopPlatform", Description: "Shop platform."},
+		Services: []spec.Service{{
+			Name: "OrderService",
+			Entities: []spec.Entity{
+				{Name: "Order", Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Number", Type: "string"}}},
+			},
+		}},
+	}
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	var orderRepo *GeneratedFile
+	for i := range files {
+		if files[i].Path == "OrderService/src/OrderService.Infrastructure/Persistence/Features/Orders/OrderRepository.cs" {
+			orderRepo = &files[i]
+			break
+		}
+	}
+
+	if orderRepo == nil {
+		t.Fatal("expected OrderRepository.cs to be generated")
+	}
+
+	content := string(orderRepo.Content)
+
+	// Verify no shaped methods are generated when no query shapes configured
+	if strings.Contains(content, "ListShaped_") {
+		t.Error("expected no ListShaped_ methods when no query shapes configured")
+	}
+	if strings.Contains(content, "GetShaped_") {
+		t.Error("expected no GetShaped_ methods when no query shapes configured")
+	}
+	if strings.Contains(content, "ApplyShaping_") {
+		t.Error("expected no ApplyShaping_ methods when no query shapes configured")
+	}
 }
 
 func boolPtr(value bool) *bool            { return &value }

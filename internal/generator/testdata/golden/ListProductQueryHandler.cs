@@ -18,6 +18,13 @@ public sealed class ListProductQueryHandler(IProductRepository repository) : IRe
         return new PagedResult<ProductDto>(result.Items.Select(ToDto).ToList(), normalized.Page, normalized.PageSize, result.TotalCount);
     }
 
+    private static ProductDto ToDtoFromEntity(Product entity) => new(
+        entity.Id,
+        entity.IsActive,
+        entity.Name.Value,
+        entity.Price.Value,
+        Convert.ToBase64String(entity.RowVersion));
+
     private static ProductDto ToDto(EntitySnapshot<Product> snapshot) => new(
         snapshot.Entity.Id,
         snapshot.Entity.IsActive,

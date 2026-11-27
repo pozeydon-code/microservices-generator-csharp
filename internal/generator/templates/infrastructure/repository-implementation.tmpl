@@ -140,7 +140,33 @@ public sealed class {{ .Entity.Name }}Repository({{ .Service.Name }}DbContext db
         InvalidPersistedValue(logger, field, operation, recordIdsText, exception.ValueObjectType, string.Join(",", exception.InvariantCodes), exception);
     }
 
-    private static bool TryDecodeToken(string concurrencyToken, out byte[] rowVersion)
+{{ range .Service.QueryShapes }}    public async Task<(IReadOnlyList<{{ $.Entity.Name }}> Items, int TotalCount)> ListShaped_{{ .Name }}Async(int skip, int take, CancellationToken cancellationToken)
+    {
+        using var activity = {{ $.Service.Name }}.Infrastructure.DependencyInjection.ActivitySource.StartActivity("{{ $.Entity.Name }}.list.{{ .Name }}");
+        var query = dbContext.{{ $.Entity.Name }}s.AsNoTracking();
+{{ if gt .DefaultDepth 0 }}        query = ApplyShaping_{{ .Name }}(query);{{ end }}
+        var orderedQuery = query.OrderBy(entity => entity.Id);
+        var totalCount = await orderedQuery.CountAsync(cancellationToken);
+        var entities = await orderedQuery.Skip(skip).Take(take).ToListAsync(cancellationToken);
+        return (entities, totalCount);
+    }
+
+    public async Task<{{ $.Entity.Name }}?> GetShaped_{{ .Name }}Async(Guid id, CancellationToken cancellationToken)
+    {
+        using var activity = {{ $.Service.Name }}.Infrastructure.DependencyInjection.ActivitySource.StartActivity("{{ $.Entity.Name }}.get.{{ .Name }}");
+        var query = dbContext.{{ $.Entity.Name }}s.AsNoTracking();
+{{ if gt .DefaultDepth 0 }}        query = ApplyShaping_{{ .Name }}(query);{{ end }}
+        return await query.FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
+    }
+
+{{ if gt .DefaultDepth 0 }}    private static IQueryable<{{ $.Entity.Name }}> ApplyShaping_{{ .Name }}(IQueryable<{{ $.Entity.Name }}> query)
+    {
+{{ range $.Entity.ReferenceNavigations }}        query = query.Include(e => e.{{ .Name }});
+{{ end }}{{ range $.Entity.CollectionNavigations }}        query = query.Include(e => e.{{ .Name }});
+{{ end }}        return query;
+    }
+{{ end }}
+{{ end }}    private static bool TryDecodeToken(string concurrencyToken, out byte[] rowVersion)
     {
         try
         {

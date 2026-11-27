@@ -1,0 +1,48 @@
+{
+  "solution": {
+    "name": "ShopPlatform",
+    "description": "Shop platform with query shapes."
+  },
+  "services": [
+    {
+      "name": "ProductService",
+      "entities": [
+        {
+          "name": "Product",
+          "fields": [
+            {"name": "Id", "type": "Guid"},
+            {"name": "Name", "type": "string"},
+            {"name": "Price", "type": "decimal"}
+          ]
+        },
+        {
+          "name": "Category",
+          "fields": [
+            {"name": "Id", "type": "Guid"},
+            {"name": "Name", "type": "string"}
+          ]
+        }
+      ],
+      "relationships": [
+        {
+          "name": "ProductCategory",
+          "principalEntity": "Product",
+          "dependentEntity": "Category",
+          "multiplicity": "one-to-many",
+          "foreignKeyName": "CategoryId",
+          "foreignKeyType": "Guid"
+        }
+      ],
+      "queryShapes": [
+        {
+          "name": "summary",
+          "defaultDepth": 1
+        },
+        {
+          "name": "detail",
+          "defaultDepth": 2
+        }
+      ]
+    }
+  ]
+}

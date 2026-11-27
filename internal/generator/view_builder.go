@@ -81,6 +81,8 @@ type ServiceView struct {
 	ReadinessSchemaField       string
 	EnableValueObjectPreflight bool
 	SupportsOpenApiEndpoints   bool
+	QueryShapes                []QueryShapeView
+	HasQueryShapes             bool
 }
 
 type ProjectView struct {
@@ -178,6 +180,11 @@ type EFRelationshipView struct {
 	DependentNavigation string
 	Required            bool
 	IsRequiredCall      string
+}
+
+type QueryShapeView struct {
+	Name         string
+	DefaultDepth int
 }
 
 type FieldView struct {
@@ -285,6 +292,8 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 			serviceView.ExpectedSchemaItems += len(entityView.Fields) + 1
 		}
 		applyRelationshipViews(&serviceView, service.CanonicalRelationships())
+		serviceView.QueryShapes = queryShapeViews(service.QueryShapes)
+		serviceView.HasQueryShapes = len(serviceView.QueryShapes) > 0
 		view.Services = append(view.Services, serviceView)
 		for _, project := range serviceView.Projects {
 			view.Projects = append(view.Projects, rootSolutionProjectView(project))
@@ -297,6 +306,17 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 	sort.Slice(view.Projects, func(i, j int) bool { return view.Projects[i].Path < view.Projects[j].Path })
 	view.ScaffoldPlan = buildScaffoldPlan(view)
 	return view, nil
+}
+
+func queryShapeViews(shapes []spec.QueryShape) []QueryShapeView {
+	views := make([]QueryShapeView, 0, len(shapes))
+	for _, shape := range shapes {
+		views = append(views, QueryShapeView{
+			Name:         shape.Name,
+			DefaultDepth: shape.DefaultDepth,
+		})
+	}
+	return views
 }
 
 func applyRelationshipViews(serviceView *ServiceView, relationships []spec.CanonicalRelationship) {

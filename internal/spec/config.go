@@ -19,6 +19,7 @@ const (
 	MaxServices                 = 20
 	MaxEntitiesPerService       = 100
 	MaxFieldsPerEntity          = 100
+	MaxQueryShapeDepth          = 3
 )
 
 var reservedRelationshipForeignKeyNames = []string{"Id", "RowVersion", "ConcurrencyToken"}
@@ -51,6 +52,12 @@ type Service struct {
 	ValueObjects  []ValueObject  `json:"valueObjects"`
 	Entities      []Entity       `json:"entities"`
 	Relationships []Relationship `json:"relationships,omitempty"`
+	QueryShapes   []QueryShape   `json:"queryShapes,omitempty"`
+}
+
+type QueryShape struct {
+	Name         string `json:"name"`
+	DefaultDepth int    `json:"defaultDepth"`
 }
 
 type ValueObject struct {
@@ -261,6 +268,7 @@ func (c Config) Validate() error {
 			}
 		}
 		validateRelationships(&problems, servicePath, service, entityExactNames)
+		validateQueryShapes(&problems, servicePath, service)
 	}
 
 	if len(problems) > 0 {
@@ -438,6 +446,21 @@ func validateRelationships(problems *[]string, servicePath string, service Servi
 		}
 		addUnique(problems, seenPrincipalNavigations, canonical.PrincipalEntity+"."+canonical.PrincipalNavigation, "principal navigation in service "+service.Name)
 		addUnique(problems, seenDependentNavigations, canonical.DependentEntity+"."+canonical.DependentNavigation, "dependent navigation in service "+service.Name)
+	}
+}
+
+func validateQueryShapes(problems *[]string, servicePath string, service Service) {
+	if len(service.QueryShapes) == 0 {
+		return
+	}
+	seenNames := map[string]struct{}{}
+	for shapeIndex, shape := range service.QueryShapes {
+		shapePath := fmt.Sprintf("%s.queryShapes[%d]", servicePath, shapeIndex)
+		validateRequiredIdentifier(problems, shapePath+".name", shape.Name)
+		addUnique(problems, seenNames, shape.Name, "query shape in service "+service.Name)
+		if shape.DefaultDepth < 1 || shape.DefaultDepth > MaxQueryShapeDepth {
+			*problems = append(*problems, fmt.Sprintf("%s.defaultDepth must be between 1 and %d", shapePath, MaxQueryShapeDepth))
+		}
 	}
 }
 

@@ -38,6 +38,12 @@ type Generator struct {
 func New() (*Generator, error) {
 	templates, err := template.New("").Funcs(template.FuncMap{
 		"trimSuffix": strings.TrimSuffix,
+		"capitalize": func(s string) string {
+			if s == "" {
+				return s
+			}
+			return strings.ToUpper(s[:1]) + s[1:]
+		},
 	}).Option("missingkey=error").ParseFS(templatesFS, "templates/*/*.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
