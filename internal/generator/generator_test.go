@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -880,6 +881,129 @@ func TestGenerateGatewayUpdatesRootSolutionReadmeAndScaffoldPlan(t *testing.T) {
 	assertNotContains(t, scaffoldCommandText(view.ScaffoldPlan), "src/ShopPlatform.Gateway")
 	assertContains(t, scaffoldPackageText(view.ScaffoldPlan), "Gateway/ShopPlatform.Gateway.csproj -> Yarp.ReverseProxy")
 	assertNotContains(t, scaffoldPackageText(view.ScaffoldPlan), "src/ShopPlatform.Gateway")
+}
+
+func TestGenerateMultiServiceGatewayLegacySolution(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := testConfig()
+	cfg.Generation.TargetFramework = "net8.0"
+	cfg.Generation.Gateway.Enabled = true
+	cfg.Services = append(cfg.Services, spec.Service{
+		Name: "OrderService",
+		Entities: []spec.Entity{{
+			Name:   "Order",
+			Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Number", Type: "string"}},
+		}},
+	})
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate gateway config: %v", err)
+	}
+	const solutionName = "CommercePlatform.sln"
+	solution := string(generatedContent(t, files, solutionName))
+
+	t.Run("SDK list", func(t *testing.T) {
+		dotnet := locateDotnet(t)
+		dir := t.TempDir()
+		writeGeneratedFiles(t, dir, files)
+		runDotnetRuntimeCommand(t, dotnet, generatedWorkspace{dir: dir, solutionName: solutionName}, "sln", solutionName, "list")
+	})
+
+	t.Run("identities and configurations", func(t *testing.T) {
+		wantProjects := map[string]string{"Gateway/CommercePlatform.Gateway.csproj": "CommercePlatform.Gateway"}
+		for _, service := range []string{"OrderService", "ProductService"} {
+			for _, layer := range []string{"Application", "Domain", "Infrastructure", "WebApi"} {
+				name := service + "." + layer
+				wantProjects[service+"/src/"+name+"/"+name+".csproj"] = name
+			}
+			for _, name := range []string{"ArchitectureTests", "IntegrationTests", "UnitTests"} {
+				wantProjects[service+"/tests/"+name+"/"+name+".csproj"] = name
+			}
+		}
+
+		declarations := func(typeID string) [][]string {
+			line := regexp.MustCompile(`(?m)^Project\("\{` + typeID + `\}"\) = "([^"]+)", "([^"]+)", "(\{[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}\})"$`)
+			return line.FindAllStringSubmatch(solution, -1)
+		}
+		projects := declarations("FAE04EC0-301F-11D3-BF4B-00C04F79EFBC")
+		folders := declarations("2150E333-8FDC-42A3-9474-1A3956D46DE8")
+		if len(projects) != len(wantProjects) || len(folders) != 2 || len(projects)+len(folders) != strings.Count(solution, "\nProject(") {
+			t.Fatalf("expected %d C# projects and two folders, found %d projects and %d folders\n%s", len(wantProjects), len(projects), len(folders), solution)
+		}
+		guids := map[string]string{}
+		folderIDs := map[string]string{}
+		for _, match := range folders {
+			name, path, guid := match[1], match[2], match[3]
+			if (name != "OrderService" && name != "ProductService") || name != path || folderIDs[name] != "" || guids[guid] != "" {
+				t.Fatalf("unexpected folder declaration: %s", match[0])
+			}
+			folderIDs[name], guids[guid] = guid, path
+		}
+		wantMappings := map[string]string{}
+		wantNesting := map[string]string{}
+		for _, match := range projects {
+			name, path, guid := match[1], match[2], match[3]
+			if previous, exists := guids[guid]; exists {
+				t.Errorf("GUID %s is shared by %s and %s", guid, previous, path)
+			}
+			guids[guid] = path
+			if want := wantProjects[path]; want == "" || name != want {
+				t.Errorf("unexpected project declaration for %s: got name %q, want %q", path, name, want)
+			}
+			delete(wantProjects, path)
+			generatedContent(t, files, path)
+			service, _, _ := strings.Cut(path, "/")
+			if folder := folderIDs[service]; folder != "" {
+				wantNesting[guid] = folder
+			}
+			for _, config := range []string{"Debug|Any CPU", "Release|Any CPU"} {
+				for _, action := range []string{"ActiveCfg", "Build.0"} {
+					wantMappings[guid+"."+config+"."+action] = config
+				}
+			}
+		}
+		if len(wantProjects) != 0 {
+			t.Errorf("missing project declarations: %v", wantProjects)
+		}
+
+		assertSection := func(header string, expected map[string]string) {
+			_, mappings, found := strings.Cut(solution, "    GlobalSection("+header+"\n")
+			if !found {
+				t.Fatalf("missing section %s", header)
+			}
+			mappings, _, found = strings.Cut(mappings, "    EndGlobalSection\n")
+			if !found {
+				t.Fatalf("unterminated section %s", header)
+			}
+			for _, line := range strings.Split(strings.TrimSpace(mappings), "\n") {
+				key, value, ok := strings.Cut(strings.TrimSpace(line), " = ")
+				if want := expected[key]; !ok || want == "" || value != want {
+					t.Errorf("unexpected or duplicate mapping in %s: %q", header, line)
+				}
+				delete(expected, key)
+			}
+			if len(expected) != 0 {
+				t.Errorf("missing mappings in %s: %v", header, expected)
+			}
+		}
+		assertSection("ProjectConfigurationPlatforms) = postSolution", wantMappings)
+		assertSection("NestedProjects) = preSolution", wantNesting)
+	})
+
+	t.Run("deterministic service order", func(t *testing.T) {
+		cfg.Services[0], cfg.Services[1] = cfg.Services[1], cfg.Services[0]
+		reordered, err := gen.Generate(cfg)
+		if err != nil {
+			t.Fatalf("generate with reversed services: %v", err)
+		}
+		if got := string(generatedContent(t, reordered, solutionName)); got != solution {
+			t.Fatal("aggregate solution changed when input services were reordered")
+		}
+	})
 }
 
 func TestGenerateMultiServiceGatewaySlnxGroupsProjectsByService(t *testing.T) {

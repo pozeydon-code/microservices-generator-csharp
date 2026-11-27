@@ -73,11 +73,18 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 	}
 	if solution.Gateway.Enabled {
 		solutionTemplate := templatePath(rootTemplateDir, "solution-"+solution.SolutionFormat+".tmpl")
-		if solution.SolutionFormat == "slnx" && len(solution.Services) > 1 {
+		var rootSolution any = solution
+		if len(solution.Services) > 1 {
 			// Test project names are intentionally reused across services.
-			solutionTemplate = templatePath(rootTemplateDir, "aggregate-solution-slnx.tmpl")
+			switch solution.SolutionFormat {
+			case "slnx":
+				solutionTemplate = templatePath(rootTemplateDir, "aggregate-solution-slnx.tmpl")
+			case "sln":
+				solutionTemplate = templatePath(rootTemplateDir, "aggregate-solution-sln.tmpl")
+				rootSolution = legacyAggregateSolutionView(solution)
+			}
 		}
-		if err := g.appendRendered(&files, solution.Solution.Name+"."+solution.SolutionFormat, solutionTemplate, solution); err != nil {
+		if err := g.appendRendered(&files, solution.Solution.Name+"."+solution.SolutionFormat, solutionTemplate, rootSolution); err != nil {
 			return nil, err
 		}
 		gatewayDirectory := projectDirectory(solution.Gateway.Project.Path)

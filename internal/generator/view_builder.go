@@ -467,6 +467,46 @@ func rootSolutionProjectView(project ProjectView) ProjectView {
 	return project
 }
 
+type legacyAggregateFolderView struct {
+	Name     string
+	GUID     string
+	Projects []ProjectView
+}
+
+type legacyAggregateView struct {
+	Projects []ProjectView
+	Folders  []legacyAggregateFolderView
+}
+
+func legacyAggregateSolutionView(solution SolutionTemplateData) legacyAggregateView {
+	view := legacyAggregateView{
+		Projects: make([]ProjectView, 0, len(solution.Projects)),
+		Folders:  make([]legacyAggregateFolderView, 0, len(solution.Services)),
+	}
+	folderIndexes := make(map[string]int, len(solution.Services))
+	for _, service := range solution.Services {
+		folderIndexes[service.Name] = len(view.Folders)
+		view.Folders = append(view.Folders, legacyAggregateFolderView{
+			Name: service.Name,
+			GUID: deterministicGUID("folder/" + service.Name),
+		})
+	}
+	for _, project := range solution.Projects {
+		if project.Path != solution.Gateway.Project.Path {
+			service, relativePath, _ := strings.Cut(project.Path, "/")
+			// Legacy SDKs identify a project by its solution folder and file
+			// name. A path-based GUID also separates identically named tests.
+			if strings.HasPrefix(relativePath, "tests/") {
+				project.GUID = deterministicGUID(project.Path)
+			}
+			index := folderIndexes[service]
+			view.Folders[index].Projects = append(view.Folders[index].Projects, project)
+		}
+		view.Projects = append(view.Projects, project)
+	}
+	return view
+}
+
 func defaultGatewayServicePort(sortedIndex int) int {
 	return 5100 + sortedIndex
 }
