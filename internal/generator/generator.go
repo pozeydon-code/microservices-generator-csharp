@@ -73,6 +73,10 @@ func (g *Generator) Generate(cfg spec.Config) ([]GeneratedFile, error) {
 	}
 	if solution.Gateway.Enabled {
 		solutionTemplate := templatePath(rootTemplateDir, "solution-"+solution.SolutionFormat+".tmpl")
+		if solution.SolutionFormat == "slnx" && len(solution.Services) > 1 {
+			// Test project names are intentionally reused across services.
+			solutionTemplate = templatePath(rootTemplateDir, "aggregate-solution-slnx.tmpl")
+		}
 		if err := g.appendRendered(&files, solution.Solution.Name+"."+solution.SolutionFormat, solutionTemplate, solution); err != nil {
 			return nil, err
 		}

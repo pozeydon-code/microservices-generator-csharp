@@ -876,6 +876,49 @@ func TestGenerateGatewayUpdatesRootSolutionReadmeAndScaffoldPlan(t *testing.T) {
 	assertNotContains(t, scaffoldPackageText(view.ScaffoldPlan), "src/ShopPlatform.Gateway")
 }
 
+func TestGenerateMultiServiceGatewaySlnxGroupsProjectsByService(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatalf("new generator: %v", err)
+	}
+	cfg := testConfig()
+	cfg.Generation.TargetFramework = "net10.0"
+	cfg.Generation.Gateway.Enabled = true
+	cfg.Services = append(cfg.Services, spec.Service{
+		Name: "OrderService",
+		Entities: []spec.Entity{{
+			Name:   "Order",
+			Fields: []spec.Field{{Name: "Id", Type: "Guid"}, {Name: "Number", Type: "string"}},
+		}},
+	})
+
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatalf("generate gateway config: %v", err)
+	}
+	var expected strings.Builder
+	expected.WriteString("<Solution>\n  <Project Path=\"Gateway/CommercePlatform.Gateway.csproj\" />\n")
+	for _, service := range []string{"OrderService", "ProductService"} {
+		fmt.Fprintf(&expected, "  <Folder Name=\"/%s/\">\n", service)
+		for _, layer := range []string{"Application", "Domain", "Infrastructure", "WebApi"} {
+			project := service + "." + layer
+			path := service + "/src/" + project + "/" + project + ".csproj"
+			generatedContent(t, files, path)
+			fmt.Fprintf(&expected, "    <Project Path=\"%s\" />\n", path)
+		}
+		for _, project := range []string{"ArchitectureTests", "IntegrationTests", "UnitTests"} {
+			path := service + "/tests/" + project + "/" + project + ".csproj"
+			generatedContent(t, files, path)
+			fmt.Fprintf(&expected, "    <Project Path=\"%s\" />\n", path)
+		}
+		expected.WriteString("  </Folder>\n")
+	}
+	expected.WriteString("</Solution>\n")
+	if got := string(generatedContent(t, files, "CommercePlatform.slnx")); got != expected.String() {
+		t.Fatalf("aggregate solution differs:\ngot:\n%s\nwant:\n%s", got, expected.String())
+	}
+}
+
 func TestGenerateCreateCQRSSliceUsesApplicationPipelineAndWebApiMapping(t *testing.T) {
 	gen, err := New()
 	if err != nil {

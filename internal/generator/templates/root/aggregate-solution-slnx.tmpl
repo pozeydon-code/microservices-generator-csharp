@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="{{ .Gateway.Project.SolutionPath }}" />
+{{ range .Services }}  <Folder Name="/{{ .Name }}/">
+{{ range .Projects }}    <Project Path="{{ .Path }}" />
+{{ end }}  </Folder>
+{{ end }}</Solution>
