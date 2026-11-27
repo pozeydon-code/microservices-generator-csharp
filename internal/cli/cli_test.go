@@ -34,6 +34,20 @@ func TestRunGenerateSucceeds(t *testing.T) {
 	}
 }
 
+func TestRunGenerateReportsNoChanges(t *testing.T) {
+	configPath := writeTempConfig(t, validJSONConfig)
+	outputDir := filepath.Join(t.TempDir(), "generated")
+	args := []string{"generate", "--config", configPath, "--output", outputDir}
+	var stdout, stderr bytes.Buffer
+	if code := Run(args, &stdout, &stderr); code != ExitOK || stderr.Len() != 0 {
+		t.Fatalf("initial run: %d %q %q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	if code := Run(args, &stdout, &stderr); code != ExitOK || stdout.String() != "No generated files changed in "+outputDir+"\n" || stderr.Len() != 0 {
+		t.Fatalf("no-op: %d %q %q", code, stdout.String(), stderr.String())
+	}
+}
+
 func TestRunVersionUsesDevelopmentMetadata(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -355,7 +369,7 @@ func TestRunReturnsUsageErrorForUnknownCommand(t *testing.T) {
 	if stdout.String() != "" {
 		t.Fatalf("expected empty stdout, got %q", stdout.String())
 	}
-	expectedStderr := "unknown command \"unknown\"\nUsage: microgen version\n       microgen generate --config <path> --output <dir> [--force]\n       microgen tui --config <path> --output <dir> [--force] [--new]\n  --new creates a starter config at --config and refuses to overwrite an existing file.\n  --force replaces only a verified microgen-owned generated directory.\n"
+	expectedStderr := "unknown command \"unknown\"\nUsage: microgen version\n       microgen generate --config <path> --output <dir> [--force]\n       microgen tui --config <path> --output <dir> [--force] [--new]\n  --new creates a starter config at --config and refuses to overwrite an existing file.\n  --force applies updates to owned output without overwriting manual edits.\n"
 	if stderr.String() != expectedStderr {
 		t.Fatalf("expected stderr %q, got %q", expectedStderr, stderr.String())
 	}
@@ -381,7 +395,7 @@ func TestRunGenerateHelpExitsOK(t *testing.T) {
 			if code != ExitOK {
 				t.Fatalf("expected OK exit code, got %d stderr %q", code, stderr.String())
 			}
-			expectedStdout := "Usage: microgen version\n       microgen generate --config <path> --output <dir> [--force]\n       microgen tui --config <path> --output <dir> [--force] [--new]\n  --new creates a starter config at --config and refuses to overwrite an existing file.\n  --force replaces only a verified microgen-owned generated directory.\n"
+			expectedStdout := "Usage: microgen version\n       microgen generate --config <path> --output <dir> [--force]\n       microgen tui --config <path> --output <dir> [--force] [--new]\n  --new creates a starter config at --config and refuses to overwrite an existing file.\n  --force applies updates to owned output without overwriting manual edits.\n"
 			if stdout.String() != expectedStdout {
 				t.Fatalf("expected stdout %q, got %q", expectedStdout, stdout.String())
 			}

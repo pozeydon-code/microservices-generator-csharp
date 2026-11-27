@@ -207,7 +207,7 @@ func TestFilesystemWriterRefusesExistingDirectoryUnlessForcedAndOwned(t *testing
 
 	if err := writer.Write(outputDir, files, false); err == nil {
 		t.Fatal("expected non-force existing directory error")
-	} else if !strings.Contains(err.Error(), "refusing to overwrite existing directory") {
+	} else if !strings.Contains(err.Error(), "not owned by microgen") {
 		t.Fatalf("expected overwrite guidance, got %v", err)
 	}
 	if err := writer.Write(outputDir, files, true); err == nil {
@@ -252,18 +252,91 @@ func TestFilesystemWriterForceReplacesOwnedOutput(t *testing.T) {
 	}
 }
 
-func TestFilesystemWriterRefusesForceWhenUserAddsFile(t *testing.T) {
-	outputDir := writeInitialOutput(t)
-	if err := os.WriteFile(filepath.Join(outputDir, "notes.txt"), []byte("user content\n"), 0o644); err != nil {
-		t.Fatalf("add user file: %v", err)
+func TestIncrementalNoOpAndSelectiveUpdate(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "generated")
+	w := NewFilesystemWriter()
+	files := []generator.GeneratedFile{{Path: "edit", Content: []byte("original")}, {Path: "update", Content: []byte("old")}, {Path: "stable", Content: []byte("stable")}}
+	if err := w.Write(root, files, false); err != nil {
+		t.Fatal(err)
 	}
+	put := func(path, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(root, path), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stat := func(path string) os.FileInfo {
+		t.Helper()
+		info, err := os.Stat(filepath.Join(root, path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return info
+	}
+	put("edit", "manual")
+	put("notes", "untracked")
+	edit, stable, manifest := stat("edit"), stat("stable"), stat(".microgen/manifest.json")
+	result, err := w.WriteDetailed(root, files, false)
+	if err != nil || result.Action != PlanActionUnchanged {
+		t.Fatalf("no-op: %+v, %v", result, err)
+	}
+	if after := stat(".microgen/manifest.json"); !os.SameFile(manifest, after) || manifest.ModTime() != after.ModTime() {
+		t.Fatal("no-op rewrote manifest")
+	}
+	files[1].Content = []byte("new")
+	if err := w.Write(root, files, true); err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]string{"edit": "manual", "update": "new", "notes": "untracked", "stable": "stable"} {
+		got, err := os.ReadFile(filepath.Join(root, path))
+		if err != nil || string(got) != want {
+			t.Fatalf("%s: %q, %v", path, got, err)
+		}
+	}
+	for path, before := range map[string]os.FileInfo{"edit": edit, "stable": stable} {
+		after := stat(path)
+		if !os.SameFile(before, after) || before.ModTime() != after.ModTime() {
+			t.Fatalf("rewrote %s", path)
+		}
+	}
+}
 
-	err := NewFilesystemWriter().Write(outputDir, []generator.GeneratedFile{{Path: "README.md", Content: []byte("replacement\n")}}, true)
-	if err == nil {
-		t.Fatal("expected drift error")
-	}
-	if !strings.Contains(err.Error(), "unknown file found") {
-		t.Fatalf("expected unknown file drift, got %v", err)
+func TestIncrementalConflictsDoNotPublish(t *testing.T) {
+	for _, name := range []string{"update", "delete"} {
+		t.Run(name, func(t *testing.T) {
+			root := writeInitialOutput(t)
+			target := filepath.Join(root, "README.md")
+			if err := os.WriteFile(target, []byte("manual"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			manifest := filepath.Join(root, ".microgen/manifest.json")
+			before, err := os.Stat(manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			files := []generator.GeneratedFile{{Path: "a-new", Content: []byte("new")}}
+			if name == "update" {
+				files = append(files, generator.GeneratedFile{Path: "README.md", Content: []byte("replacement")})
+			}
+			for _, force := range []bool{false, true} {
+				want := "generation conflict: cannot " + name + " README.md: modified file found"
+				if _, err := PlanOutput(root, files, force); err == nil || err.Error() != want {
+					t.Fatalf("plan: %v", err)
+				}
+				if err := NewFilesystemWriter().Write(root, files, force); err == nil || err.Error() != want {
+					t.Fatalf("write: %v", err)
+				}
+				if got, err := os.ReadFile(target); err != nil || string(got) != "manual" {
+					t.Fatalf("manual edit: %q, %v", got, err)
+				}
+				if _, err := os.Stat(filepath.Join(root, "a-new")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("unexpected create: %v", err)
+				}
+				if after, err := os.Stat(manifest); err != nil || !os.SameFile(before, after) || before.ModTime() != after.ModTime() {
+					t.Fatalf("manifest changed: %v", err)
+				}
+			}
+		})
 	}
 }
 
@@ -311,7 +384,7 @@ func TestFilesystemWriterRefusesForceWithNestedSymlink(t *testing.T) {
 		t.Fatalf("create nested symlink: %v", err)
 	}
 
-	err := NewFilesystemWriter().Write(outputDir, []generator.GeneratedFile{{Path: "README.md", Content: []byte("replacement\n")}}, true)
+	err := NewFilesystemWriter().Write(outputDir, []generator.GeneratedFile{{Path: "link/target", Content: []byte("replacement\n")}}, true)
 	if err == nil {
 		t.Fatal("expected nested symlink error")
 	}
@@ -551,21 +624,21 @@ func TestFilesystemWriterRestoresOwnedOutputWhenPublishFails(t *testing.T) {
 		t.Fatalf("initial write: %v", err)
 	}
 
-	renameCalls := 0
+	linkCalls := 0
 	failingWriter := NewFilesystemWriter()
-	failingWriter.rename = func(oldPath, newPath string) error {
-		renameCalls++
-		if renameCalls == 2 {
+	failingWriter.link = func(oldPath, newPath string) error {
+		linkCalls++
+		if linkCalls == 2 {
 			return errors.New("simulated publish failure")
 		}
-		return os.Rename(oldPath, newPath)
+		return os.Link(oldPath, newPath)
 	}
 
 	err := failingWriter.Write(outputDir, []generator.GeneratedFile{{Path: "README.md", Content: []byte("replacement\n")}}, true)
 	if err == nil {
 		t.Fatal("expected publish failure")
 	}
-	if !strings.Contains(err.Error(), "previous generated directory restored") {
+	if !strings.Contains(err.Error(), "previous files restored") {
 		t.Fatalf("expected rollback message, got %v", err)
 	}
 	content, err := os.ReadFile(filepath.Join(outputDir, "README.md"))
@@ -585,14 +658,14 @@ func TestFilesystemWriterReportsBackupPathWhenPublishAndRollbackFail(t *testing.
 		t.Fatalf("initial write: %v", err)
 	}
 
-	renameCalls := 0
+	linkCalls := 0
 	failingWriter := NewFilesystemWriter()
-	failingWriter.rename = func(oldPath, newPath string) error {
-		renameCalls++
-		if renameCalls == 2 || renameCalls == 3 {
+	failingWriter.link = func(oldPath, newPath string) error {
+		linkCalls++
+		if linkCalls <= 2 {
 			return errors.New("simulated rename failure")
 		}
-		return os.Rename(oldPath, newPath)
+		return os.Link(oldPath, newPath)
 	}
 
 	_, err := failingWriter.WriteDetailed(outputDir, []generator.GeneratedFile{{Path: "README.md", Content: []byte("replacement\n")}}, true)
@@ -600,7 +673,7 @@ func TestFilesystemWriterReportsBackupPathWhenPublishAndRollbackFail(t *testing.
 		t.Fatal("expected double-failure error")
 	}
 	message := err.Error()
-	if !strings.Contains(message, "rollback failed") || !strings.Contains(message, "previous generated directory remains at") || !strings.Contains(message, "recover by moving") {
+	if !strings.Contains(message, "rollback failed") || !strings.Contains(message, "previous files remain at") || !strings.Contains(message, "inspect the backup") {
 		t.Fatalf("expected actionable recovery instructions, got %v", err)
 	}
 }
@@ -613,13 +686,8 @@ func TestFilesystemWriterReportsWarningWhenBackupCleanupFailsAfterSuccessfulPubl
 	}
 
 	failingWriter := NewFilesystemWriter()
-	backupRemoveCalls := 0
 	failingWriter.removeAll = func(path string) error {
 		if strings.Contains(path, ".microgen-backup-") {
-			backupRemoveCalls++
-			if backupRemoveCalls == 1 {
-				return os.RemoveAll(path)
-			}
 			return errors.New("simulated cleanup failure")
 		}
 		return os.RemoveAll(path)
@@ -690,5 +758,46 @@ func writeLockMetadataForIdentity(t *testing.T, lockPath, outputDir string, pid 
 	}
 	if err := os.WriteFile(lockPath, content, 0o600); err != nil {
 		t.Fatalf("write lock metadata: %v", err)
+	}
+}
+
+func TestIncrementalWriterPublishesCleanOwnedPathTypeChanges(t *testing.T) {
+	for _, tc := range []struct{ name, before, after string }{{"file to directory", "item", "item/child"}, {"directory to file", "item/child", "item"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "generated")
+			w := NewFilesystemWriter()
+			initial := []generator.GeneratedFile{{Path: tc.before, Content: []byte("original")}}
+			updated := []generator.GeneratedFile{{Path: tc.after, Content: []byte("replacement")}}
+			if err := w.Write(root, initial, false); err != nil {
+				t.Fatal(err)
+			}
+			if tc.before == "item/child" {
+				note := filepath.Join(root, "item", "notes")
+				if err := os.WriteFile(note, []byte("manual"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				if err := w.Write(root, updated, true); err == nil {
+					t.Fatal("expected untracked collision")
+				}
+				for p, want := range map[string]string{"item/notes": "manual", tc.before: "original"} {
+					if got, err := os.ReadFile(filepath.Join(root, p)); err != nil || string(got) != want {
+						t.Fatalf("%s: %q, %v", p, got, err)
+					}
+				}
+				if err := os.Remove(note); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := w.Write(root, updated, true); err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(filepath.Join(root, tc.after))
+			if err != nil || string(got) != "replacement" {
+				t.Fatalf("replacement: %q, %v", got, err)
+			}
+			if plan, err := PlanOutput(root, updated, false); err != nil || plan.Action != PlanActionUnchanged {
+				t.Fatalf("follow-up plan: %+v, %v", plan, err)
+			}
+		})
 	}
 }

@@ -69,7 +69,7 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	configPath := flags.String("config", "", "Path to the microgen JSON configuration file")
 	outputDir := flags.String("output", "", "Directory where generated files will be planned")
-	force := flags.Bool("force", false, "Plan replacement of a verified microgen-owned generated directory")
+	force := flags.Bool("force", false, "Plan selective updates to an existing microgen output")
 	newConfig := flags.Bool("new", false, "Create a starter config at --config before opening the TUI")
 	flags.Usage = func() { printUsage(flags.Output()) }
 	if err := flags.Parse(args); err != nil {
@@ -128,7 +128,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	configPath := flags.String("config", "", "Path to the microgen JSON configuration file")
 	outputDir := flags.String("output", "", "Directory where generated files will be written")
-	force := flags.Bool("force", false, "Replace a verified microgen-owned generated directory")
+	force := flags.Bool("force", false, "Apply selective updates to an existing microgen output")
 	flags.Usage = func() { printUsage(flags.Output()) }
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -164,6 +164,10 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "Warning: %s\n", result.Warning)
 	}
 
+	if result.Plan.OutputAction == "unchanged" {
+		fmt.Fprintf(stdout, "No generated files changed in %s\n", result.OutputDir)
+		return ExitOK
+	}
 	fmt.Fprintf(stdout, "Generated %d files in %s\n", result.Plan.FileCount, result.OutputDir)
 	return ExitOK
 }
@@ -173,5 +177,5 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "       microgen generate --config <path> --output <dir> [--force]")
 	fmt.Fprintln(writer, "       microgen tui --config <path> --output <dir> [--force] [--new]")
 	fmt.Fprintln(writer, "  --new creates a starter config at --config and refuses to overwrite an existing file.")
-	fmt.Fprintln(writer, "  --force replaces only a verified microgen-owned generated directory.")
+	fmt.Fprintln(writer, "  --force applies updates to owned output without overwriting manual edits.")
 }

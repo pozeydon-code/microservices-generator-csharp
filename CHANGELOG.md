@@ -2,6 +2,10 @@
 
 Release notes for `microgen`, the C#/.NET microservices generator.
 
+## [0.8.2] - Unreleased
+
+- Regeneration updates only files whose generated content changed. The existing manifest is the per-file baseline; manual edits and unrelated files are preserved. Conflicting updates or deletions are rejected even with `--force`.
+
 ## [0.8.0] - 2026-11-26
 
 Simplification and flexibility release. Adds generation modes, unifies error handling, simplifies logging, and consolidates test projects.
@@ -11,7 +15,7 @@ Simplification and flexibility release. Adds generation modes, unifies error han
 - **Generation modes**: Support for `simple` and `enterprise` modes via `generation.mode` config field
   - Simple mode: Direct handlers without CQRS, no MediatR, no EntitySnapshot (~60 files per service)
   - Enterprise mode: Full Clean Architecture with CQRS, MediatR, EntitySnapshot (~70 files per service)
-- **Incremental generation foundation**: Manifest system for tracking generated files (full implementation in v0.8.1)
+- **Incremental generation foundation**: Manifest system for tracking generated files (full implementation deferred to v0.8.2)
 
 ### Changed
 
@@ -34,7 +38,7 @@ Simplification and flexibility release. Adds generation modes, unifies error han
 
 ### Known Limitations
 
-- Incremental generation is partially implemented (manifest tracking only). Full selective regeneration will be available in v0.8.1
+- Incremental generation is partially implemented (manifest tracking only). Full selective regeneration was deferred to v0.8.2
 
 ## [0.7.0] - 2026-11-26
 
