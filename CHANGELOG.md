@@ -2,6 +2,65 @@
 
 Release notes for `microgen`, the C#/.NET microservices generator.
 
+## [0.8.0] - 2026-11-26
+
+Simplification and flexibility release. Adds generation modes, unifies error handling, simplifies logging, and consolidates test projects.
+
+### Added
+
+- **Generation modes**: Support for `simple` and `enterprise` modes via `generation.mode` config field
+  - Simple mode: Direct handlers without CQRS, no MediatR, no EntitySnapshot (~60 files per service)
+  - Enterprise mode: Full Clean Architecture with CQRS, MediatR, EntitySnapshot (~70 files per service)
+- **Incremental generation foundation**: Manifest system for tracking generated files (full implementation in v0.8.1)
+
+### Changed
+
+- **Error handling**: Unified on ErrorOr library throughout. Removed custom `DomainResult<T>` and `DomainReconstitutionException`
+- **Repository logging**: Removed verbose SQL diagnostics for Value Objects, simplified to standard structured logging
+- **Test project consolidation**: Reduced from 5 test projects to 3:
+  - `UnitTests` (Domain + Application tests)
+  - `IntegrationTests` (Infrastructure + WebApi tests)
+  - `ArchitectureTests` (Boundary verification tests)
+- Test project naming: Simplified to `UnitTests`, `IntegrationTests`, `ArchitectureTests` (without service name prefix)
+
+### Technical Details
+
+- Added `mode` field to `GenerationOptions` in spec/config.go with validation
+- Created separate template sets for simple/enterprise modes
+- Updated all command/query handlers to use ErrorOr consistently
+- Simplified repository-implementation.tmpl by removing FindReconstitutionDiagnosticsAsync
+- Consolidated test project templates and updated namespaces
+- Updated generator tests and golden files for new structure
+
+### Known Limitations
+
+- Incremental generation is partially implemented (manifest tracking only). Full selective regeneration will be available in v0.8.1
+
+## [0.7.0] - 2026-11-26
+
+Query shaping support for generated services. Adds explicit control over EF Core Include patterns.
+
+### Added
+
+- **Query shapes**: Named read profiles with bounded depth for controlling EF Core Include behavior
+  - Config-driven via `queryShapes` array in service definition
+  - Each shape specifies name and defaultDepth (1-3 levels)
+  - Validation ensures no circular references or unbounded graphs
+- **Shape-specific DTOs**: Generator creates dedicated DTOs per shape (e.g., `ProductSummaryDto`, `ProductDetailDto`)
+- **Shaped repository methods**: Generated repositories include `ListShaped_{name}Async` and `GetShaped_{name}Async` methods per configured shape
+- **WebAPI shape parameter**: Controllers accept `?shape=name` query parameter with validation against configured shapes
+- **Infrastructure-owned shaping**: All Include/ThenInclude logic stays in Infrastructure layer, maintaining Clean Architecture boundaries
+
+### Technical Details
+
+- Added `QueryShape` type with name and defaultDepth fields to spec/config.go
+- Added `QueryShapeView` to view_builder.go for template rendering
+- Updated dto.tmpl with conditional logic for shape-specific DTO generation
+- Updated repository-implementation.tmpl to generate shaped query methods
+- Updated controller.tmpl to accept and validate shape parameter
+- Added comprehensive golden tests in testdata/golden/query-shapes/
+- All tests passing (except pre-existing NuGet vulnerability warnings in runtime tests)
+
 ## [0.4.1] - 2026-09-02
 
 Hardening-only release for release hygiene, generated-output compile confidence, and TUI async generation clarity.

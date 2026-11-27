@@ -77,6 +77,41 @@ flowchart LR
 
 CRUD operations are generated as Application feature slices. Infrastructure owns EF Core SQL Server details, including rowversion concurrency mapping. WebApi is the executable composition root and wires controllers, auth, health checks, ProblemDetails, OpenTelemetry, Infrastructure, and startup guards.
 
+## Generation Modes
+
+`microgen` supports two generation modes controlled by the `mode` field in your config:
+
+### Enterprise Mode (default)
+Full Clean Architecture with CQRS, MediatR, and EntitySnapshot pattern. Recommended for production systems requiring audit trails and complex business logic.
+
+```json
+{
+  "generation": {
+    "mode": "enterprise"
+  }
+}
+```
+
+### Simple Mode
+Direct handlers without CQRS, no MediatR, and no EntitySnapshot. Ideal for prototypes, internal tools, or services with straightforward CRUD operations.
+
+```json
+{
+  "generation": {
+    "mode": "simple"
+  }
+}
+```
+
+**Differences:**
+
+| Aspect | Enterprise | Simple |
+|--------|------------|--------|
+| Handlers | CQRS with MediatR | Direct service methods |
+| DTOs | EntitySnapshot wrapper | Plain DTOs |
+| Repository | Complex with diagnostics | Simplified |
+| Code volume | ~70 files per service | ~60 files per service |
+
 ## Minimal Config
 
 ```json

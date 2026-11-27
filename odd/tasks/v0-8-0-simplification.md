@@ -101,11 +101,11 @@ Implement 5 major improvements to reduce over-engineering and add flexibility to
 - **Approach**: Build on manifest.go foundation, implement selective regeneration logic
 - **Note**: Will be implemented in separate session with subagent to avoid context bloat
 
-### T7: Update documentation and examples [S1-S5]
-- Update README with new generation modes
-- Add examples for simple mode
-- Document incremental generation
-- Update CHANGELOG
+### T7: Update documentation and examples [S1-S5] ✅
+- Updated README.md with Generation Modes section (simple vs enterprise)
+- Added comparison table showing differences between modes
+- Updated CHANGELOG.md with v0.7.0 and v0.8.0 release notes
+- Documented all features, technical details, and known limitations
 - Route: inline (docs)
 - Commit: `docs/update-documentation`
 
