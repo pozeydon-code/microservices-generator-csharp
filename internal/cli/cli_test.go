@@ -22,7 +22,7 @@ func TestRunGenerateSucceeds(t *testing.T) {
 	if code != ExitOK {
 		t.Fatalf("expected success, got code %d stderr %q", code, stderr.String())
 	}
-	expectedStdout := "Generated 69 files in " + outputDir + "\n"
+	expectedStdout := "Generated 65 files in " + outputDir + "\n"
 	if stdout.String() != expectedStdout {
 		t.Fatalf("expected stdout %q, got %q", expectedStdout, stdout.String())
 	}
@@ -193,7 +193,7 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected refresh action to succeed: %v", err)
 		}
-		if refreshedPlan.FileCount != 69 || refreshedPlan.OutputDir != outputDir {
+		if refreshedPlan.FileCount != 65 || refreshedPlan.OutputDir != outputDir {
 			t.Fatalf("expected refreshed plan for output dir %s, got %#v", outputDir, refreshedPlan)
 		}
 		refreshCalled = true
@@ -201,7 +201,7 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected generation action to succeed: %v", err)
 		}
-		if result.Plan.FileCount != 69 || result.OutputDir != outputDir {
+		if result.Plan.FileCount != 65 || result.OutputDir != outputDir {
 			t.Fatalf("expected generation result for output dir %s, got %#v", outputDir, result)
 		}
 		generateCalled = true
@@ -209,7 +209,7 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected settings update action to succeed: %v", err)
 		}
-		if !updateResult.Saved || updateResult.PlanError != nil || updateResult.Plan.Config.SolutionName != "CatalogPlatform" || updateResult.Plan.Config.TargetFramework != "net9.0" || updateResult.Plan.FileCount != 69 {
+		if !updateResult.Saved || updateResult.PlanError != nil || updateResult.Plan.Config.SolutionName != "CatalogPlatform" || updateResult.Plan.Config.TargetFramework != "net9.0" || updateResult.Plan.FileCount != 65 {
 			t.Fatalf("expected updated plan from settings callback, got %#v", updateResult)
 		}
 		updateCalled = true
@@ -217,7 +217,7 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected entity update action to succeed: %v", err)
 		}
-		if !entityResult.Saved || entityResult.PlanError != nil || entityResult.Plan.Config.EntityCount != 1 || entityResult.Plan.FileCount != 69 {
+		if !entityResult.Saved || entityResult.PlanError != nil || entityResult.Plan.Config.EntityCount != 1 || entityResult.Plan.FileCount != 65 {
 			t.Fatalf("expected updated plan from entity callback, got %#v", entityResult)
 		}
 		updateEntitiesCalled = true
@@ -225,7 +225,7 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected field update action to succeed: %v", err)
 		}
-		if !fieldResult.Saved || fieldResult.PlanError != nil || fieldResult.Plan.Config.EntityCount != 1 || fieldResult.Plan.FileCount != 69 {
+		if !fieldResult.Saved || fieldResult.PlanError != nil || fieldResult.Plan.Config.EntityCount != 1 || fieldResult.Plan.FileCount != 65 {
 			t.Fatalf("expected updated plan from field callback, got %#v", fieldResult)
 		}
 		updateFieldsCalled = true
@@ -253,7 +253,7 @@ func TestRunTUISucceedsWithRunnerSeam(t *testing.T) {
 	if !programStarted {
 		t.Fatal("expected TUI program to start")
 	}
-	if capturedPlan.OutputDir != outputDir || capturedPlan.FileCount != 69 || capturedPlan.OutputAction != "create" || capturedPlan.ForceUsed {
+	if capturedPlan.OutputDir != outputDir || capturedPlan.FileCount != 65 || capturedPlan.OutputAction != "create" || capturedPlan.ForceUsed {
 		t.Fatalf("expected planned generation to be passed to TUI, got %#v", capturedPlan)
 	}
 	if capturedRequest.ConfigPath != configPath || capturedRequest.OutputDir != outputDir || !capturedRequest.Force {
