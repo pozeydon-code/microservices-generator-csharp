@@ -87,7 +87,7 @@ func (m *Manifest) NeedsRegeneration(path string, configPaths []string, currentC
 		return true // No manifest, regenerate everything
 	}
 
-	fileDep, exists := m.Files[path]
+	_, exists := m.Files[path]
 	if !exists {
 		return true // File not in manifest, needs generation
 	}
