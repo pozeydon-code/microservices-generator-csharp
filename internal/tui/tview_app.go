@@ -30,6 +30,7 @@ type tviewFocusPanel int
 
 const (
 	tviewFocusSidebar tviewFocusPanel = iota
+	tviewFocusTree
 	tviewFocusDetails
 	tviewFocusFiles
 	tviewFocusShortcuts
@@ -57,6 +58,11 @@ type tviewUI struct {
 	root                       *tview.Pages
 	dashboard                  tview.Primitive
 	sidebar                    *tview.Table
+	tree                       *tview.Table
+	selection                  workspaceSelection
+	workspace                  *tview.Pages
+	header                     *tview.TextView
+	previewInfo                *tview.TextView
 	detail                     *tview.TextView
 	files                      *tview.Table
 	footer                     *tview.TextView
@@ -111,6 +117,7 @@ type tviewServicesEditState struct {
 
 type tviewEntitiesEditState struct {
 	serviceName string
+	selected    int
 	rows        []tviewManagerRow
 }
 
@@ -274,7 +281,7 @@ func (ui *tviewUI) build() *tview.Pages {
 	tview.Styles.InverseTextColor = tcell.ColorBlack
 
 	ui.sidebar = tview.NewTable().SetSelectable(true, false)
-	ui.sidebar.SetBorder(true).SetTitle(" microgen ").SetTitleAlign(tview.AlignLeft)
+	ui.sidebar.SetBorder(true).SetTitle(" Views ").SetTitleAlign(tview.AlignLeft)
 	ui.sidebar.SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorTeal).Bold(true))
 	ui.sidebar.SetSelectedFunc(func(row, _ int) {
 		if row >= 0 && row < len(tviewRoutes) {
@@ -289,15 +296,9 @@ func (ui *tviewUI) build() *tview.Pages {
 	ui.files.SetBorder(true).SetTitle(" Planned Files ").SetTitleAlign(tview.AlignLeft)
 	ui.files.SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorTeal))
 
-	ui.footer = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignLeft)
-	ui.footer.SetBorder(true).SetTitle(" Shortcuts ").SetTitleAlign(tview.AlignLeft)
-
-	main := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(ui.detail, 0, 2, false).
-		AddItem(ui.files, 0, 3, false).
-		AddItem(ui.footer, 3, 0, false)
-
-	dashboard := tview.NewFlex().AddItem(ui.sidebar, 24, 0, true).AddItem(main, 0, 1, false)
+	ui.previewInfo = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	ui.footer = tview.NewTextView().SetDynamicColors(true).SetWrap(false)
+	dashboard := ui.buildWorkspace()
 	dashboard.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
 		if ui.editOpen {
 			return action, nil
@@ -342,8 +343,8 @@ func (ui *tviewUI) captureMouse(event *tcell.EventMouse, action tview.MouseActio
 		}
 	case tview.MouseLeftDown:
 		if !ui.editOpen {
-			for panel, box := range []interface{ InRect(int, int) bool }{ui.sidebar, ui.detail, ui.files, ui.footer} {
-				if box.InRect(x, y) {
+			for panel, box := range []interface{ InRect(int, int) bool }{ui.sidebar, ui.tree, ui.detail, ui.files, ui.footer} {
+				if ui.panelVisible(tviewFocusPanel(panel)) && box.InRect(x, y) {
 					ui.setFocusedPanel(tviewFocusPanel(panel))
 					break
 				}
@@ -443,6 +444,11 @@ func (ui *tviewUI) handleKey(event *tcell.EventKey) *tcell.EventKey {
 	case "e":
 		ui.startEdit()
 		return nil
+	case "f":
+		if ui.screen == tviewScreenOverview || ui.screen == tviewScreenEntities {
+			ui.editSelectedFields()
+		}
+		return nil
 	}
 	return event
 }
@@ -470,15 +476,25 @@ func (ui *tviewUI) cycleModalFocus(delta int) {
 	ui.app.SetFocus(ui.modalFocus[ui.modalFocusIndex])
 }
 
+func (ui *tviewUI) panelVisible(panel tviewFocusPanel) bool {
+	switch panel {
+	case tviewFocusDetails:
+		return ui.screen != tviewScreenPreview
+	case tviewFocusFiles:
+		return ui.screen == tviewScreenPreview
+	default:
+		return true
+	}
+}
+
 func (ui *tviewUI) cycleFocus(delta int) {
-	next := int(ui.focus) + delta
-	if next < 0 {
-		next = int(tviewFocusShortcuts)
+	count := int(tviewFocusShortcuts) + 1
+	for next := (int(ui.focus) + delta + count) % count; ; next = (next + delta + count) % count {
+		if ui.panelVisible(tviewFocusPanel(next)) {
+			ui.setFocusedPanel(tviewFocusPanel(next))
+			return
+		}
 	}
-	if next > int(tviewFocusShortcuts) {
-		next = 0
-	}
-	ui.setFocusedPanel(tviewFocusPanel(next))
 }
 
 func (ui *tviewUI) setFocusedPanel(panel tviewFocusPanel) {
@@ -486,8 +502,11 @@ func (ui *tviewUI) setFocusedPanel(panel tviewFocusPanel) {
 	ui.sidebar.SetBorderColor(tcell.ColorDarkCyan).SetTitleColor(tcell.ColorLightCyan)
 	ui.detail.SetBorderColor(tcell.ColorDarkCyan).SetTitleColor(tcell.ColorLightCyan)
 	ui.files.SetBorderColor(tcell.ColorDarkCyan).SetTitleColor(tcell.ColorLightCyan)
-	ui.footer.SetBorderColor(tcell.ColorDarkCyan).SetTitleColor(tcell.ColorLightCyan)
+	ui.tree.SetBorderColor(tcell.ColorDarkCyan).SetTitleColor(tcell.ColorLightCyan)
 	switch panel {
+	case tviewFocusTree:
+		ui.tree.SetBorderColor(tcell.ColorYellow).SetTitleColor(tcell.ColorYellow)
+		ui.app.SetFocus(ui.tree)
 	case tviewFocusDetails:
 		ui.detail.SetBorderColor(tcell.ColorYellow).SetTitleColor(tcell.ColorYellow)
 		ui.app.SetFocus(ui.detail)
@@ -495,19 +514,29 @@ func (ui *tviewUI) setFocusedPanel(panel tviewFocusPanel) {
 		ui.files.SetBorderColor(tcell.ColorYellow).SetTitleColor(tcell.ColorYellow)
 		ui.app.SetFocus(ui.files)
 	case tviewFocusShortcuts:
-		ui.footer.SetBorderColor(tcell.ColorYellow).SetTitleColor(tcell.ColorYellow)
 		ui.app.SetFocus(ui.footer)
 	default:
 		ui.sidebar.SetBorderColor(tcell.ColorYellow).SetTitleColor(tcell.ColorYellow)
 		ui.app.SetFocus(ui.sidebar)
 	}
+	ui.renderFooter()
 }
 
 func (ui *tviewUI) moveFocused(delta int) {
 	switch ui.focus {
+	case tviewFocusTree, tviewFocusDetails:
+		primitive := tview.Primitive(ui.tree)
+		if ui.focus == tviewFocusDetails {
+			primitive = ui.detail
+		}
+		key := tcell.KeyDown
+		if delta < 0 {
+			key = tcell.KeyUp
+		}
+		primitive.InputHandler()(tcell.NewEventKey(key, 0, tcell.ModNone), func(p tview.Primitive) { ui.app.SetFocus(p) })
 	case tviewFocusFiles:
 		row, _ := ui.files.GetSelection()
-		maxRow := len(ui.visibleFiles())
+		maxRow := len(ui.plan.Files)
 		if maxRow < 1 {
 			maxRow = 1
 		}
@@ -519,7 +548,7 @@ func (ui *tviewUI) moveFocused(delta int) {
 			row = 1
 		}
 		ui.files.Select(row, 0)
-	default:
+	case tviewFocusSidebar:
 		ui.move(delta)
 	}
 }
@@ -536,12 +565,30 @@ func (ui *tviewUI) move(delta int) {
 }
 
 func (ui *tviewUI) open(screen tviewScreen) {
+	if ui.screen != screen {
+		ui.detail.ScrollToBeginning()
+	}
 	ui.screen = screen
 	ui.refresh()
+	if !ui.panelVisible(ui.focus) {
+		if screen == tviewScreenPreview {
+			ui.setFocusedPanel(tviewFocusFiles)
+		} else {
+			ui.setFocusedPanel(tviewFocusDetails)
+		}
+	}
 }
 
 func (ui *tviewUI) startEdit() {
 	switch ui.screen {
+	case tviewScreenOverview:
+		if ui.selection.entity != "" {
+			ui.editSelectedFields()
+		} else if ui.selection.service != "" {
+			ui.openEntitiesEdit()
+		} else {
+			ui.openServicesEdit()
+		}
 	case tviewScreenProject:
 		ui.openProjectEdit()
 	case tviewScreenServices:
@@ -579,12 +626,7 @@ func tviewRelationshipSettingsFromState(state *tviewRelationshipsEditState) appl
 }
 
 func (ui *tviewUI) openRelationshipsEdit() {
-	service, ok := firstService(ui.plan.Config.Services)
-	if !ok {
-		ui.closeEditWithMessage("No services are available to edit relationships.")
-		return
-	}
-	ui.openRelationshipsEditForService(service.Name)
+	ui.openRelationshipsEditForService(ui.selection.service)
 }
 
 func (ui *tviewUI) openRelationshipsEditForService(serviceName string) {
@@ -633,12 +675,7 @@ func (ui *tviewUI) applyRelationshipsSaveResult(result application.UpdateRelatio
 }
 
 func (ui *tviewUI) openEntitiesEdit() {
-	service, ok := firstService(ui.plan.Config.Services)
-	if !ok {
-		ui.closeEditWithMessage("No services are available to edit entities.")
-		return
-	}
-	ui.openEntitiesEditForService(service.Name)
+	ui.openEntitiesEditForService(ui.selection.service)
 }
 
 func (ui *tviewUI) openEntitiesEditForService(serviceName string) {
@@ -650,19 +687,9 @@ func (ui *tviewUI) openEntitiesEditForService(serviceName string) {
 			return
 		}
 	}
-	ui.showEntitiesManager(tviewEntitiesStateFromService(service))
-}
-
-func (ui *tviewUI) openEntitiesEditForServiceAndEntity(serviceName string, selectedEntityIndex int) {
-	service, ok := serviceSummaryByName(ui.plan.Config.Services, serviceName)
-	if !ok {
-		ui.openEntitiesEditForService(serviceName)
-		return
-	}
 	state := tviewEntitiesStateFromService(service)
-	if selectedEntityIndex >= 0 && selectedEntityIndex < len(state.rows) {
-		ui.showFieldsManager(tviewFieldsStateFromEntity(service.Name, service.Entities[selectedEntityIndex]))
-		return
+	if service.Name == ui.selection.service {
+		state.selected = max(0, ui.selectedEntityIndex(service))
 	}
 	ui.showEntitiesManager(state)
 }
@@ -682,6 +709,9 @@ func (ui *tviewUI) saveEntitiesEdit(state *tviewEntitiesEditState) {
 	result, err := ui.updateEntities(ui.request, settings)
 	ui.applyEntitiesSaveResult(result, err)
 	if err == nil {
+		if state.serviceName == ui.selection.service {
+			ui.selection.entity = savedWorkspaceName(state.rows, ui.selection.entity)
+		}
 		state.rows = updateRowsAfterSave(state.rows)
 	}
 }
@@ -749,12 +779,7 @@ func (ui *tviewUI) applyFieldsSaveResult(result application.UpdateFieldSettingsR
 }
 
 func (ui *tviewUI) openValueObjectsEdit() {
-	service, ok := firstService(ui.plan.Config.Services)
-	if !ok {
-		ui.closeEditWithMessage("No services are available to edit value objects.")
-		return
-	}
-	ui.openValueObjectsEditForService(service.Name)
+	ui.openValueObjectsEditForService(ui.selection.service)
 }
 
 func (ui *tviewUI) openValueObjectsEditForService(serviceName string) {
@@ -980,6 +1005,7 @@ func (ui *tviewUI) saveServicesEdit(state *tviewServicesEditState) {
 	result, err := ui.updateServices(ui.request, settings)
 	ui.applyServicesSaveResult(result, err)
 	if err == nil {
+		ui.selection.service = savedWorkspaceName(state.rows, ui.selection.service)
 		state.rows = updateRowsAfterSave(state.rows)
 		for i := range state.rows {
 			row := &state.rows[i]
@@ -1136,6 +1162,7 @@ func (ui *tviewUI) showEntitiesManager(state *tviewEntitiesEditState) {
 		}
 	}
 	render()
+	manager.Select(state.selected+1, 0)
 	manager.SetSelectedFunc(func(row, column int) {
 		if row <= 0 || row > len(state.rows) {
 			return
@@ -2330,6 +2357,7 @@ func (ui *tviewUI) generateFiles() {
 		return
 	}
 	ui.generating = true
+	ui.renderFooter()
 	request := ui.request
 	go func() {
 		result, err := ui.generate(request)
@@ -2359,9 +2387,17 @@ func (ui *tviewUI) finishGeneration(result application.GenerateResult, err error
 }
 
 func (ui *tviewUI) refresh() {
+	ui.renderWorkspaceHeader()
 	ui.renderSidebar()
-	ui.renderDetail()
-	ui.renderFiles()
+	ui.renderTree()
+	if ui.screen == tviewScreenPreview {
+		ui.workspace.SwitchToPage("preview")
+		ui.previewInfo.SetText(fmt.Sprintf(" Output: %s\n Action: %s  │  Files: %d", tview.Escape(emptyDash(ui.plan.OutputDir)), tview.Escape(emptyDash(ui.plan.OutputAction)), ui.plan.FileCount))
+		ui.renderFiles()
+	} else {
+		ui.workspace.SwitchToPage("detail")
+		ui.renderDetail()
+	}
 	ui.renderFooter()
 }
 
@@ -2383,7 +2419,11 @@ func (ui *tviewUI) renderSidebar() {
 }
 
 func (ui *tviewUI) renderDetail() {
-	ui.detail.SetTitle(" " + ui.screenTitle() + " ")
+	title := ui.screenTitle()
+	if ui.screen == tviewScreenOverview || ui.screen == tviewScreenEntities {
+		title = "Properties"
+	}
+	ui.detail.SetTitle(" " + title + " ")
 	ui.detail.SetText(strings.Join(ui.detailLines(), "\n"))
 }
 
@@ -2391,7 +2431,7 @@ func (ui *tviewUI) renderFiles() {
 	ui.files.Clear()
 	ui.files.SetCell(0, 0, tview.NewTableCell("Action").SetTextColor(tcell.ColorLightCyan).SetSelectable(false).SetExpansion(1))
 	ui.files.SetCell(0, 1, tview.NewTableCell("Path").SetTextColor(tcell.ColorLightCyan).SetSelectable(false).SetExpansion(4))
-	for row, file := range ui.visibleFiles() {
+	for row, file := range ui.plan.Files {
 		color := tcell.ColorWhite
 		switch strings.ToLower(file.Action) {
 		case "create", "write":
@@ -2402,18 +2442,44 @@ func (ui *tviewUI) renderFiles() {
 		ui.files.SetCell(row+1, 0, tview.NewTableCell(file.Action).SetTextColor(color).SetExpansion(1))
 		ui.files.SetCell(row+1, 1, tview.NewTableCell(file.Path).SetTextColor(tcell.ColorWhite).SetExpansion(4))
 	}
-	if len(ui.visibleFiles()) == 0 {
+	if len(ui.plan.Files) == 0 {
 		ui.files.SetCell(1, 0, tview.NewTableCell("-").SetTextColor(tcell.ColorGray))
 		ui.files.SetCell(1, 1, tview.NewTableCell("No planned files yet.").SetTextColor(tcell.ColorGray))
 	}
 }
 
 func (ui *tviewUI) renderFooter() {
-	shortcuts := "[aqua]tab/shift+tab[white] focus  [aqua]j/k[white] move  [aqua]enter[white] open  [aqua]e[white] edit  [aqua]r[white] refresh  [aqua]g[white] generate  [aqua]esc[white] overview  [aqua]q[white] quit"
-	if (ui.plan.ForceRequired || ui.plan.Readiness.OutputForceRequired) && !ui.request.Force {
-		shortcuts += "  [yellow]--force required"
+	action := "Esc workspace"
+	switch ui.screen {
+	case tviewScreenOverview:
+		switch {
+		case ui.selection.entity != "":
+			action = "e/f fields"
+		case ui.selection.service != "":
+			action = "e entities"
+		default:
+			action = "e services"
+		}
+	case tviewScreenEntities:
+		action = "e entities"
+		if ui.selection.entity != "" {
+			action += "  f fields"
+		}
+	case tviewScreenProject, tviewScreenServices, tviewScreenValueObjects, tviewScreenRelationships:
+		action = "e edit " + strings.ToLower(ui.screenTitle())
+	case tviewScreenGenerate:
+		action = "g generate"
 	}
-	ui.footer.SetText(shortcuts)
+	move := "↑/↓ route"
+	switch ui.focus {
+	case tviewFocusTree:
+		move = "↑/↓ select"
+	case tviewFocusDetails, tviewFocusFiles:
+		move = "↑/↓ scroll"
+	case tviewFocusShortcuts:
+		move = "Esc workspace"
+	}
+	ui.footer.SetText(fmt.Sprintf(" [aqua]Tab[-] focus  %s  │  %s  │  r refresh  q quit\n%s", move, action, ui.workspaceStatus()))
 }
 
 func (ui *tviewUI) screenTitle() string {
@@ -2426,61 +2492,31 @@ func (ui *tviewUI) screenTitle() string {
 }
 
 func (ui *tviewUI) detailLines() []string {
-	lines := []string{
-		"[aqua]" + ui.plan.Config.SolutionName + "[white]",
-		fmt.Sprintf("Output: [gray]%s[white]", emptyDash(ui.plan.OutputDir)),
-		fmt.Sprintf("Action: [yellow]%s[white]  Files: [green]%d[white]", emptyDash(ui.plan.OutputAction), ui.plan.FileCount),
-		fmt.Sprintf("Services: %d  Entities: %d  Value Objects: %d", ui.plan.Config.ServiceCount, ui.plan.Config.EntityCount, ui.plan.Config.ValueObjectCount),
-	}
-	if ui.plan.ForceRequired || ui.plan.Readiness.OutputForceRequired {
-		lines = append(lines, "[yellow]This output needs --force before generation.[white]")
-	}
-	if ui.message != "" {
-		lines = append(lines, "", "[green]"+ui.message+"[white]")
-	}
-	if ui.planStale {
-		lines = append(lines, "[yellow]The plan must refresh successfully before generation.[white]")
-	}
-	if ui.err != nil {
-		lines = append(lines, "[red]"+ui.err.Error()+"[white]")
-	}
-
+	var lines []string
 	switch ui.screen {
+	case tviewScreenOverview, tviewScreenEntities:
+		lines = ui.propertyLines()
 	case tviewScreenProject:
 		lines = append(lines, "", fmt.Sprintf("Description: %s", emptyDash(ui.plan.Config.SolutionDescription)), fmt.Sprintf("Target Framework: %s", emptyDash(ui.plan.Config.TargetFramework)), fmt.Sprintf("Solution Format: %s", emptyDash(ui.plan.Config.SolutionFormat)), fmt.Sprintf("Gateway: %t", ui.plan.Config.GatewayEnabled), "Press e to edit project settings in this dashboard.")
 	case tviewScreenServices:
 		lines = append(lines, "", "[aqua]Services[white]", "Press e to rename services in this dashboard.")
 		lines = append(lines, prefixedList(ui.plan.Config.ServiceNames)...)
-	case tviewScreenEntities:
-		lines = append(lines, "", "[aqua]Entities[white]", "Press e to edit entities and fields in this dashboard.")
-		lines = append(lines, entityLines(ui.plan.Config.Services)...)
 	case tviewScreenValueObjects:
 		lines = append(lines, "", "[aqua]Value Objects[white]", "Press e to edit value objects in this dashboard.")
 		lines = append(lines, valueObjectLines(ui.plan.Config.Services)...)
 	case tviewScreenRelationships:
 		lines = append(lines, "", "[aqua]Relationships[white]", "Press e to edit relationship endpoints, FK, requiredness, and navigation names in this dashboard.")
 		lines = append(lines, relationshipLines(ui.plan.Config.Services)...)
-	case tviewScreenPreview:
-		lines = append(lines, "", "Review the planned file table before generating.")
 	case tviewScreenGenerate:
-		lines = append(lines, "", ui.generateSummary())
+		lines = append(lines, ui.generateSummary(), "", fmt.Sprintf("Output: %s", tview.Escape(emptyDash(ui.plan.OutputDir))),
+			fmt.Sprintf("Action: %s  │  Files: %d", tview.Escape(emptyDash(ui.plan.OutputAction)), ui.plan.FileCount))
 	case tviewScreenResult:
 		lines = append(lines, "", ui.resultSummary())
-	default:
-		lines = append(lines, "", readinessLines(ui.plan.Readiness))
+	}
+	if ui.err != nil {
+		lines = append(lines, "", "[red]"+tview.Escape(ui.err.Error())+"[-]")
 	}
 	return lines
-}
-
-func (ui *tviewUI) visibleFiles() []application.PlannedFile {
-	if ui.screen != tviewScreenPreview && ui.screen != tviewScreenGenerate && ui.screen != tviewScreenResult {
-		limit := len(ui.plan.Files)
-		if limit > 12 {
-			limit = 12
-		}
-		return ui.plan.Files[:limit]
-	}
-	return ui.plan.Files
 }
 
 func (ui *tviewUI) generateSummary() string {
@@ -2510,24 +2546,6 @@ func prefixedList(values []string) []string {
 	lines := make([]string, 0, len(values))
 	for _, value := range values {
 		lines = append(lines, "  "+value)
-	}
-	return lines
-}
-
-func entityLines(services []application.ServiceSummary) []string {
-	var lines []string
-	for _, service := range services {
-		lines = append(lines, "  [yellow]"+service.Name+"[white]")
-		if len(service.Entities) == 0 {
-			lines = append(lines, "    -")
-			continue
-		}
-		for _, entity := range service.Entities {
-			lines = append(lines, "    "+entity.Name)
-		}
-	}
-	if len(lines) == 0 {
-		return []string{"  -"}
 	}
 	return lines
 }

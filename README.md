@@ -50,7 +50,9 @@ Useful flags:
 
 ## Terminal UI
 
-The TUI is a guided editor for the same config and generation engine used by the CLI. Use it to create or adjust solution metadata, target framework, services, value objects, entities, fields, preview output, and generate. Use arrows or `j`/`k` to navigate, Tab to move focus, Enter to activate, and `q` or Ctrl+C to quit. Click to select or focus, double-click to activate an editor action or button, and scroll over the panel or form you want to move through.
+The TUI edits the same config and uses the same generation engine as the CLI. Pick a service or entity in the **Solution tree** to inspect its saved properties. Entity fields distinguish scalar types from references to reusable service value objects. Connection settings show presence only. Open **Preview** to scroll the planned files, **Generate** to run generation, and **Result** to inspect the outcome.
+
+Use arrows or `j`/`k` to move in the focused pane, Tab or Shift+Tab to change panes, Enter to activate, and `q` or Ctrl+C to quit. From **Overview**, `e` opens the editor for the current selection; `f` opens the selected entity's fields from **Overview** or **Entities**. On the other editable views, `e` opens that view's editor; **Entities**, **Value Objects**, and **Relationships** start with the service selected in the tree. Use `r` to refresh the plan and `g` to open **Generate** (press it again to run, subject to plan and output checks). Click to select or focus, double-click to activate an editor action or button, and scroll over the panel or form you want to move through.
 
 In a child editor (including validation Rules), **Apply** or Ctrl+S updates the parent draft without writing the config. Esc or **Cancel** discards the child changes and returns to the parent. Use **Save** in the parent editor to persist the draft.
 

@@ -2964,16 +2964,20 @@ func TestTViewTabCyclesVisiblePanels(t *testing.T) {
 		t.Fatalf("expected initial sidebar focus")
 	}
 	ui.handleKey(tcell.NewEventKey(tcell.KeyTAB, 0, tcell.ModNone))
-	if ui.focus != tviewFocusDetails || ui.app.GetFocus() != ui.detail {
-		t.Fatalf("expected details focus after tab")
+	if ui.focus != tviewFocusTree || ui.app.GetFocus() != ui.tree {
+		t.Fatal("expected tree focus after Tab")
 	}
 	ui.handleKey(tcell.NewEventKey(tcell.KeyTAB, 0, tcell.ModNone))
+	if ui.focus != tviewFocusDetails || ui.app.GetFocus() != ui.detail {
+		t.Fatal("expected properties focus after second Tab")
+	}
+	ui.open(tviewScreenPreview)
 	if ui.focus != tviewFocusFiles || ui.app.GetFocus() != ui.files {
-		t.Fatalf("expected files focus after second tab")
+		t.Fatal("expected Preview to transfer properties focus to files")
 	}
 	ui.handleKey(tcell.NewEventKey(tcell.KeyBacktab, 0, tcell.ModShift))
-	if ui.focus != tviewFocusDetails || ui.app.GetFocus() != ui.detail {
-		t.Fatalf("expected details focus after shift tab")
+	if ui.focus != tviewFocusTree || ui.app.GetFocus() != ui.tree {
+		t.Fatal("expected Shift+Tab to skip hidden properties in Preview")
 	}
 }
 

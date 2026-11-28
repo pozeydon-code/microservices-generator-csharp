@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -362,16 +363,98 @@ func TestTViewDispatchWheelOverOpenModeList(t *testing.T) {
 	}
 }
 
+func TestTViewDispatchWorkspace(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {140, 40}, {180, 50}} {
+		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
+			plan := application.GenerationPlan{Config: application.ConfigSummary{
+				SolutionName: "Commerce", GenerationMode: "enterprise",
+				Services: []application.ServiceSummary{
+					{Name: "Catalog", Entities: []application.EntitySummary{{Name: "Product"}}},
+					{Name: "Ordering", HasConnectionString: true,
+						ValueObjects: []application.ValueObjectSummary{{Name: "Money", Type: "decimal"}},
+						Entities: []application.EntitySummary{{Name: "Order", Fields: []application.FieldSummary{{Name: "Number", Type: "string"}, {Name: "Total", Type: "Money"}}}}},
+				},
+			}, Files: []application.PlannedFile{{Path: "preview-only.cs", Action: "create"}}}
+			var saves []application.FieldSettings
+			ui := newTViewUI(plan, application.GenerateRequest{}, nil, nil, nil, nil, nil,
+				func(_ application.GenerateRequest, settings application.FieldSettings) (application.UpdateFieldSettingsResult, error) {
+					saves = append(saves, settings)
+					return application.UpdateFieldSettingsResult{Plan: plan}, nil
+				})
+			screen := tcell.NewSimulationScreen("")
+			send := runTViewTest(t, ui, size[0], size[1], screen)
+			contents := func() string {
+				cells, width, _ := screen.GetContents()
+				var text strings.Builder
+				for index, cell := range cells {
+					if index > 0 && index%width == 0 {
+						text.WriteByte('\n')
+					}
+					if len(cell.Runes) == 0 {
+						text.WriteByte(' ')
+					} else {
+						text.WriteRune(cell.Runes[0])
+					}
+				}
+				return text.String()
+			}
+			assertText := func(want ...string) {
+				t.Helper()
+				text := contents()
+				for _, token := range want {
+					if !strings.Contains(text, token) {
+						t.Errorf("screen missing %q:\n%s", token, text)
+					}
+				}
+			}
+			find := func(want string) (int, int) {
+				t.Helper()
+				for y, line := range strings.Split(contents(), "\n") {
+					if i := strings.Index(line, want); i >= 0 {
+						return len([]rune(line[:i])), y
+					}
+				}
+				t.Fatalf("no clickable %q in workspace", want)
+				return 0, 0
+			}
+			assertText("Solution tree", "Properties", "Catalog / Product", "Mode: Enterprise", "Connection: not configured")
+			x, y := find("└ Order")
+			send(tviewClick(x, y)...)
+			assertText("Ordering / Order", "Connection: configured", "Number: string (scalar)", "Total: Money (value object)", "Money: decimal (reusable)")
+			if strings.Contains(contents(), "preview-only.cs") || len(saves) != 0 {
+				t.Fatal("single selection exposed files or saved a draft")
+			}
+			send(tviewRune('f'), tviewRune('a'), tviewKey(tcell.KeyEscape))
+			assertText("Ordering / Order", "Total: Money (value object)")
+			if len(saves) != 0 {
+				t.Fatal("Escape saved the fields draft")
+			}
+			send(tviewRune('f'), tviewRune('a'), tviewKey(tcell.KeyCtrlS), tviewKey(tcell.KeyEscape))
+			if len(saves) != 1 || saves[0].ServiceName != "Ordering" || saves[0].EntityName != "Order" || len(saves[0].Fields) != 3 {
+				t.Fatalf("Fields Save used the wrong tree context: %#v", saves)
+			}
+			x, y = find("Preview")
+			send(tviewClick(x, y)...)
+			assertText("Solution tree", "preview-only.cs")
+			send(tviewKey(tcell.KeyEscape))
+			assertText("Ordering / Order")
+			if strings.Contains(contents(), "preview-only.cs") {
+				t.Fatal("planned files remained visible outside Preview")
+			}
+		})
+	}
+}
+
 func TestTViewDispatchMouse(t *testing.T) {
 	plan := application.GenerationPlan{}
 	for i := 0; i < 20; i++ {
 		plan.Files = append(plan.Files, application.PlannedFile{Path: fmt.Sprintf("file%d", i), Action: "create"})
 	}
 	ui := newTViewUI(plan, application.GenerateRequest{}, nil, nil)
-	send := runTViewTest(t, ui, 60, 16)
-	x, y, _ := ui.sidebar.GetCell(int(tviewScreenServices), 0).GetLastPosition()
+	send := runTViewTest(t, ui, 80, 24)
+	x, y, _ := ui.sidebar.GetCell(int(tviewScreenPreview), 0).GetLastPosition()
 	send(tviewClick(x, y)...)
-	if ui.screen != tviewScreenServices || ui.app.GetFocus() != ui.sidebar {
+	if ui.screen != tviewScreenPreview || ui.app.GetFocus() != ui.sidebar {
 		t.Fatal("sidebar click did not open the selected tab and focus the sidebar")
 	}
 	x, y, _ = ui.files.GetCell(1, 0).GetLastPosition()
@@ -387,6 +470,8 @@ func TestTViewDispatchMouse(t *testing.T) {
 	if offset, _ := ui.files.GetOffset(); offset == 0 || ui.app.GetFocus() != ui.footer {
 		t.Fatal("wheel did not scroll the hovered file tab without stealing focus")
 	}
+	x, y, _ = ui.sidebar.GetCell(int(tviewScreenServices), 0).GetLastPosition()
+	send(tviewClick(x, y)...)
 	send(tviewRune('e'))
 	manager := ui.app.GetFocus().(*tview.Table)
 	for i := 0; i < 20; i++ {
@@ -401,7 +486,7 @@ func TestTViewDispatchMouse(t *testing.T) {
 	footer := ui.modalFocus[len(ui.modalFocus)-1].(*tview.Form)
 	add := footer.GetButton(0)
 	x, y, w, h := add.GetRect()
-	if w == 0 || h == 0 || x >= 60 || y >= 16 {
+	if w == 0 || h == 0 || x >= 80 || y >= 24 {
 		t.Fatalf("Add button is clipped at narrow size: %d,%d %dx%d", x, y, w, h)
 	}
 	count := manager.GetRowCount()

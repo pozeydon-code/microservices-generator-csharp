@@ -11,4 +11,4 @@ Microgen helps developers model a solution, services, entities, and fields befor
 
 ## Comparison
 
-See `design/tui-workspace/design.json`. The static baseline preserves the route rail, details, planned files, shortcuts, and the separate manager workflow. The recommendation is the tree + properties direction for repeated cross-service work; prefer master/detail if a single edit target matters most, or guided steps for a first setup. No direction is selected for implementation. Proposal interactions are synthetic and make no filesystem or network changes.
+See `design/tui-workspace/design.json`. The static baseline preserves the route rail, details, planned files, shortcuts, and the separate manager workflow. The selected direction is tree + properties (`design/tui-workspace/01-workspace.html`), implemented in TView. The view navigation and solution tree share a scrollable rail beside properties at 80×24; wider terminals give the rail more columns. Files occupy the main pane only on Preview. Editing reuses the real settings managers instead of the prototype's synthetic actions. The other artboards remain alternatives and make no filesystem or network changes.
