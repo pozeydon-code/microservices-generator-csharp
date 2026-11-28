@@ -520,6 +520,36 @@ func TestGenerateGatewayAndRelationshipsTogether(t *testing.T) {
 	}
 }
 
+func TestGenerateAppSettingsRoundTripConnectionStrings(t *testing.T) {
+	gen, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := testConfig()
+	cfg.Services[0].ConnectionString = "synthetic\\server;Example=\"quoted\"\n\tvalue"
+	other := cfg.Services[0]
+	other.Name = "SecondService"
+	other.ConnectionString = ""
+	cfg.Services = append(cfg.Services, other)
+	files, err := gen.Generate(cfg)
+	if err != nil {
+		t.Fatal("generation failed")
+	}
+	for _, service := range cfg.Services {
+		for _, file := range []string{"appsettings.json", "appsettings.Development.json"} {
+			path := join(service.Name, "src", service.Name+".WebApi", file)
+			var settings struct{ ConnectionStrings map[string]string }
+			if err := json.Unmarshal(generatedContent(t, files, path), &settings); err != nil {
+				t.Errorf("%s: invalid JSON", path)
+				continue
+			}
+			if got, ok := settings.ConnectionStrings["DefaultConnection"]; !ok || got != service.ConnectionString {
+				t.Errorf("%s: connection string did not round-trip", path)
+			}
+		}
+	}
+}
+
 func TestGenerateEmitsPortablePropsForEveryServiceAndKeepsRootProps(t *testing.T) {
 	gen, err := New()
 	if err != nil {

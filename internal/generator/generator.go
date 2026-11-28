@@ -3,6 +3,7 @@ package generator
 import (
 	"bytes"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"path"
 	"path/filepath"
@@ -38,6 +39,10 @@ type Generator struct {
 func New() (*Generator, error) {
 	templates, err := template.New("").Funcs(template.FuncMap{
 		"trimSuffix": strings.TrimSuffix,
+		"jsonString": func(value string) (string, error) {
+			encoded, err := json.Marshal(value)
+			return string(encoded), err
+		},
 		"capitalize": func(s string) string {
 			if s == "" {
 				return s
