@@ -2288,10 +2288,10 @@ func TestTViewServicesManagerKeepsActionsInTableAndFooterSticky(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected services manager table focus, got %T", ui.app.GetFocus())
 	}
-	if got := manager.GetCell(0, 1).Text; got != "Actions" {
+	if got := manager.GetCell(0, 2).Text; got != "Actions" {
 		t.Fatalf("expected right-side actions column, got %q", got)
 	}
-	if got := manager.GetCell(1, 1).Text; got != "Delete" {
+	if got := manager.GetCell(1, 2).Text; got != "Delete" {
 		t.Fatalf("expected delete action in the row action column, got %q", got)
 	}
 }

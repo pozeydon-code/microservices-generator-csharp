@@ -2,6 +2,27 @@
 
 Release notes for `microgen`, the C#/.NET microservices generator.
 
+## [0.9.1] - Unreleased
+
+TUI UX improvements for better discoverability and ease of use.
+
+### Added
+
+- **Mouse support**: Click to select items, double-click to activate, scroll wheel navigation in tables and lists
+- **Ctrl+S shortcut**: Save changes in all modal editors (Project, Services, Entities, Value Objects, Fields)
+- **Generation mode selector**: Editable field in Project editor to switch between simple/enterprise modes
+- **Connection string visibility**: Services list now shows connection strings with dedicated edit column
+- **Discoverable field editor**: Added visible "Fields" button in entity actions with contextual help explaining the difference between primitive fields and value objects
+
+### Technical Details
+
+- Added mouse event handlers to sidebar and files table with proper action signatures
+- Updated project editor to include generation mode in SolutionSettings and ConfigSummary
+- Modified services manager to display connection strings in a separate column (Name, Connection, Actions)
+- Enhanced entities manager with visible "Fields" action button and contextual help text
+- Fixed config loader to accept connection string field in service schema
+- Updated tests to reflect new table column structure
+
 ## [0.8.2] - Unreleased
 
 - Regeneration updates only files whose generated content changed. The existing manifest is the per-file baseline; manual edits and unrelated files are preserved. Conflicting updates or deletions are rejected even with `--force`.

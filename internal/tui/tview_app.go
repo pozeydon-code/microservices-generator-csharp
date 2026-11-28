@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/pozeydon-code/microservices-generator-csharp/internal/application"
@@ -82,6 +83,7 @@ type tviewUI struct {
 	modalFocusIndex            int
 	planStale                  bool
 	servicePickerReturnFocus   tview.Primitive
+	mouse                      mouseState
 }
 
 const (
@@ -91,11 +93,12 @@ const (
 )
 
 type tviewManagerRow struct {
-	original    string
-	name        string
-	typeName    string
-	deleted     bool
-	validations application.ValidationRuleSettings
+	original         string
+	name             string
+	typeName         string
+	connectionString string
+	deleted          bool
+	validations      application.ValidationRuleSettings
 }
 
 type tviewServicesEditState struct {
@@ -157,6 +160,7 @@ func newTViewUI(plan application.GenerationPlan, request application.GenerateReq
 		generate: generate,
 		screen:   tviewScreenOverview,
 	}
+	ui.app.EnableMouse(true)
 	ui.queueUpdateDraw = func(fn func()) { ui.app.QueueUpdateDraw(fn) }
 	ui.stopApp = func() { ui.app.Stop() }
 	if len(callbacks) > 0 {
@@ -272,6 +276,19 @@ func (ui *tviewUI) build() *tview.Pages {
 			ui.open(tviewRoutes[row].screen)
 		}
 	})
+	// Add mouse click support to sidebar
+	ui.sidebar.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+		if action == tview.MouseLeftClick {
+			x, y := event.Position()
+			// Get the table bounds
+			sx, sy, sw, sh := ui.sidebar.GetRect()
+			if x >= sx && x < sx+sw && y >= sy && y < sy+sh {
+				// Clicked on sidebar - let tview handle the selection via SetSelectedFunc
+				return action, event
+			}
+		}
+		return action, event
+	})
 
 	ui.detail = tview.NewTextView().SetDynamicColors(true).SetWordWrap(true).SetScrollable(true)
 	ui.detail.SetBorder(true).SetTitle(" Details ").SetTitleAlign(tview.AlignLeft)
@@ -279,6 +296,14 @@ func (ui *tviewUI) build() *tview.Pages {
 	ui.files = tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	ui.files.SetBorder(true).SetTitle(" Planned Files ").SetTitleAlign(tview.AlignLeft)
 	ui.files.SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorTeal))
+	// Add mouse click support to files table
+	ui.files.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+		if action == tview.MouseLeftClick {
+			// Let tview handle the selection via native table behavior
+			return action, event
+		}
+		return action, event
+	})
 
 	ui.footer = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignLeft)
 	ui.footer.SetBorder(true).SetTitle(" Shortcuts ").SetTitleAlign(tview.AlignLeft)
@@ -294,6 +319,86 @@ func (ui *tviewUI) build() *tview.Pages {
 
 	ui.app.SetInputCapture(ui.handleKey)
 	return tview.NewPages().AddPage("dashboard", ui.dashboard, true, true)
+}
+
+// mouseState tracks mouse click state for double-click detection
+type mouseState struct {
+	lastClick     time.Time
+	lastClickPos  struct{ x, y int }
+	doubleClickMs int // milliseconds threshold for double-click
+}
+
+func (ui *tviewUI) handleMouse(event *tcell.EventMouse) *tcell.EventMouse {
+	if event == nil {
+		return nil
+	}
+
+	x, y := event.Position()
+	action := event.Buttons()
+
+	// Handle mouse wheel for scrolling
+	switch action {
+	case tcell.WheelUp:
+		// Scroll up in focused widget
+		ui.handleScroll(-1)
+		return nil
+	case tcell.WheelDown:
+		// Scroll down in focused widget
+		ui.handleScroll(1)
+		return nil
+	}
+
+	// Handle left click
+	if action == tcell.Button1 {
+		now := time.Now()
+		timeSinceLastClick := now.Sub(ui.mouse.lastClick).Milliseconds()
+
+		// Check if this is a double-click
+		isDoubleClick := timeSinceLastClick < int64(ui.mouse.doubleClickMs) &&
+			x == ui.mouse.lastClickPos.x && y == ui.mouse.lastClickPos.y
+
+		if isDoubleClick {
+			// Double-click: perform action
+			ui.handleDoubleClick(x, y)
+			ui.mouse.lastClick = time.Time{} // Reset to prevent triple-click
+		} else {
+			// Single click: select/focus
+			ui.handleSingleClick(x, y)
+			ui.mouse.lastClick = now
+			ui.mouse.lastClickPos.x = x
+			ui.mouse.lastClickPos.y = y
+		}
+		return nil
+	}
+
+	return event
+}
+
+func (ui *tviewUI) handleSingleClick(x, y int) {
+	// Determine which widget was clicked and focus/select it
+	sx, sy, sw, sh := ui.sidebar.GetRect()
+	if x >= sx && x < sx+sw && y >= sy && y < sy+sh {
+		// Clicked on sidebar - let tview handle the selection
+		ui.app.SetFocus(ui.sidebar)
+		return
+	}
+
+	// Add more widget-specific click handlers here as needed
+}
+
+func (ui *tviewUI) handleDoubleClick(x, y int) {
+	// Double-click actions - typically for buttons/confirmations
+	// Add widget-specific double-click handlers here
+}
+
+func (ui *tviewUI) handleScroll(direction int) {
+	// Scroll the focused widget
+	if ui.detail != nil && ui.app.GetFocus() == ui.detail {
+		// Scroll detail view
+		row, col := ui.detail.GetScrollOffset()
+		ui.detail.ScrollTo(row+direction, col)
+	}
+	// Add more scrollable widgets as needed
 }
 
 func (ui *tviewUI) handleKey(event *tcell.EventKey) *tcell.EventKey {
@@ -770,6 +875,7 @@ func (ui *tviewUI) openProjectEdit() {
 	description := ui.plan.Config.SolutionDescription
 	targetFramework := ui.plan.Config.TargetFramework
 	solutionFormat := ui.plan.Config.SolutionFormat
+	generationMode := ui.plan.Config.GenerationMode
 	gatewayEnabled := fmt.Sprintf("%t", ui.plan.Config.GatewayEnabled)
 	type projectField struct {
 		label  string
@@ -781,6 +887,7 @@ func (ui *tviewUI) openProjectEdit() {
 		{"Description", &description, false},
 		{"Target framework", &targetFramework, false},
 		{"Solution format", &solutionFormat, false},
+		{"Generation mode", &generationMode, false},
 		{"Gateway enabled", &gatewayEnabled, true},
 	}
 	saveSettings := func() {
@@ -790,6 +897,7 @@ func (ui *tviewUI) openProjectEdit() {
 			SolutionDescription: strings.TrimSpace(description),
 			TargetFramework:     strings.TrimSpace(targetFramework),
 			SolutionFormat:      strings.TrimSpace(solutionFormat),
+			GenerationMode:      strings.TrimSpace(generationMode),
 			GatewayEnabled:      &gateway,
 		})
 		ui.applyProjectSaveResult(result, err)
@@ -874,7 +982,11 @@ func (ui *tviewUI) saveServicesEdit(state *tviewServicesEditState) {
 		if strings.TrimSpace(row.name) == "" || row.deleted {
 			continue
 		}
-		settings.Services = append(settings.Services, application.ServiceNameSetting{OriginalName: row.original, Name: strings.TrimSpace(row.name)})
+		settings.Services = append(settings.Services, application.ServiceNameSetting{
+			OriginalName:   row.original,
+			Name:           strings.TrimSpace(row.name),
+			ConnectionString: strings.TrimSpace(row.connectionString),
+		})
 	}
 	result, err := ui.updateServices(ui.request, settings)
 	ui.applyServicesSaveResult(result, err)
@@ -903,14 +1015,37 @@ func (ui *tviewUI) applyServicesSaveResult(result application.UpdateServiceSetti
 }
 
 func (ui *tviewUI) showServicesManager(state *tviewServicesEditState) {
-	manager := ui.newManagerTable([]string{"Name", "Actions"})
-	render := func() { renderManagerRows(manager, state.rows, false, "") }
+	manager := ui.newManagerTable([]string{"Name", "Connection", "Actions"})
+	render := func() {
+		for manager.GetRowCount() > 1 {
+			manager.RemoveRow(1)
+		}
+		if len(state.rows) == 0 {
+			manager.SetCell(1, 0, tview.NewTableCell("No services yet. Press a to add one.").SetTextColor(tcell.ColorGray).SetExpansion(3))
+			return
+		}
+		for index, row := range state.rows {
+			textStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite)
+			action := "Delete"
+			if row.deleted {
+				textStyle = tcell.StyleDefault.Foreground(tcell.ColorGray)
+				action = "Restore"
+			}
+			manager.SetCell(index+1, 0, managerCell(emptyDash(strings.TrimSpace(row.name)), textStyle).SetExpansion(2))
+			connDisplay := emptyDash(strings.TrimSpace(row.connectionString))
+			if len(connDisplay) > 30 {
+				connDisplay = connDisplay[:27] + "..."
+			}
+			manager.SetCell(index+1, 1, managerCell(connDisplay, textStyle).SetExpansion(2))
+			manager.SetCell(index+1, 2, managerCell(action, tcell.StyleDefault.Foreground(tcell.ColorYellow)).SetAlign(tview.AlignRight).SetExpansion(1))
+		}
+	}
 	render()
 	manager.SetSelectedFunc(func(row, column int) {
 		if row <= 0 || row > len(state.rows) {
 			return
 		}
-		if column == 1 {
+		if column == 2 {
 			state.rows[row-1].deleted = !state.rows[row-1].deleted
 			render()
 			return
@@ -918,6 +1053,13 @@ func (ui *tviewUI) showServicesManager(state *tviewServicesEditState) {
 		if column == 0 {
 			ui.openNameEdit(" Edit Service ", state.rows[row-1].name, func(name string) {
 				state.rows[row-1].name = name
+				ui.showServicesManager(state)
+			})
+			return
+		}
+		if column == 1 {
+			ui.openNameEdit(" Edit Connection String ", state.rows[row-1].connectionString, func(connStr string) {
+				state.rows[row-1].connectionString = connStr
 				ui.showServicesManager(state)
 			})
 		}
@@ -959,13 +1101,41 @@ func (ui *tviewUI) showEntitiesManager(state *tviewEntitiesEditState) {
 	serviceNames := serviceSummaryNames(ui.plan.Config.Services)
 	header := serviceManagerHeader(state.serviceName, "s service")
 	manager := ui.newManagerTable([]string{"Name", "Actions"})
-	render := func() { renderManagerRows(manager, state.rows, false, "") }
+	render := func() {
+		for manager.GetRowCount() > 1 {
+			manager.RemoveRow(1)
+		}
+		if len(state.rows) == 0 {
+			manager.SetCell(1, 0, tview.NewTableCell("No entities yet. Press a to add one.").SetTextColor(tcell.ColorGray).SetExpansion(2))
+			return
+		}
+		for index, row := range state.rows {
+			textStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite)
+			action := "Fields | Delete"
+			if row.deleted {
+				textStyle = tcell.StyleDefault.Foreground(tcell.ColorGray)
+				action = "Restore"
+			}
+			manager.SetCell(index+1, 0, managerCell(emptyDash(strings.TrimSpace(row.name)), textStyle).SetExpansion(2))
+			manager.SetCell(index+1, 1, managerCell(action, tcell.StyleDefault.Foreground(tcell.ColorYellow)).SetAlign(tview.AlignRight).SetExpansion(1))
+		}
+	}
 	render()
+	footer := tview.NewTextView().SetDynamicColors(true).SetTextColor(tcell.ColorGray)
+	footer.SetText(" Fields: add primitive properties (string, int, Guid) to this entity. For reusable validated types, use Value Objects instead. ")
 	manager.SetSelectedFunc(func(row, column int) {
 		if row <= 0 || row > len(state.rows) {
 			return
 		}
 		if column == 1 {
+			// Check if clicking on "Fields" part of the action
+			row, col := manager.GetSelection()
+			cell := manager.GetCell(row, col)
+			if cell != nil && !state.rows[row-1].deleted {
+				// If not deleted, default to Fields action for simplicity
+				ui.openFieldsFromEntityState(state, row-1)
+				return
+			}
 			state.rows[row-1].deleted = !state.rows[row-1].deleted
 			render()
 			return
@@ -1430,6 +1600,25 @@ func (ui *tviewUI) showEditForm(form *tview.Form, title string) {
 		SetButtonTextColor(tcell.ColorBlack).
 		SetButtonBackgroundColor(tcell.ColorTeal)
 	form.SetCancelFunc(ui.closeEdit)
+	
+	// Add keyboard navigation for up/down in form
+	form.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch event.Key() {
+		case tcell.KeyUp, tcell.KeyDown:
+			// Let tview handle up/down navigation naturally
+			return event
+		}
+		return event
+	})
+	
+	// Add mouse support for form interactions
+	form.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+		if action == tview.MouseLeftClick {
+			// Let tview handle clicks naturally
+			return action, event
+		}
+		return action, event
+	})
 	panel := tview.NewFrame(form).
 		SetBorders(1, 1, 0, 1, 2, 2).
 		AddText("Tab next  Shift+Tab previous  Enter activate  Esc cancel", false, tview.AlignCenter, tcell.ColorGray)
@@ -1695,8 +1884,12 @@ func tviewServicesStateFromPlan(plan application.GenerationPlan) *tviewServicesE
 		services = serviceSummaryNames(plan.Config.Services)
 	}
 	state := &tviewServicesEditState{rows: make([]tviewManagerRow, 0, len(services))}
-	for _, name := range services {
-		state.rows = append(state.rows, tviewManagerRow{original: name, name: name})
+	for i, name := range services {
+		connStr := ""
+		if i < len(plan.Config.Services) {
+			connStr = plan.Config.Services[i].ConnectionString
+		}
+		state.rows = append(state.rows, tviewManagerRow{original: name, name: name, connectionString: connStr})
 	}
 	return state
 }
