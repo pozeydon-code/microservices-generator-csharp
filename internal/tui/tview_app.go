@@ -2392,7 +2392,11 @@ func (ui *tviewUI) refresh() {
 	ui.renderTree()
 	if ui.screen == tviewScreenPreview {
 		ui.workspace.SwitchToPage("preview")
-		ui.previewInfo.SetText(fmt.Sprintf(" Output: %s\n Action: %s  │  Files: %d", tview.Escape(emptyDash(ui.plan.OutputDir)), tview.Escape(emptyDash(ui.plan.OutputAction)), ui.plan.FileCount))
+		info := fmt.Sprintf(" Output: %s\n Action: %s  │  Files: %d", tview.Escape(emptyDash(ui.plan.OutputDir)), tview.Escape(emptyDash(ui.plan.OutputAction)), ui.plan.FileCount)
+		if ui.err != nil {
+			info += "\n Error: " + tview.Escape(ui.err.Error())
+		}
+		ui.previewInfo.SetText(info)
 		ui.renderFiles()
 	} else {
 		ui.workspace.SwitchToPage("detail")
