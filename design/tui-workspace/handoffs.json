@@ -3,13 +3,13 @@
   "chosen": "01-workspace.html",
   "handoffs": {
     "01-workspace.html": {
-      "status": "in_progress",
+      "status": "implemented",
       "queued": false,
       "sentAt": "2026-11-28T05:08:07.607Z",
       "startedAt": "2026-11-28T05:08:13.687Z",
-      "implementedAt": null,
+      "implementedAt": "2026-11-28T05:25:10.509Z",
       "feature": "odd/tasks/tui-workspace-comparison.md",
-      "note": "Implementing the selected tree + properties direction in the real TView UI, preserving verified functional behavior."
+      "note": "Native TView tree + properties implemented; independent S1–S4 verification and full serialized Go suite, vet and diff checks passed. Inspected 80x24 and 140x40 live-terminal captures. Physical WSL acceptance pending; no push or merge."
     }
   }
 }
