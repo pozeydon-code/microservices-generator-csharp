@@ -1,0 +1,11 @@
+{
+  "title": "Microgen TUI workspace comparison",
+  "brief": "Compare the validated TView dashboard with three terminal-native workflows for editing services, entities, and fields.",
+  "feature": "odd/tasks/tui-workspace-comparison.md",
+  "artboards": [
+    {"file":"00-current-reference.html","title":"Current layout reference","tradeoff":"Keeps the file plan visible; editing changes context through separate managers.","width":1280,"height":860},
+    {"file":"01-workspace.html","title":"Tree + properties (recommended)","tradeoff":"Preserves service and entity context across edits; adds a pane and focus model to learn.","width":1280,"height":860},
+    {"file":"02-master-detail.html","title":"List + focused editor","tradeoff":"One clear edit target; sibling entities disappear while editing at 80 columns.","width":1280,"height":860},
+    {"file":"03-guided-workspace.html","title":"Guided workspace","tradeoff":"Explains what to do next; slower for frequent cross-service edits.","width":1280,"height":860}
+  ]
+}

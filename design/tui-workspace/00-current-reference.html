@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Current layout reference</title>
+<style>
+*{box-sizing:border-box}body{margin:2ch;background:#0b161e;color:#e2edf2;font:14px/1.35 ui-monospace,monospace}h1,h2,p{font:inherit;margin:0}h1,h2{font-weight:bold;color:#91e2ec}p{margin-block:1lh}.scroll{overflow:auto}.dashboard{width:112ch;height:26lh;display:grid;grid-template-columns:24ch 1fr}.main{display:grid;grid-template-rows:2fr 3fr 3lh}.panel{border:1px solid #51909b;position:relative;padding:1lh 1ch 0}.panel h2{position:absolute;top:-.55lh;left:1ch;padding:0 1ch;background:#0b161e}.active{background:#7bc8d4;color:#081b22}.route{border-color:#e6cd82}pre{margin:0;font:inherit}.manager{width:86ch;min-height:12lh}.muted{color:#a5bdc8}.write{color:#9be0ac}
+</style>
+<main>
+<h1>00 / Current layout reference</h1>
+<p>Static schematic · code-derived panel structure · not a runtime screenshot</p>
+<div class="scroll" tabindex="0" aria-label="Scrollable current dashboard schematic">
+<div class="dashboard">
+<section class="panel route"><h2>microgen</h2>
+<pre>  Overview
+  Project
+  Services
+<span class="active">&gt; Entities           </span>
+  Value Objects
+  Relationships
+  Preview
+  Generate
+  Result</pre></section>
+<div class="main">
+<section class="panel"><h2>Entities</h2>
+<pre>CommercePlatform
+Output: ./out/CommercePlatform
+Action: create  Files: 36
+Services: 2  Entities: 2  Value Objects: 2
+
+Entities
+Press e to edit entities and fields in this dashboard.
+ProductService: Product  ·  OrderService: Order</pre></section>
+<section class="panel"><h2>Planned Files</h2>
+<pre>Action   Path
+<span class="write">create</span>   CommercePlatform.sln
+<span class="write">create</span>   ProductService/Domain/Entities/Product.cs
+<span class="write">create</span>   OrderService/Domain/Entities/Order.cs
+<span class="write">create</span>   ProductService/Domain/ValueObjects/Money.cs
+<span class="write">create</span>   OrderService/Domain/ValueObjects/ShippingAddress.cs</pre></section>
+<section class="panel"><h2>Shortcuts</h2><pre>tab/shift+tab focus  j/k move  enter open  e edit  r refresh
+ g generate  esc overview  q quit</pre></section>
+</div></div>
+<p class="muted">Edit opens a centered manager over the dashboard. Manager excerpt isolated below.</p>
+<section class="panel manager"><h2>Entities</h2><pre>Service: ProductService   s service
+Fields: primitives. Value Objects: reusable types.
+
+Name        Fields    Delete
+Product     Fields    Delete
+
+Tab focus  j/k move  s service  a add  d delete  enter edit
+ctrl+s save  esc cancel
+[ Add ] [ Save ] [ Cancel ]</pre></section>
+</div>
+<p>Fields drill down from the entity manager; reusable definitions use Value Objects.</p>
+<p>Tradeoff: Keeps the file plan visible; editing changes context through separate managers.</p>
+<p class="muted">Synthetic content and excerpted rows. Sizing is illustrative; current input, responsive behavior, and saves are not being demonstrated.</p>
+</main></html>

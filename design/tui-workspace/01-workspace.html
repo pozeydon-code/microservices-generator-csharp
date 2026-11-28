@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tree + properties (recommended)</title>
+<style>
+*{box-sizing:border-box}body{margin:2ch;background:#0b161e;color:#e2edf2;font:14px/1.35 ui-monospace,monospace}h1,h2,p{font:inherit;margin:0}h1,h2,strong{font-weight:bold}main>p{margin-block:1lh}button{font:inherit;color:#91e2ec;background:transparent;border:0;padding:0 1ch;cursor:pointer}button:hover{background:#244754}button:focus-visible{outline:1px solid #ffdc8b;outline-offset:-1px}button[aria-pressed=true]{background:#91e2ec;color:#0b161e}button:disabled{color:#a5bdc8;cursor:default}.scroll{overflow:auto}.term{width:80ch;height:24lh;display:grid;grid-template-rows:2lh 1fr 2lh 2lh;border:1px solid #51909b}.term.wide{width:140ch;height:40lh}.band{background:#19323e;padding:.45lh 1ch;display:flex;align-items:center;justify-content:space-between}.body{display:grid;grid-template-columns:24ch 1fr;min-height:0}.wide .body{grid-template-columns:34ch 1fr}.tree,.properties{padding:1lh 2ch;overflow:auto}.tree{background:#122631;border-right:1px solid #51909b}.tree button{display:block;text-align:left;padding:0;width:100%}h2,.muted{color:#a5bdc8}h2{margin-bottom:1lh}table{border-collapse:collapse;text-align:left}caption{text-align:left;font-weight:bold;margin:1lh 0 0}th,td{padding:0 2ch 0 0}th{font-weight:normal;color:#a5bdc8}.hints{padding:.4lh 1ch;border-top:1px solid #51909b;color:#a5bdc8}.wideOnly{display:none}.wide .wideOnly{display:block}.warning{color:#ffdc8b}
+</style>
+<main>
+<h1>01 / Tree + properties (recommended)</h1>
+<p>Interactive prototype · synthetic data · no configuration writes or generation</p>
+<p>Terminal size <button type="button" data-size="80" aria-pressed="true">80×24</button><button type="button" data-size="140" aria-pressed="false">140×40</button></p>
+<div class="scroll"><div class="term" id="terminal">
+<header class="band"><strong>microgen / CommercePlatform</strong><button id="mode" type="button">Mode: Enterprise</button></header>
+<div class="body">
+<nav class="tree" aria-label="Model tree"><h2>Solution tree</h2><div>▾ ProductService</div><button type="button" data-entity="Product" aria-pressed="true">  └ Product</button><div>▾ OrderService</div><button type="button" data-entity="Order" aria-pressed="false">  └ Order</button></nav>
+<section class="properties" aria-labelledby="properties"><h2 id="properties">Properties</h2>
+<strong id="entity">Product</strong>
+<p>Connection: <span id="connection">configured (masked)</span></p>
+<table><caption>Entity fields</caption><thead><tr><th scope="col">Name</th><th scope="col">Primitive</th><th scope="col">Required</th></tr></thead><tbody id="fields"><tr><td>Sku</td><td>string</td><td>yes</td></tr><tr><td>Stock</td><td>int</td><td>yes</td></tr></tbody></table>
+<p style="margin-top:1lh"><strong>Service value objects</strong></p><p id="vo">Money · reusable type</p>
+<p style="margin-top:1lh"><button type="button" id="edit">[ Stage sample edit ]</button><button type="button" id="save" disabled>[ Save demo ]</button><button type="button" id="discard" disabled>[ Discard ]</button></p>
+<p class="wideOnly muted" style="margin-top:1lh">Plan review is a separate workspace view, not shown in this prototype.</p>
+</section></div>
+<div class="hints" id="hints">Tab focus · Enter activate · select an entity to inspect properties</div>
+<footer class="band"><span>Model scope · 2 services</span><output class="warning" id="status">No draft · demo only</output></footer>
+</div></div>
+<p>Tradeoff: Preserves service and entity context across edits; adds a pane and focus model to learn.</p>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const model={Product:['configured (masked)','Sku','string','Stock','int','Money'],Order:['not configured','Number','string','IsPaid','bool','ShippingAddress']};
+const drafts={}, saved={}; let active='Product';
+function render(){const [conn,a,b,c,d,vo]=model[active]; $('entity').textContent=active; $('connection').textContent=conn; $('vo').textContent=vo+' · reusable type'; $('fields').replaceChildren(); [[a,b,'yes'],[c,d,'yes']].concat(drafts[active]||saved[active]?[['Notes','string','no']]:[]).forEach(values=>{const tr=$('fields').insertRow(); values.forEach(v=>tr.insertCell().textContent=v);}); $('save').disabled=$('discard').disabled=!drafts[active]; $('edit').disabled=Boolean(drafts[active]||saved[active]); $('status').textContent=drafts[active]?'Unsaved draft: '+active:saved[active]?'Saved in preview only':'No draft · demo only';}
+document.querySelectorAll('[data-entity]').forEach(btn=>btn.onclick=()=>{active=btn.dataset.entity;document.querySelectorAll('[data-entity]').forEach(b=>b.setAttribute('aria-pressed',b===btn));render();});
+document.querySelectorAll('[data-size]').forEach(btn=>btn.onclick=()=>{ $('terminal').classList.toggle('wide',btn.dataset.size==='140'); document.querySelectorAll('[data-size]').forEach(b=>b.setAttribute('aria-pressed',b===btn)); });
+$('mode').onclick=()=>{$('mode').textContent=$('mode').textContent.includes('Enterprise')?'Mode: Simple':'Mode: Enterprise';};
+$('edit').onclick=()=>{drafts[active]=true;render();$('save').focus();};
+$('save').onclick=()=>{delete drafts[active];saved[active]=true;render();document.querySelector('[data-entity][aria-pressed=true]').focus();};
+$('discard').onclick=()=>{delete drafts[active];render();$('status').textContent='Sample draft discarded';$('edit').focus();};
+$('terminal').addEventListener('focusin',e=>{$('hints').textContent=e.target.closest('.properties')?'Tab focus · Enter stage or save · drafts stay with their entity':e.target===$('mode')?'Enter switch mode · Tab to solution tree':'Tab focus · Enter select entity';});
+</script></html>

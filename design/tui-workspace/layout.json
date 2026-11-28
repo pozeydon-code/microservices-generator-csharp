@@ -1,0 +1,21 @@
+{
+  "arrangement": "column",
+  "positions": {
+    "00-current-reference.html": {
+      "x": 0,
+      "y": 0
+    },
+    "01-workspace.html": {
+      "x": 0,
+      "y": 990
+    },
+    "02-master-detail.html": {
+      "x": 0,
+      "y": 1980
+    },
+    "03-guided-workspace.html": {
+      "x": 0,
+      "y": 2970
+    }
+  }
+}

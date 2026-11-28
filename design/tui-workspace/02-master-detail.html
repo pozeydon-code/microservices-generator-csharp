@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>List + focused editor</title>
+<style>
+*{box-sizing:border-box}body{margin:2ch;background:#0b161e;color:#e2edf2;font:14px/1.35 ui-monospace,monospace}p,h1,h2{font:inherit;margin:0}h1,h2,caption{font-weight:bold}main>p{margin-block:1lh}button{font:inherit;border:0;background:transparent;color:#91e2ec;padding:0 1ch;cursor:pointer}button:hover{background:#244754}button:focus-visible{outline:1px solid #ffdc8b;outline-offset:-1px}button[aria-pressed=true]{color:#0b161e;background:#91e2ec}button:disabled{color:#a5bdc8;cursor:default}.scroll{overflow:auto}.term{width:80ch;height:24lh;border:1px solid #51909b;display:grid;grid-template-rows:2lh 1fr 2lh 2lh}.term.wide{width:140ch;height:40lh}.band{background:#19323e;padding:0 1ch;display:flex;align-items:center;justify-content:space-between}.body{display:grid;min-height:0}.body section{padding:1lh 2ch;overflow:auto}.wide.open .body{grid-template-columns:47ch 1fr}.term:not(.open) #editor,.term.open:not(.wide) #catalog,[hidden]{display:none}.wide.open #catalog{border-right:1px solid #51909b;background:#122631}.wide #back{display:none}table{border-collapse:collapse;margin:1lh 0;text-align:left}th,td{padding:0 2ch 0 0}th,.hints{color:#a5bdc8;font-weight:normal}caption{text-align:left}.hints{padding:.4lh 1ch;border-top:1px solid #51909b}output{color:#ffdc8b}
+</style>
+<main><h1>02 / List + focused editor</h1>
+<p>Interactive prototype · synthetic data · no configuration writes or generation</p>
+<p>Terminal size <button type="button" data-size="80" aria-pressed="true">80×24</button><button type="button" data-size="140" aria-pressed="false">140×40</button></p>
+<div class="scroll"><div class="term" id="terminal">
+<header class="band"><strong>microgen / CommercePlatform</strong><button type="button" id="mode">Mode: Enterprise</button></header>
+<div class="body">
+<section id="catalog" aria-labelledby="catalog-title"><h2 id="catalog-title">Entity catalog</h2>
+<table><thead><tr><th scope="col">Entity</th><th scope="col">Service</th><th scope="col">Fields</th></tr></thead><tbody><tr><td><button type="button" data-open="Product" aria-pressed="false">Product</button></td><td>ProductService</td><td>2</td></tr><tr><td><button type="button" data-open="Order" aria-pressed="false">Order</button></td><td>OrderService</td><td>2</td></tr></tbody></table>
+<p>Select an entity to open its editor.</p></section>
+<section id="editor" aria-labelledby="target"><button type="button" id="back">&lt; Entity catalog</button><h2 id="target" tabindex="-1">ProductService / Product</h2>
+<p>Connection: <span id="connection">configured (masked)</span></p>
+<table><caption>Primitive fields</caption><thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Required</th></tr></thead><tbody id="fields"></tbody></table>
+<p>Service value object: <strong id="vo">Money</strong> (reusable)</p>
+<p style="margin-top:1lh"><button type="button" id="edit">[ Toggle sample Notes field ]</button><button type="button" id="save" disabled>[ Save demo ]</button><button type="button" id="discard" disabled>[ Discard ]</button></p></section></div>
+<div class="hints" id="hints">Tab focus · Enter open editor</div>
+<footer class="band"><span id="screen">Catalog</span><output id="status">No draft · demo only</output></footer>
+</div></div>
+<p>Tradeoff: One clear edit target; sibling entities disappear while editing at 80 columns.</p>
+</main><script>
+const $=id=>document.getElementById(id), term=$('terminal');
+const model={Product:['configured (masked)','Money','Sku','string','Stock','int'],Order:['not configured','ShippingAddress','Number','string','IsPaid','bool']};
+const data={Product:{draft:false,saved:false},Order:{draft:false,saved:false}};let active='Product';
+const buttons=[...document.querySelectorAll('[data-open]')];
+function render(){const open=term.classList.contains('open'),[conn,vo,a,b,c,d]=model[active],state=data[active]; $('target').textContent=active+'Service / '+active;$('connection').textContent=conn;$('vo').textContent=vo;$('fields').replaceChildren();[[a,b,'yes'],[c,d,'yes']].concat(state.draft?[['Notes','string','no']]:[]).forEach(values=>{const row=$('fields').insertRow(); values.forEach(v=>row.insertCell().textContent=v);});buttons.forEach(btn=>{btn.setAttribute('aria-pressed',open&&btn.dataset.open===active);btn.closest('tr').lastElementChild.textContent=data[btn.dataset.open].saved?3:2;});$('save').disabled=$('discard').disabled=state.draft===state.saved;$('screen').textContent=open?'Focused editor':'Catalog';$('status').textContent=open?(state.draft!==state.saved?'Unsaved draft':state.saved?'Saved in preview only':'No draft · demo only'):(Object.values(data).some(s=>s.saved!==s.draft)?'Unsaved draft retained':'Demo only · nothing written');$('hints').textContent=open?(term.classList.contains('wide')?'Tab focus · Enter edit or save':'Tab focus · Enter edit or save · Esc catalog'):'Tab focus · Enter open editor';}
+buttons.forEach(btn=>btn.onclick=()=>{active=btn.dataset.open;term.classList.add('open');render();$('target').focus();});
+$('back').onclick=()=>{term.classList.remove('open');render();buttons.find(b=>b.dataset.open===active).focus();};
+term.addEventListener('keydown',e=>{if(e.key==='Escape'&&term.classList.contains('open')&&!term.classList.contains('wide'))$('back').click();});
+document.querySelectorAll('[data-size]').forEach(btn=>btn.onclick=()=>{term.classList.toggle('wide',btn.dataset.size==='140');document.querySelectorAll('[data-size]').forEach(b=>b.setAttribute('aria-pressed',b===btn));render();});
+$('mode').onclick=()=>{$('mode').textContent=$('mode').textContent.includes('Enterprise')?'Mode: Simple':'Mode: Enterprise';};
+$('edit').onclick=()=>{data[active].draft=!data[active].draft;render();};$('save').onclick=()=>{data[active].saved=data[active].draft;render();$('edit').focus();};
+$('discard').onclick=()=>{data[active].draft=data[active].saved;render();$('status').textContent='Sample draft discarded';$('edit').focus();};
+</script></html>

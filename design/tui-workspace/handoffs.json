@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "chosen": "01-workspace.html",
+  "handoffs": {
+    "01-workspace.html": {
+      "status": "in_progress",
+      "queued": false,
+      "sentAt": "2026-11-28T05:08:07.607Z",
+      "startedAt": "2026-11-28T05:08:13.687Z",
+      "implementedAt": null,
+      "feature": "odd/tasks/tui-workspace-comparison.md",
+      "note": "Implementing the selected tree + properties direction in the real TView UI, preserving verified functional behavior."
+    }
+  }
+}

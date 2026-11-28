@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guided workspace</title>
+<style>
+*{box-sizing:border-box}body{margin:2ch;background:#0b161e;color:#e2edf2;font:14px/1.35 ui-monospace,monospace}p,h1,h2,pre{font:inherit;margin:0}h1,h2{font-weight:bold}main>p{margin-block:1lh}button{font:inherit;border:0;background:transparent;color:#91e2ec;padding:0 1ch;cursor:pointer}button:hover{background:#244754}button:focus-visible{outline:1px solid #ffdc8b;outline-offset:-1px}button[aria-pressed=true]{color:#0b161e;background:#91e2ec}button:disabled{color:#a5bdc8;cursor:default}.scroll{overflow:auto}.term{width:80ch;height:24lh;border:1px solid #51909b;display:grid;grid-template-rows:2lh 2lh 1fr 2lh 2lh}.term.wide{width:140ch;height:40lh}.band{background:#19323e;padding:0 1ch;display:flex;align-items:center;justify-content:space-between}nav{padding:.3lh 1ch;border-bottom:1px solid #51909b}.body{min-height:0;display:grid}.body section,.notes{padding:1lh 2ch;overflow:auto}section p,pre{margin-bottom:1lh}.wide .body{grid-template-columns:1fr 41ch}.notes{display:none;background:#122631;border-left:1px solid #51909b}.wide .notes{display:block}[hidden]{display:none}.hints{padding:.4lh 1ch;border-top:1px solid #51909b;color:#a5bdc8}output{color:#ffdc8b}
+</style>
+<main><h1>03 / Guided workspace</h1>
+<p>Interactive prototype · synthetic data · no configuration writes or generation</p>
+<p>Terminal size <button type="button" data-size="80" aria-pressed="true">80×24</button><button type="button" data-size="140" aria-pressed="false">140×40</button></p>
+<div class="scroll"><div class="term" id="terminal">
+<header class="band"><strong>microgen / CommercePlatform</strong><button type="button" id="mode">Mode: Enterprise</button></header>
+<nav aria-label="Setup stages"><button type="button" data-step="0" aria-pressed="true">1 Service</button> › <button type="button" data-step="1" aria-pressed="false">2 Entity</button> › <button type="button" data-step="2" aria-pressed="false">3 Fields</button> › <button type="button" data-step="3" aria-pressed="false">4 Review</button></nav>
+<div class="body"><div style="min-height:0;overflow:auto">
+<section id="service" aria-labelledby="service-title"><h2 tabindex="-1" id="service-title">1 / Choose a service</h2><p>Pick the service that owns the model you want to edit.</p>
+<p><button type="button" data-entity="Product" aria-pressed="true">ProductService</button> <span>Connection configured (masked)</span></p>
+<p><button type="button" data-entity="Order" aria-pressed="false">OrderService</button> <span>Connection not configured</span></p>
+<button type="button" data-next="1">[ Next: entity ]</button></section>
+<section id="entity" aria-labelledby="entity-title" hidden><h2 tabindex="-1" id="entity-title">2 / Confirm the entity</h2><p id="target">ProductService / Product</p><p>This sample service has one entity. Its fields describe stored data.</p><button type="button" data-next="2">[ Next: fields ]</button></section>
+<section id="fields" aria-labelledby="fields-title" hidden><h2 tabindex="-1" id="fields-title">3 / Inspect the primitive fields</h2><pre id="field-list">Sku      string   required
+Stock    int      required</pre><p>Service value object: <strong id="vo">Money</strong> (reusable, not a primitive field)</p>
+<button type="button" id="stage">[ Stage sample Notes field ]</button><button type="button" data-next="3">[ Next: review ]</button></section>
+<section id="review" aria-labelledby="review-title" hidden><h2 tabindex="-1" id="review-title">4 / Review the model change</h2><p id="review-text">Nothing staged</p><p>Saving here changes this preview only. It does not refresh a plan.</p>
+<button type="button" id="save" disabled>[ Save demo ]</button><button type="button" id="discard" disabled>[ Discard ]</button><button type="button" data-next="2">[ Back: fields ]</button></section>
+</div><aside class="notes"><h2>About this step</h2><p id="note">A service owns entities and reusable types.</p></aside></div>
+<div class="hints" id="hints">Tab focus · Enter choose service or advance</div>
+<footer class="band"><span id="progress">Step 1 of 4</span><output id="status">No draft · demo only</output></footer>
+</div></div>
+<p>Tradeoff: Explains what to do next; slower for frequent cross-service edits.</p>
+</main><script>
+const $=id=>document.getElementById(id), stepIds=['service','entity','fields','review'];
+const steps=[...document.querySelectorAll('[data-step]')], entities=[...document.querySelectorAll('[data-entity]')];
+const notes=['A service owns entities and reusable types.','An entity is the owner of the fields you edit.','A primitive has a type such as string or int.','Confirm the draft before saving.'];
+const hints=['choose service or advance','confirm entity','stage a sample field or review','save demo or return to fields'];
+const model={Product:['Sku      string   required\nStock    int      required','Money'],Order:['Number   string   required\nIsPaid   bool     required','ShippingAddress']};
+const draft={},saved={};let active='Product',step=0;
+function render(){stepIds.forEach((id,i)=>{$(id).hidden=i!==step;steps[i].setAttribute('aria-pressed',i===step);});entities.forEach(btn=>btn.setAttribute('aria-pressed',btn.dataset.entity===active));$('progress').textContent='Step '+(step+1)+' of 4';$('target').textContent=active+'Service / '+active;$('note').textContent=notes[step];$('hints').textContent='Tab focus · Enter '+hints[step];$('field-list').textContent=model[active][0]+(draft[active]||saved[active]?'\nNotes    string   optional':'');$('vo').textContent=model[active][1];$('review-text').textContent=active+' / '+(draft[active]?'Add Notes (optional string)':saved[active]?'Sample change saved in preview':'Nothing staged');$('stage').disabled=Boolean(draft[active]||saved[active]);$('save').disabled=$('discard').disabled=!draft[active];$('status').textContent=draft[active]?'Unsaved draft: '+active:saved[active]?'Saved in preview only':'No draft · demo only';}
+function go(next){step=Number(next);render();$(stepIds[step]+'-title').focus();}
+steps.forEach(btn=>btn.onclick=()=>go(btn.dataset.step));document.querySelectorAll('[data-next]').forEach(btn=>btn.onclick=()=>go(btn.dataset.next));entities.forEach(btn=>btn.onclick=()=>{active=btn.dataset.entity;render();});
+document.querySelectorAll('[data-size]').forEach(btn=>btn.onclick=()=>{$('terminal').classList.toggle('wide',btn.dataset.size==='140');document.querySelectorAll('[data-size]').forEach(b=>b.setAttribute('aria-pressed',b===btn));});
+$('mode').onclick=()=>{$('mode').textContent=$('mode').textContent.includes('Enterprise')?'Mode: Simple':'Mode: Enterprise';};
+$('stage').onclick=()=>{draft[active]=true;render();$('fields').querySelector('[data-next]').focus();};$('save').onclick=()=>{delete draft[active];saved[active]=true;render();$('review-title').focus();};
+$('discard').onclick=()=>{delete draft[active];render();$('status').textContent='Sample draft discarded';$('review-title').focus();};
+</script></html>
