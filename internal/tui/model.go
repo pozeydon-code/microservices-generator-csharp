@@ -190,11 +190,14 @@ type editState struct {
 }
 
 type servicesEditState struct {
-	original     []string
-	services     []textField
-	selected     int
-	renaming     bool
-	returnStatus modelStatus
+	original          []string
+	connectionStrings []string
+	services          []textField
+	connStringFields  []textField
+	selected          int
+	renaming          bool
+	editingConnStr    bool
+	returnStatus      modelStatus
 }
 
 type entitiesEditState struct {
@@ -1827,12 +1830,26 @@ func (m *Model) startServicesEditing() {
 	m.errContext = ""
 	m.message = ""
 	m.edit = editState{mode: editModeServices}
-	m.servicesEdit = servicesEditState{returnStatus: returnStatus, original: append([]string(nil), m.plan.Config.ServiceNames...), services: make([]textField, 0, len(m.plan.Config.ServiceNames))}
-	for _, name := range m.plan.Config.ServiceNames {
+	m.servicesEdit = servicesEditState{
+		returnStatus:      returnStatus,
+		original:          append([]string(nil), m.plan.Config.ServiceNames...),
+		connectionStrings: make([]string, len(m.plan.Config.ServiceNames)),
+		services:          make([]textField, 0, len(m.plan.Config.ServiceNames)),
+		connStringFields:  make([]textField, 0, len(m.plan.Config.ServiceNames)),
+	}
+	for index, name := range m.plan.Config.ServiceNames {
 		m.servicesEdit.services = append(m.servicesEdit.services, newTextField(name))
+		connStr := ""
+		if index < len(m.plan.Config.Services) {
+			connStr = m.plan.Config.Services[index].ConnectionString
+		}
+		m.servicesEdit.connectionStrings[index] = connStr
+		m.servicesEdit.connStringFields = append(m.servicesEdit.connStringFields, newTextField(connStr))
 	}
 	if len(m.servicesEdit.services) == 0 {
 		m.servicesEdit.services = append(m.servicesEdit.services, newTextField("CatalogService"))
+		m.servicesEdit.connStringFields = append(m.servicesEdit.connStringFields, newTextField(""))
+		m.servicesEdit.connectionStrings = []string{""}
 	}
 }
 
@@ -2490,17 +2507,29 @@ func (m *Model) selectedRelationshipTextField() *textField {
 }
 
 func (m Model) updateServicesEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.Type == tea.KeyRunes && m.servicesEdit.renaming {
-		m.selectedServiceField().insert(msg.Runes)
+	if msg.Type == tea.KeyRunes && (m.servicesEdit.renaming || m.servicesEdit.editingConnStr) {
+		if m.servicesEdit.editingConnStr {
+			m.selectedConnStringField().insert(msg.Runes)
+		} else {
+			m.selectedServiceField().insert(msg.Runes)
+		}
 		return m, nil
 	}
 	switch msg.String() {
 	case "esc":
+		if m.servicesEdit.editingConnStr {
+			m.servicesEdit.editingConnStr = false
+			return m, nil
+		}
 		m.status = m.servicesEdit.returnStatus
 		m.err = nil
 		m.errContext = ""
 		return m, nil
 	case "enter":
+		if m.servicesEdit.editingConnStr {
+			m.servicesEdit.editingConnStr = false
+			return m, nil
+		}
 		if m.servicesEdit.renaming {
 			m.servicesEdit.renaming = false
 			return m, nil
@@ -2510,31 +2539,38 @@ func (m Model) updateServicesEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.errContext = ""
 		return m, m.saveServicesCmd()
 	case "up", "k":
-		if !m.servicesEdit.renaming {
+		if !m.servicesEdit.renaming && !m.servicesEdit.editingConnStr {
 			m.moveServiceSelection(-1)
 		}
 		return m, nil
 	case "down", "j":
-		if !m.servicesEdit.renaming {
+		if !m.servicesEdit.renaming && !m.servicesEdit.editingConnStr {
 			m.moveServiceSelection(1)
 		}
 		return m, nil
 	case "a":
-		if !m.servicesEdit.renaming {
+		if !m.servicesEdit.renaming && !m.servicesEdit.editingConnStr {
 			m.servicesEdit.services = append(m.servicesEdit.services, newTextField(m.nextServicePlaceholder()))
+			m.servicesEdit.connStringFields = append(m.servicesEdit.connStringFields, newTextField(""))
 			m.servicesEdit.original = append(m.servicesEdit.original, "")
 			m.servicesEdit.selected = len(m.servicesEdit.services) - 1
 		}
 		return m, nil
 	case "r":
-		if !m.servicesEdit.renaming && len(m.servicesEdit.services) > 0 {
+		if !m.servicesEdit.renaming && !m.servicesEdit.editingConnStr && len(m.servicesEdit.services) > 0 {
 			m.servicesEdit.renaming = true
 		}
 		return m, nil
+	case "c":
+		if !m.servicesEdit.renaming && !m.servicesEdit.editingConnStr && len(m.servicesEdit.services) > 0 {
+			m.servicesEdit.editingConnStr = true
+		}
+		return m, nil
 	case "d":
-		if !m.servicesEdit.renaming && len(m.servicesEdit.services) > 1 {
+		if !m.servicesEdit.renaming && !m.servicesEdit.editingConnStr && len(m.servicesEdit.services) > 1 {
 			selected := m.servicesEdit.selected
 			m.servicesEdit.services = append(m.servicesEdit.services[:selected], m.servicesEdit.services[selected+1:]...)
+			m.servicesEdit.connStringFields = append(m.servicesEdit.connStringFields[:selected], m.servicesEdit.connStringFields[selected+1:]...)
 			m.servicesEdit.original = append(m.servicesEdit.original[:selected], m.servicesEdit.original[selected+1:]...)
 			if m.servicesEdit.selected >= len(m.servicesEdit.services) {
 				m.servicesEdit.selected = len(m.servicesEdit.services) - 1
@@ -2542,22 +2578,30 @@ func (m Model) updateServicesEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "left":
-		if m.servicesEdit.renaming {
+		if m.servicesEdit.editingConnStr {
+			m.selectedConnStringField().move(-1)
+		} else if m.servicesEdit.renaming {
 			m.selectedServiceField().move(-1)
 		}
 		return m, nil
 	case "right":
-		if m.servicesEdit.renaming {
+		if m.servicesEdit.editingConnStr {
+			m.selectedConnStringField().move(1)
+		} else if m.servicesEdit.renaming {
 			m.selectedServiceField().move(1)
 		}
 		return m, nil
 	case "backspace":
-		if m.servicesEdit.renaming {
+		if m.servicesEdit.editingConnStr {
+			m.selectedConnStringField().backspace()
+		} else if m.servicesEdit.renaming {
 			m.selectedServiceField().backspace()
 		}
 		return m, nil
 	case "delete":
-		if m.servicesEdit.renaming {
+		if m.servicesEdit.editingConnStr {
+			m.selectedConnStringField().delete()
+		} else if m.servicesEdit.renaming {
 			m.selectedServiceField().delete()
 		}
 		return m, nil
@@ -2913,6 +2957,19 @@ func (m *Model) selectedServiceField() *textField {
 		m.servicesEdit.selected = 0
 	}
 	return &m.servicesEdit.services[m.servicesEdit.selected]
+}
+
+func (m *Model) selectedConnStringField() *textField {
+	if len(m.servicesEdit.connStringFields) == 0 {
+		m.servicesEdit.connStringFields = append(m.servicesEdit.connStringFields, newTextField(""))
+	}
+	if m.servicesEdit.selected >= len(m.servicesEdit.connStringFields) {
+		m.servicesEdit.selected = len(m.servicesEdit.connStringFields) - 1
+	}
+	if m.servicesEdit.selected < 0 {
+		m.servicesEdit.selected = 0
+	}
+	return &m.servicesEdit.connStringFields[m.servicesEdit.selected]
 }
 
 func (m Model) nextServicePlaceholder() string {
@@ -3314,7 +3371,11 @@ func (m Model) saveServicesCmd() tea.Cmd {
 		if index < len(m.servicesEdit.original) {
 			original = m.servicesEdit.original[index]
 		}
-		settings.Services = append(settings.Services, application.ServiceNameSetting{OriginalName: original, Name: service.string()})
+		connStr := ""
+		if index < len(m.servicesEdit.connStringFields) {
+			connStr = m.servicesEdit.connStringFields[index].string()
+		}
+		settings.Services = append(settings.Services, application.ServiceNameSetting{OriginalName: original, Name: service.string(), ConnectionString: connStr})
 	}
 	return func() tea.Msg {
 		result, err := m.updateServices(m.request, settings)
@@ -5719,6 +5780,16 @@ func (m Model) renderServicesEditor(builder *strings.Builder) {
 			label += "_"
 		}
 		fmt.Fprintf(builder, "%s %d. %s\n", cursor, index+1, label)
+		if index < len(m.servicesEdit.connStringFields) {
+			connStr := m.servicesEdit.connStringFields[index].string()
+			if connStr == "" {
+				connStr = "(not set)"
+			}
+			if index == m.servicesEdit.selected && m.servicesEdit.editingConnStr {
+				connStr += "_"
+			}
+			fmt.Fprintf(builder, "    Connection: %s\n", connStr)
+		}
 	}
 	fmt.Fprintln(builder)
 	if m.servicesEdit.renaming {
@@ -5726,7 +5797,12 @@ func (m Model) renderServicesEditor(builder *strings.Builder) {
 		fmt.Fprintln(builder, "Left/right, backspace, and delete edit the selected service name.")
 		return
 	}
-	fmt.Fprintln(builder, "Keys: up/down select, a add, r rename, d delete, enter save, esc cancel.")
+	if m.servicesEdit.editingConnStr {
+		fmt.Fprintln(builder, "Connection string mode: type the connection string. Enter confirms. Esc cancels editing.")
+		fmt.Fprintln(builder, "Left/right, backspace, and delete edit the connection string.")
+		return
+	}
+	fmt.Fprintln(builder, "Keys: up/down select, a add, r rename, c connection string, d delete, enter save, esc cancel.")
 	fmt.Fprintln(builder, "Deletion keeps at least one service locally; final validation runs before save.")
 }
 

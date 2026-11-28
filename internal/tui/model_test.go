@@ -4664,7 +4664,7 @@ func TestModelUpdateEditsServicesAndSaves(t *testing.T) {
 		t.Fatalf("expected services edit mode, got status=%v mode=%v cmd=%v", model.status, model.edit.mode, cmd)
 	}
 	assertContains(t, model.View(), "Editing services")
-	assertContains(t, model.View(), "Keys: up/down select, a add, r rename, d delete, enter save, esc cancel.")
+	assertContains(t, model.View(), "Keys: up/down select, a add, r rename, c connection string, d delete, enter save, esc cancel.")
 
 	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
 	model = updated.(Model)

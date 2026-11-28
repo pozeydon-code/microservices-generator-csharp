@@ -55,6 +55,7 @@ type PackageVersion struct {
 
 type ServiceView struct {
 	Name                       string
+	ConnectionString           string
 	SolutionFileName           string
 	GenerationMode             string
 	MediatRVersion             string
@@ -241,6 +242,7 @@ func buildSolutionView(cfg spec.Config) (SolutionTemplateData, error) {
 	for _, service := range services {
 		serviceView := ServiceView{
 			Name:                       service.Name,
+			ConnectionString:           service.ConnectionString,
 			SolutionFileName:           service.Name + "." + solutionFormat,
 			GenerationMode:             cfg.GenerationMode(),
 			MediatRVersion:             dependencyPackageVersion(dependencyPolicy, "MediatR"),

@@ -79,8 +79,9 @@ type ServiceSettings struct {
 }
 
 type ServiceNameSetting struct {
-	OriginalName string
-	Name         string
+	OriginalName   string
+	Name           string
+	ConnectionString string
 }
 
 type EntitySettings struct {
@@ -220,6 +221,7 @@ type ConfigSummary struct {
 
 type ServiceSummary struct {
 	Name                  string
+	ConnectionString      string
 	EntityNames           []string
 	ValueObjectNames      []string
 	ValueObjects          []ValueObjectSummary
@@ -596,15 +598,24 @@ func updatedServices(existing []spec.Service, settings []ServiceNameSetting) []s
 		if setting.OriginalName != "" {
 			if service, ok := serviceByName(existing, used, setting.OriginalName); ok {
 				service.Name = setting.Name
+				if setting.ConnectionString != "" {
+					service.ConnectionString = setting.ConnectionString
+				}
 				services = append(services, service)
 				continue
 			}
 		}
 		if service, ok := serviceByName(existing, used, setting.Name); ok {
+			if setting.ConnectionString != "" {
+				service.ConnectionString = setting.ConnectionString
+			}
 			services = append(services, service)
 			continue
 		}
 		services = append(services, defaultServiceForName(setting.Name))
+		if setting.ConnectionString != "" {
+			services[len(services)-1].ConnectionString = setting.ConnectionString
+		}
 	}
 	return services
 }
@@ -1015,7 +1026,7 @@ func summarizeConfig(cfg spec.Config) ConfigSummary {
 		for relationshipIndex, relationship := range service.Relationships {
 			relationships[relationshipIndex] = summarizeRelationship(relationship)
 		}
-		summary.Services[index] = ServiceSummary{Name: service.Name, EntityNames: make([]string, len(service.Entities)), ValueObjectNames: valueObjectNames, ValueObjects: valueObjects, Relationships: relationships, Entities: make([]EntitySummary, len(service.Entities))}
+		summary.Services[index] = ServiceSummary{Name: service.Name, ConnectionString: service.ConnectionString, EntityNames: make([]string, len(service.Entities)), ValueObjectNames: valueObjectNames, ValueObjects: valueObjects, Relationships: relationships, Entities: make([]EntitySummary, len(service.Entities))}
 		for entityIndex, entity := range service.Entities {
 			summary.Services[index].EntityNames[entityIndex] = entity.Name
 			summary.Services[index].Entities[entityIndex] = EntitySummary{Name: entity.Name, Fields: make([]FieldSummary, len(entity.Fields))}

@@ -53,11 +53,12 @@ type Solution struct {
 }
 
 type Service struct {
-	Name          string         `json:"name"`
-	ValueObjects  []ValueObject  `json:"valueObjects"`
-	Entities      []Entity       `json:"entities"`
-	Relationships []Relationship `json:"relationships,omitempty"`
-	QueryShapes   []QueryShape   `json:"queryShapes,omitempty"`
+	Name             string         `json:"name"`
+	ConnectionString string         `json:"connectionString,omitempty"`
+	ValueObjects     []ValueObject  `json:"valueObjects"`
+	Entities         []Entity       `json:"entities"`
+	Relationships    []Relationship `json:"relationships,omitempty"`
+	QueryShapes      []QueryShape   `json:"queryShapes,omitempty"`
 }
 
 type QueryShape struct {
