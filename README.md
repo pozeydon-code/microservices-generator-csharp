@@ -50,7 +50,13 @@ Useful flags:
 
 ## Terminal UI
 
-The TUI is a guided editor for the same config and generation engine used by the CLI. Use it to create or adjust solution metadata, target framework, services, value objects, entities, fields, preview output, and generate. Basic navigation uses arrows or `j`/`k`, Enter to select or save, Esc to go back, and `q` or Ctrl+C to quit.
+The TUI is a guided editor for the same config and generation engine used by the CLI. Use it to create or adjust solution metadata, target framework, services, value objects, entities, fields, preview output, and generate. Use arrows or `j`/`k` to navigate, Tab to move focus, Enter to activate, and `q` or Ctrl+C to quit. Click to select or focus, double-click to activate an editor action or button, and scroll over the panel or form you want to move through.
+
+In a child editor (including validation Rules), **Apply** or Ctrl+S updates the parent draft without writing the config. Esc or **Cancel** discards the child changes and returns to the parent. Use **Save** in the parent editor to persist the draft.
+
+In **Project → Generation mode**, choose `simple` for compact CRUD or `enterprise` for the layered scaffold. In **Entities**, use **Fields** on a saved entity to add primitive properties such as `string`, `int`, or `Guid`. Use **Value Objects** for reusable validated types. **Delete** is a separate action.
+
+In **Services**, open a row’s **Connection** cell to replace its connection string. The editor masks text and does not display the stored value. Apply an empty field to clear it, or press Esc to leave it unchanged; then use the parent **Save** to persist. `microgen.json` and generated `appsettings*.json` still support plaintext connection strings and are not secret stores. For real credentials, use the runtime `ConnectionStrings__DefaultConnection` environment variable instead.
 
 ## Generated Architecture
 

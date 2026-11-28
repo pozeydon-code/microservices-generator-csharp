@@ -190,14 +190,13 @@ type editState struct {
 }
 
 type servicesEditState struct {
-	original          []string
-	connectionStrings []string
-	services          []textField
-	connStringFields  []textField
-	selected          int
-	renaming          bool
-	editingConnStr    bool
-	returnStatus      modelStatus
+	original         []string
+	services         []textField
+	connStringFields []textField
+	selected         int
+	renaming         bool
+	editingConnStr   bool
+	returnStatus     modelStatus
 }
 
 type entitiesEditState struct {
@@ -1831,25 +1830,18 @@ func (m *Model) startServicesEditing() {
 	m.message = ""
 	m.edit = editState{mode: editModeServices}
 	m.servicesEdit = servicesEditState{
-		returnStatus:      returnStatus,
-		original:          append([]string(nil), m.plan.Config.ServiceNames...),
-		connectionStrings: make([]string, len(m.plan.Config.ServiceNames)),
-		services:          make([]textField, 0, len(m.plan.Config.ServiceNames)),
-		connStringFields:  make([]textField, 0, len(m.plan.Config.ServiceNames)),
+		returnStatus:     returnStatus,
+		original:         append([]string(nil), m.plan.Config.ServiceNames...),
+		services:         make([]textField, 0, len(m.plan.Config.ServiceNames)),
+		connStringFields: make([]textField, 0, len(m.plan.Config.ServiceNames)),
 	}
-	for index, name := range m.plan.Config.ServiceNames {
+	for _, name := range m.plan.Config.ServiceNames {
 		m.servicesEdit.services = append(m.servicesEdit.services, newTextField(name))
-		connStr := ""
-		if index < len(m.plan.Config.Services) {
-			connStr = m.plan.Config.Services[index].ConnectionString
-		}
-		m.servicesEdit.connectionStrings[index] = connStr
-		m.servicesEdit.connStringFields = append(m.servicesEdit.connStringFields, newTextField(connStr))
+		m.servicesEdit.connStringFields = append(m.servicesEdit.connStringFields, newTextField(""))
 	}
 	if len(m.servicesEdit.services) == 0 {
 		m.servicesEdit.services = append(m.servicesEdit.services, newTextField("CatalogService"))
 		m.servicesEdit.connStringFields = append(m.servicesEdit.connStringFields, newTextField(""))
-		m.servicesEdit.connectionStrings = []string{""}
 	}
 }
 
@@ -3371,11 +3363,13 @@ func (m Model) saveServicesCmd() tea.Cmd {
 		if index < len(m.servicesEdit.original) {
 			original = m.servicesEdit.original[index]
 		}
-		connStr := ""
+		setting := application.ServiceNameSetting{OriginalName: original, Name: service.string()}
 		if index < len(m.servicesEdit.connStringFields) {
-			connStr = m.servicesEdit.connStringFields[index].string()
+			if value := m.servicesEdit.connStringFields[index].string(); value != "" {
+				setting.ConnectionString = &value
+			}
 		}
-		settings.Services = append(settings.Services, application.ServiceNameSetting{OriginalName: original, Name: service.string(), ConnectionString: connStr})
+		settings.Services = append(settings.Services, setting)
 	}
 	return func() tea.Msg {
 		result, err := m.updateServices(m.request, settings)
@@ -5781,9 +5775,13 @@ func (m Model) renderServicesEditor(builder *strings.Builder) {
 		}
 		fmt.Fprintf(builder, "%s %d. %s\n", cursor, index+1, label)
 		if index < len(m.servicesEdit.connStringFields) {
-			connStr := m.servicesEdit.connStringFields[index].string()
-			if connStr == "" {
-				connStr = "(not set)"
+			connStr := "(not set)"
+			if m.servicesEdit.connStringFields[index].string() != "" {
+				connStr = "(set)"
+			} else if index < len(m.servicesEdit.original) {
+				if summary, ok := serviceSummaryByName(m.plan.Config.Services, m.servicesEdit.original[index]); ok && summary.HasConnectionString {
+					connStr = "(set)"
+				}
 			}
 			if index == m.servicesEdit.selected && m.servicesEdit.editingConnStr {
 				connStr += "_"

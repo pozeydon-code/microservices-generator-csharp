@@ -2515,6 +2515,11 @@ func TestTViewValueObjectEditSavesSelectedServiceAndAddsNatively(t *testing.T) {
 	}
 }
 
+func applyAndSaveTViewRulesDraft(ui *tviewUI, state *tviewValueObjectRulesEditState, form *tview.Form) {
+	applyValueObjectRulesEdit(state, form)
+	ui.saveValueObjectsEdit(&tviewValueObjectsEditState{serviceName: state.serviceName, rows: state.rows})
+}
+
 func TestTViewValueObjectRulesSavePreservesRowsAndAppliesRules(t *testing.T) {
 	var updated application.ValueObjectSettings
 	ui := newTViewUI(
@@ -2545,7 +2550,7 @@ func TestTViewValueObjectRulesSavePreservesRowsAndAppliesRules(t *testing.T) {
 	form.AddCheckbox("Not empty", true, nil)
 	form.AddCheckbox("Not default", false, nil)
 
-	ui.saveValueObjectRulesEdit(&tviewValueObjectRulesEditState{
+	applyAndSaveTViewRulesDraft(ui, &tviewValueObjectRulesEditState{
 		serviceName: "OrderService",
 		valueObject: application.ValueObjectSummary{Name: "OrderNumber", Type: "string"},
 		rows: []tviewManagerRow{
@@ -2612,7 +2617,7 @@ func TestTViewValueObjectRulesSaveOmitsNonApplicableFalseRulesThroughApplication
 	form.AddCheckbox("Not empty", false, nil)
 	form.AddCheckbox("Not default", false, nil)
 
-	ui.saveValueObjectRulesEdit(&tviewValueObjectRulesEditState{
+	applyAndSaveTViewRulesDraft(ui, &tviewValueObjectRulesEditState{
 		serviceName: "ProductService",
 		valueObject: application.ValueObjectSummary{Name: "ProductName", Type: "string"},
 		rows:        []tviewManagerRow{{original: "ProductName", name: "ProductName", typeName: "string"}},
@@ -2667,9 +2672,10 @@ func TestTViewValueObjectRulesSavePreservesNewValueObjectWithUpdatedRules(t *tes
 	form.AddCheckbox("Not empty", true, nil)
 	form.AddCheckbox("Not default", false, nil)
 
-	ui.saveValueObjectRulesEdit(&tviewValueObjectRulesEditState{
+	applyAndSaveTViewRulesDraft(ui, &tviewValueObjectRulesEditState{
 		serviceName: "OrderService",
 		valueObject: application.ValueObjectSummary{Name: "NewValueObject2", Type: "Guid"},
+		index:       1,
 		rows: []tviewManagerRow{
 			{original: "OrderNumber", name: "OrderNumber", typeName: "string"},
 			{name: "NewValueObject2", typeName: "Guid"},

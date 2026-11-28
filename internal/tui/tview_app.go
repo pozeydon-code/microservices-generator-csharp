@@ -8,6 +8,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/pozeydon-code/microservices-generator-csharp/internal/application"
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/spec"
 	"github.com/rivo/tview"
 )
 
@@ -83,7 +84,9 @@ type tviewUI struct {
 	modalFocusIndex            int
 	planStale                  bool
 	servicePickerReturnFocus   tview.Primitive
-	mouse                      mouseState
+	editBack                   func()
+	childApply                 func()
+	lastClick                  tviewClickTarget
 }
 
 const (
@@ -96,7 +99,8 @@ type tviewManagerRow struct {
 	original         string
 	name             string
 	typeName         string
-	connectionString string
+	hasConnection    bool
+	connectionString *string
 	deleted          bool
 	validations      application.ValidationRuleSettings
 }
@@ -144,6 +148,7 @@ type tviewValueObjectRulesEditState struct {
 	serviceName string
 	valueObject application.ValueObjectSummary
 	rows        []tviewManagerRow
+	index       int
 	validations application.ValidationRuleSettings
 }
 
@@ -276,19 +281,6 @@ func (ui *tviewUI) build() *tview.Pages {
 			ui.open(tviewRoutes[row].screen)
 		}
 	})
-	// Add mouse click support to sidebar
-	ui.sidebar.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
-		if action == tview.MouseLeftClick {
-			x, y := event.Position()
-			// Get the table bounds
-			sx, sy, sw, sh := ui.sidebar.GetRect()
-			if x >= sx && x < sx+sw && y >= sy && y < sy+sh {
-				// Clicked on sidebar - let tview handle the selection via SetSelectedFunc
-				return action, event
-			}
-		}
-		return action, event
-	})
 
 	ui.detail = tview.NewTextView().SetDynamicColors(true).SetWordWrap(true).SetScrollable(true)
 	ui.detail.SetBorder(true).SetTitle(" Details ").SetTitleAlign(tview.AlignLeft)
@@ -296,14 +288,6 @@ func (ui *tviewUI) build() *tview.Pages {
 	ui.files = tview.NewTable().SetBorders(false).SetSelectable(true, false).SetFixed(1, 0)
 	ui.files.SetBorder(true).SetTitle(" Planned Files ").SetTitleAlign(tview.AlignLeft)
 	ui.files.SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorTeal))
-	// Add mouse click support to files table
-	ui.files.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
-		if action == tview.MouseLeftClick {
-			// Let tview handle the selection via native table behavior
-			return action, event
-		}
-		return action, event
-	})
 
 	ui.footer = tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignLeft)
 	ui.footer.SetBorder(true).SetTitle(" Shortcuts ").SetTitleAlign(tview.AlignLeft)
@@ -313,92 +297,60 @@ func (ui *tviewUI) build() *tview.Pages {
 		AddItem(ui.files, 0, 3, false).
 		AddItem(ui.footer, 3, 0, false)
 
-	ui.dashboard = tview.NewFlex().
-		AddItem(ui.sidebar, 24, 0, true).
-		AddItem(main, 0, 1, false)
+	dashboard := tview.NewFlex().AddItem(ui.sidebar, 24, 0, true).AddItem(main, 0, 1, false)
+	dashboard.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+		if ui.editOpen {
+			return action, nil
+		}
+		return action, event
+	})
+	ui.dashboard = dashboard
 
 	ui.app.SetInputCapture(ui.handleKey)
+	ui.app.SetMouseCapture(ui.captureMouse)
 	return tview.NewPages().AddPage("dashboard", ui.dashboard, true, true)
 }
 
-// mouseState tracks mouse click state for double-click detection
-type mouseState struct {
-	lastClick     time.Time
-	lastClickPos  struct{ x, y int }
-	doubleClickMs int // milliseconds threshold for double-click
+type tviewClickTarget struct {
+	x, y  int
+	focus tview.Primitive
+	at    time.Time
 }
 
-func (ui *tviewUI) handleMouse(event *tcell.EventMouse) *tcell.EventMouse {
-	if event == nil {
-		return nil
-	}
-
+func (ui *tviewUI) captureMouse(event *tcell.EventMouse, action tview.MouseAction) (*tcell.EventMouse, tview.MouseAction) {
 	x, y := event.Position()
-	action := event.Buttons()
-
-	// Handle mouse wheel for scrolling
 	switch action {
-	case tcell.WheelUp:
-		// Scroll up in focused widget
-		ui.handleScroll(-1)
-		return nil
-	case tcell.WheelDown:
-		// Scroll down in focused widget
-		ui.handleScroll(1)
-		return nil
-	}
-
-	// Handle left click
-	if action == tcell.Button1 {
-		now := time.Now()
-		timeSinceLastClick := now.Sub(ui.mouse.lastClick).Milliseconds()
-
-		// Check if this is a double-click
-		isDoubleClick := timeSinceLastClick < int64(ui.mouse.doubleClickMs) &&
-			x == ui.mouse.lastClickPos.x && y == ui.mouse.lastClickPos.y
-
-		if isDoubleClick {
-			// Double-click: perform action
-			ui.handleDoubleClick(x, y)
-			ui.mouse.lastClick = time.Time{} // Reset to prevent triple-click
+	case tview.MouseLeftClick, tview.MouseLeftDoubleClick:
+		// TView pairs clicks globally. Re-pair both native actions using the
+		// position and the target focused by mouse-down, without losing the
+		// first click on a new target.
+		click := tviewClickTarget{x: x, y: y, focus: ui.app.GetFocus(), at: time.Now()}
+		last := ui.lastClick
+		if click.x == last.x && click.y == last.y && click.focus == last.focus && click.at.Sub(last.at) <= tview.DoubleClickInterval {
+			ui.lastClick = tviewClickTarget{}
+			action = tview.MouseLeftDoubleClick
 		} else {
-			// Single click: select/focus
-			ui.handleSingleClick(x, y)
-			ui.mouse.lastClick = now
-			ui.mouse.lastClickPos.x = x
-			ui.mouse.lastClickPos.y = y
+			ui.lastClick = click
+			action = tview.MouseLeftClick
 		}
-		return nil
+	case tview.MouseScrollUp, tview.MouseScrollDown:
+		// An open DropDown focuses its List, but its own mouse handler does
+		// not forward wheel events. Route before the native mouse capture.
+		if list, ok := ui.app.GetFocus().(*tview.List); ok && list.InRect(x, y) {
+			list.MouseHandler()(action, event, func(p tview.Primitive) { ui.app.SetFocus(p) })
+			return nil, action
+		}
+	case tview.MouseLeftDown:
+		if !ui.editOpen {
+			for panel, box := range []interface{ InRect(int, int) bool }{ui.sidebar, ui.detail, ui.files, ui.footer} {
+				if box.InRect(x, y) {
+					ui.setFocusedPanel(tviewFocusPanel(panel))
+					break
+				}
+			}
+		}
 	}
-
-	return event
-}
-
-func (ui *tviewUI) handleSingleClick(x, y int) {
-	// Determine which widget was clicked and focus/select it
-	sx, sy, sw, sh := ui.sidebar.GetRect()
-	if x >= sx && x < sx+sw && y >= sy && y < sy+sh {
-		// Clicked on sidebar - let tview handle the selection
-		ui.app.SetFocus(ui.sidebar)
-		return
-	}
-
-	// Add more widget-specific click handlers here as needed
-}
-
-func (ui *tviewUI) handleDoubleClick(x, y int) {
-	// Double-click actions - typically for buttons/confirmations
-	// Add widget-specific double-click handlers here
-}
-
-func (ui *tviewUI) handleScroll(direction int) {
-	// Scroll the focused widget
-	if ui.detail != nil && ui.app.GetFocus() == ui.detail {
-		// Scroll detail view
-		row, col := ui.detail.GetScrollOffset()
-		ui.detail.ScrollTo(row+direction, col)
-	}
-	// Add more scrollable widgets as needed
+	return event, action
 }
 
 func (ui *tviewUI) handleKey(event *tcell.EventKey) *tcell.EventKey {
@@ -414,16 +366,35 @@ func (ui *tviewUI) handleKey(event *tcell.EventKey) *tcell.EventKey {
 			}
 			return event
 		}
-		if event.Key() == tcell.KeyTAB && len(ui.modalFocus) > 0 {
-			ui.cycleModalFocus(1)
-			return nil
-		}
-		if event.Key() == tcell.KeyBacktab && len(ui.modalFocus) > 0 {
-			ui.cycleModalFocus(-1)
-			return nil
-		}
-		if event.Key() == tcell.KeyEscape {
-			ui.closeEdit()
+		switch event.Key() {
+		case tcell.KeyCtrlS:
+			if ui.childApply != nil {
+				ui.childApply()
+				return nil
+			}
+		case tcell.KeyTAB, tcell.KeyBacktab:
+			if len(ui.modalFocus) > 0 {
+				delta := 1
+				if event.Key() == tcell.KeyBacktab {
+					delta = -1
+				}
+				for i, primitive := range ui.modalFocus {
+					if primitive.HasFocus() {
+						ui.modalFocusIndex = i
+						if form, ok := primitive.(*tview.Form); ok {
+							_, button := form.GetFocusedItemIndex()
+							if next := button + delta; button >= 0 && next >= 0 && next < form.GetButtonCount() {
+								return event
+							}
+						}
+						break
+					}
+				}
+				ui.cycleModalFocus(delta)
+				return nil
+			}
+		case tcell.KeyEscape:
+			ui.backFromEdit()
 			return nil
 		}
 		return event
@@ -876,6 +847,10 @@ func (ui *tviewUI) openProjectEdit() {
 	targetFramework := ui.plan.Config.TargetFramework
 	solutionFormat := ui.plan.Config.SolutionFormat
 	generationMode := ui.plan.Config.GenerationMode
+	if generationMode == "" {
+		generationMode = spec.DefaultGenerationMode
+	}
+	modeUpdate := ""
 	gatewayEnabled := fmt.Sprintf("%t", ui.plan.Config.GatewayEnabled)
 	type projectField struct {
 		label  string
@@ -897,7 +872,7 @@ func (ui *tviewUI) openProjectEdit() {
 			SolutionDescription: strings.TrimSpace(description),
 			TargetFramework:     strings.TrimSpace(targetFramework),
 			SolutionFormat:      strings.TrimSpace(solutionFormat),
-			GenerationMode:      strings.TrimSpace(generationMode),
+			GenerationMode:      modeUpdate,
 			GatewayEnabled:      &gateway,
 		})
 		ui.applyProjectSaveResult(result, err)
@@ -920,6 +895,20 @@ func (ui *tviewUI) openProjectEdit() {
 				return
 			}
 			field := &fields[row-1]
+			if field.value == &generationMode {
+				modes := []string{spec.GenerationModeSimple, spec.GenerationModeEnterprise}
+				choice := tview.NewDropDown().SetLabel("Generation mode").SetOptions(modes, nil).
+					SetCurrentOption(selectedStringIndex(modes, generationMode))
+				form := tview.NewForm().AddFormItem(choice)
+				help := tview.NewTextView().SetTextColor(tcell.ColorGray).
+					SetText("simple: compact CRUD; enterprise: layered scaffold")
+				ui.showChildForm(form, help, " Generation mode ", 82, 12, func() {
+					_, generationMode = choice.GetCurrentOption()
+					modeUpdate = generationMode
+					render(manager)
+				})
+				return
+			}
 			if field.toggle {
 				*field.value = fmt.Sprintf("%t", *field.value != "true")
 				render(manager)
@@ -927,8 +916,8 @@ func (ui *tviewUI) openProjectEdit() {
 			}
 			ui.openNameEdit(" Edit "+field.label+" ", *field.value, func(value string) {
 				*field.value = value
-				showManager()
-			}, showManager)
+				render(manager)
+			})
 		})
 		manager.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 			switch event.Key() {
@@ -983,15 +972,22 @@ func (ui *tviewUI) saveServicesEdit(state *tviewServicesEditState) {
 			continue
 		}
 		settings.Services = append(settings.Services, application.ServiceNameSetting{
-			OriginalName:   row.original,
-			Name:           strings.TrimSpace(row.name),
-			ConnectionString: strings.TrimSpace(row.connectionString),
+			OriginalName:     row.original,
+			Name:             strings.TrimSpace(row.name),
+			ConnectionString: row.connectionString,
 		})
 	}
 	result, err := ui.updateServices(ui.request, settings)
 	ui.applyServicesSaveResult(result, err)
 	if err == nil {
 		state.rows = updateRowsAfterSave(state.rows)
+		for i := range state.rows {
+			row := &state.rows[i]
+			if row.connectionString != nil {
+				row.hasConnection = *row.connectionString != ""
+				row.connectionString = nil
+			}
+		}
 	}
 }
 
@@ -1032,9 +1028,13 @@ func (ui *tviewUI) showServicesManager(state *tviewServicesEditState) {
 				action = "Restore"
 			}
 			manager.SetCell(index+1, 0, managerCell(emptyDash(strings.TrimSpace(row.name)), textStyle).SetExpansion(2))
-			connDisplay := emptyDash(strings.TrimSpace(row.connectionString))
-			if len(connDisplay) > 30 {
-				connDisplay = connDisplay[:27] + "..."
+			configured := row.hasConnection
+			if row.connectionString != nil {
+				configured = *row.connectionString != ""
+			}
+			connDisplay := "-"
+			if configured {
+				connDisplay = "Set"
 			}
 			manager.SetCell(index+1, 1, managerCell(connDisplay, textStyle).SetExpansion(2))
 			manager.SetCell(index+1, 2, managerCell(action, tcell.StyleDefault.Foreground(tcell.ColorYellow)).SetAlign(tview.AlignRight).SetExpansion(1))
@@ -1053,14 +1053,21 @@ func (ui *tviewUI) showServicesManager(state *tviewServicesEditState) {
 		if column == 0 {
 			ui.openNameEdit(" Edit Service ", state.rows[row-1].name, func(name string) {
 				state.rows[row-1].name = name
-				ui.showServicesManager(state)
+				render()
 			})
 			return
 		}
 		if column == 1 {
-			ui.openNameEdit(" Edit Connection String ", state.rows[row-1].connectionString, func(connStr string) {
-				state.rows[row-1].connectionString = connStr
-				ui.showServicesManager(state)
+			var draft string
+			if pending := state.rows[row-1].connectionString; pending != nil {
+				draft = *pending
+			}
+			form := tview.NewForm().AddPasswordField("Connection", draft, tviewEditModalInputWidth, '*', nil)
+			help := tview.NewTextView().SetTextColor(tcell.ColorGray).SetText("Apply empty to clear; Esc to keep unchanged.")
+			ui.showChildForm(form, help, " Edit Connection String ", 82, 18, func() {
+				value := form.GetFormItem(0).(*tview.InputField).GetText()
+				state.rows[row-1].connectionString = &value
+				render()
 			})
 		}
 	})
@@ -1099,8 +1106,11 @@ func (ui *tviewUI) showServicesManager(state *tviewServicesEditState) {
 
 func (ui *tviewUI) showEntitiesManager(state *tviewEntitiesEditState) {
 	serviceNames := serviceSummaryNames(ui.plan.Config.Services)
-	header := serviceManagerHeader(state.serviceName, "s service")
-	manager := ui.newManagerTable([]string{"Name", "Actions"})
+	header := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(serviceManagerHeader(state.serviceName, "s service"), 1, 0, false).
+		AddItem(tview.NewTextView().SetTextColor(tcell.ColorGray).
+			SetText("Fields: primitives. Value Objects: reusable types."), 1, 0, false)
+	manager := ui.newManagerTable([]string{"Name", "Fields", "Delete"})
 	render := func() {
 		for manager.GetRowCount() > 1 {
 			manager.RemoveRow(1)
@@ -1111,31 +1121,30 @@ func (ui *tviewUI) showEntitiesManager(state *tviewEntitiesEditState) {
 		}
 		for index, row := range state.rows {
 			textStyle := tcell.StyleDefault.Foreground(tcell.ColorWhite)
-			action := "Fields | Delete"
+			action := "Delete"
+			fieldsStyle := tcell.StyleDefault.Foreground(tcell.ColorYellow)
 			if row.deleted {
 				textStyle = tcell.StyleDefault.Foreground(tcell.ColorGray)
 				action = "Restore"
 			}
+			if row.deleted || row.original == "" {
+				fieldsStyle = textStyle.Foreground(tcell.ColorGray)
+			}
 			manager.SetCell(index+1, 0, managerCell(emptyDash(strings.TrimSpace(row.name)), textStyle).SetExpansion(2))
-			manager.SetCell(index+1, 1, managerCell(action, tcell.StyleDefault.Foreground(tcell.ColorYellow)).SetAlign(tview.AlignRight).SetExpansion(1))
+			manager.SetCell(index+1, 1, managerCell("Fields", fieldsStyle))
+			manager.SetCell(index+1, 2, managerCell(action, tcell.StyleDefault.Foreground(tcell.ColorYellow)))
 		}
 	}
 	render()
-	footer := tview.NewTextView().SetDynamicColors(true).SetTextColor(tcell.ColorGray)
-	footer.SetText(" Fields: add primitive properties (string, int, Guid) to this entity. For reusable validated types, use Value Objects instead. ")
 	manager.SetSelectedFunc(func(row, column int) {
 		if row <= 0 || row > len(state.rows) {
 			return
 		}
 		if column == 1 {
-			// Check if clicking on "Fields" part of the action
-			row, col := manager.GetSelection()
-			cell := manager.GetCell(row, col)
-			if cell != nil && !state.rows[row-1].deleted {
-				// If not deleted, default to Fields action for simplicity
-				ui.openFieldsFromEntityState(state, row-1)
-				return
-			}
+			ui.openFieldsFromEntityState(state, row-1)
+			return
+		}
+		if column == 2 {
 			state.rows[row-1].deleted = !state.rows[row-1].deleted
 			render()
 			return
@@ -1143,7 +1152,7 @@ func (ui *tviewUI) showEntitiesManager(state *tviewEntitiesEditState) {
 		if column == 0 {
 			ui.openNameEdit(" Edit Entity ", state.rows[row-1].name, func(name string) {
 				state.rows[row-1].name = name
-				ui.showEntitiesManager(state)
+				render()
 			})
 		}
 	})
@@ -1204,7 +1213,9 @@ func (ui *tviewUI) openFieldsFromEntityState(state *tviewEntitiesEditState, inde
 	}
 	for _, entity := range service.Entities {
 		if entity.Name == state.rows[index].original {
+			back := ui.parentEditor()
 			ui.showFieldsManager(tviewFieldsStateFromEntity(state.serviceName, entity))
+			ui.editBack = back
 			return
 		}
 	}
@@ -1227,7 +1238,7 @@ func (ui *tviewUI) showFieldsManager(state *tviewFieldsEditState) {
 		ui.openFieldEdit(" Edit Field ", state.rows[row-1], func(updated tviewManagerRow) {
 			state.rows[row-1].name = updated.name
 			state.rows[row-1].typeName = updated.typeName
-			ui.showFieldsManager(state)
+			render()
 		})
 	})
 	manager.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
@@ -1260,7 +1271,7 @@ func (ui *tviewUI) showFieldsManager(state *tviewFieldsEditState) {
 	}}, {"Save", func() {
 		ui.saveFieldsEdit(state)
 		render()
-	}}, {"Cancel", ui.closeEdit}}))
+	}}, {"Cancel", ui.backFromEdit}}))
 }
 
 func (ui *tviewUI) showValueObjectsManager(state *tviewValueObjectsEditState) {
@@ -1281,7 +1292,7 @@ func (ui *tviewUI) showValueObjectsManager(state *tviewValueObjectsEditState) {
 		ui.openFieldEdit(" Edit Value Object ", state.rows[row-1], func(updated tviewManagerRow) {
 			state.rows[row-1].name = updated.name
 			state.rows[row-1].typeName = updated.typeName
-			ui.showValueObjectsManager(state)
+			render()
 		})
 	})
 	manager.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
@@ -1362,7 +1373,7 @@ func (ui *tviewUI) showRelationshipsManager(state *tviewRelationshipsEditState) 
 			render()
 			return
 		}
-		ui.openRelationshipEdit(" Edit Relationship ", state, row-1)
+		ui.openRelationshipEdit(" Edit Relationship ", state, row-1, render)
 	})
 	manager.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
@@ -1402,7 +1413,7 @@ func (ui *tviewUI) showRelationshipsManager(state *tviewRelationshipsEditState) 
 	}}, {"Cancel", ui.closeEdit}}))
 }
 
-func (ui *tviewUI) openRelationshipEdit(title string, state *tviewRelationshipsEditState, index int) {
+func (ui *tviewUI) openRelationshipEdit(title string, state *tviewRelationshipsEditState, index int, render func()) {
 	if index < 0 || index >= len(state.rows) || state.rows[index].deleted {
 		return
 	}
@@ -1420,7 +1431,7 @@ func (ui *tviewUI) openRelationshipEdit(title string, state *tviewRelationshipsE
 	form.AddCheckbox("Required", row.required, func(checked bool) { row.required = checked })
 	addEditInputField(form, "Principal navigation", row.principalNavigation)
 	addEditInputField(form, "Dependent navigation", row.dependentNavigation)
-	form.AddButton("Apply", func() {
+	ui.showEditForm(form, title, func() {
 		row.name = formInputTextByLabel(form, "Name")
 		row.foreignKeyName = formInputTextByLabel(form, "Foreign key name")
 		row.foreignKeyType = trimmedDefault(formInputTextByLabel(form, "Foreign key type"), "Guid")
@@ -1428,10 +1439,8 @@ func (ui *tviewUI) openRelationshipEdit(title string, state *tviewRelationshipsE
 		row.principalNavigation = formInputTextByLabel(form, "Principal navigation")
 		row.dependentNavigation = formInputTextByLabel(form, "Dependent navigation")
 		state.rows[index] = row
-		ui.showRelationshipsManager(state)
+		render()
 	})
-	form.AddButton("Cancel", func() { ui.showRelationshipsManager(state) })
-	ui.showEditForm(form, title)
 }
 
 func (ui *tviewUI) newTViewRelationshipRow(serviceName string, count int) tviewRelationshipRow {
@@ -1484,7 +1493,8 @@ func (ui *tviewUI) openRulesFromValueObjectState(state *tviewValueObjectsEditSta
 	ui.showValueObjectRulesManager(&tviewValueObjectRulesEditState{
 		serviceName: state.serviceName,
 		valueObject: application.ValueObjectSummary{Name: strings.TrimSpace(row.name), Type: trimmedDefault(row.typeName, "string")},
-		rows:        append([]tviewManagerRow(nil), state.rows...),
+		rows:        state.rows,
+		index:       index,
 		validations: row.validations,
 	})
 }
@@ -1512,58 +1522,13 @@ func (ui *tviewUI) showValueObjectRulesManager(state *tviewValueObjectRulesEditS
 	form.AddTextView("", "[darkcyan]── State Checks ──", 0, 1, true, false)
 	form.AddCheckbox("Not empty", notEmpty, func(checked bool) { state.validations.NotEmpty = &checked })
 	form.AddCheckbox("Not default", notDefault, func(checked bool) { state.validations.NotDefault = &checked })
-	statusText := tview.NewTextView().SetDynamicColors(true).SetTextAlign(tview.AlignCenter)
-	saveAndShowStatus := func() {
-		ui.saveValueObjectRulesEdit(state, form)
-		if ui.err == nil {
-			statusText.SetText("[green]Rules saved successfully.[white]")
-		} else {
-			statusText.SetText("[red]" + ui.message + "[white]")
-		}
-	}
-	form.AddButton("Save", saveAndShowStatus)
-	form.AddButton("Cancel", ui.closeEdit)
-	form.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyCtrlS {
-			saveAndShowStatus()
-			return nil
-		}
-		return event
+	ui.showChildForm(form, context, fmt.Sprintf(" Rules: %s/%s ", state.serviceName, state.valueObject.Name), 76, 28, func() {
+		applyValueObjectRulesEdit(state, form)
 	})
-	footer := tview.NewTextView().SetDynamicColors(true).SetTextColor(tcell.ColorGray)
-	footer.SetText("Tab focus  Space toggle  ctrl+s/Save apply  esc cancel")
-	body := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(context, 1, 0, false).
-		AddItem(form, 0, 1, true).
-		AddItem(statusText, 1, 0, false).
-		AddItem(footer, 1, 0, false)
-	panel := tview.NewFrame(body).SetBorders(1, 1, 0, 1, 1, 1)
-	panel.SetBorder(true).SetTitle(fmt.Sprintf(" Rules: %s/%s ", state.serviceName, state.valueObject.Name)).SetTitleAlign(tview.AlignLeft)
-	panel.SetBorderColor(tcell.ColorTeal).SetTitleColor(tcell.ColorLightCyan)
-	modal := centerPrimitive(panel, 76, 28)
-	ui.editOpen = true
-	ui.modalFocus = ui.modalFocus[:0]
-	ui.modalFocusIndex = 0
-	ui.root.RemovePage(tviewEditModalPage)
-	ui.root.AddPage(tviewEditModalPage, modal, true, true)
-	ui.app.SetFocus(form)
 }
 
-func (ui *tviewUI) saveValueObjectRulesEdit(state *tviewValueObjectRulesEditState, form *tview.Form) {
-	if ui.updateValueObjects == nil {
-		ui.message = "Value object editing is not available."
-		return
-	}
-	validations := validationRuleSettingsFromRulesForm(state.valueObject.Type, form)
-	valueObjectName := strings.TrimSpace(state.valueObject.Name)
-	for index := range state.rows {
-		if strings.TrimSpace(state.rows[index].name) == valueObjectName {
-			state.rows[index].validations = validations
-			break
-		}
-	}
-	result, err := ui.updateValueObjects(ui.request, tviewValueObjectSettingsFromState(&tviewValueObjectsEditState{serviceName: state.serviceName, rows: state.rows}))
-	ui.applyValueObjectsSaveResult(result, err)
+func applyValueObjectRulesEdit(state *tviewValueObjectRulesEditState, form *tview.Form) {
+	state.rows[state.index].validations = validationRuleSettingsFromRulesForm(state.valueObject.Type, form)
 }
 
 func validationRuleSettingsFromRulesForm(valueObjectType string, form *tview.Form) application.ValidationRuleSettings {
@@ -1591,44 +1556,87 @@ func validationRuleSettingsFromRulesForm(valueObjectType string, form *tview.For
 	}
 }
 
-func (ui *tviewUI) showEditForm(form *tview.Form, title string) {
-	ui.modalFocus = ui.modalFocus[:0]
-	ui.modalFocusIndex = 0
-	form.SetBorder(false)
+func (ui *tviewUI) showEditForm(form *tview.Form, title string, apply func()) {
+	ui.showChildForm(form, nil, title, 82, 18, apply)
+}
+
+func (ui *tviewUI) showChildForm(form *tview.Form, header tview.Primitive, title string, width, height int, apply func()) {
+	ui.editBack = ui.parentEditor()
+	ui.childApply = func() {
+		apply()
+		ui.backFromEdit()
+	}
+	form.AddButton("Apply", ui.childApply)
+	form.AddButton("Cancel", ui.backFromEdit)
+	form.SetCancelFunc(ui.backFromEdit)
 	form.SetFieldTextColor(tcell.ColorWhite).
 		SetLabelColor(tcell.ColorLightCyan).
 		SetButtonTextColor(tcell.ColorBlack).
 		SetButtonBackgroundColor(tcell.ColorTeal)
-	form.SetCancelFunc(ui.closeEdit)
-	
-	// Add keyboard navigation for up/down in form
-	form.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		switch event.Key() {
-		case tcell.KeyUp, tcell.KeyDown:
-			// Let tview handle up/down navigation naturally
-			return event
-		}
-		return event
-	})
-	
-	// Add mouse support for form interactions
+	form.SetBorderPadding(0, 0, 1, 1)
+	configureEditButtons(form)
+	// Native form drawing scrolls to keep the focused control visible.
 	form.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
-		if action == tview.MouseLeftClick {
-			// Let tview handle clicks naturally
+		x, y := event.Position()
+		if (action != tview.MouseScrollUp && action != tview.MouseScrollDown) || !form.InRect(x, y) {
 			return action, event
 		}
-		return action, event
+		if _, listOpen := ui.app.GetFocus().(*tview.List); listOpen {
+			return action, nil // Do not move form focus away from an open dropdown.
+		}
+		delta := 1
+		if action == tview.MouseScrollUp {
+			delta = -1
+		}
+		item, button := form.GetFocusedItemIndex()
+		if button >= 0 {
+			item = form.GetFormItemCount() + button
+		}
+		for next := item + delta; next >= 0 && next < form.GetFormItemCount()+form.GetButtonCount(); next += delta {
+			if next < form.GetFormItemCount() {
+				if _, readOnly := form.GetFormItem(next).(*tview.TextView); readOnly {
+					continue
+				}
+			}
+			ui.app.SetFocus(form.SetFocus(next))
+			break
+		}
+		return action, nil
 	})
-	panel := tview.NewFrame(form).
-		SetBorders(1, 1, 0, 1, 2, 2).
-		AddText("Tab next  Shift+Tab previous  Enter activate  Esc cancel", false, tview.AlignCenter, tcell.ColorGray)
+	body := tview.NewFlex().SetDirection(tview.FlexRow)
+	if header != nil {
+		body.AddItem(header, 1, 0, false)
+	}
+	body.AddItem(form, 0, 1, true)
+	panel := tview.NewFrame(body).
+		SetBorders(0, 0, 0, 0, 1, 1).
+		AddText("Tab next  Ctrl+S Apply  Esc cancel", false, tview.AlignCenter, tcell.ColorGray)
 	panel.SetBorder(true).SetTitle(title).SetTitleAlign(tview.AlignLeft)
 	panel.SetBorderColor(tcell.ColorTeal).SetTitleColor(tcell.ColorLightCyan)
-	modal := centerPrimitive(panel, 82, 18)
 	ui.editOpen = true
+	ui.modalFocus = nil
+	ui.modalFocusIndex = 0
 	ui.root.RemovePage(tviewEditModalPage)
-	ui.root.AddPage(tviewEditModalPage, modal, true, true)
+	ui.root.AddPage(tviewEditModalPage, centerPrimitive(panel, width, height), true, true)
 	ui.app.SetFocus(form)
+}
+
+func configureEditButtons(form *tview.Form) {
+	for i := 0; i < form.GetButtonCount(); i++ {
+		button := form.GetButton(i)
+		button.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+			x, y := event.Position()
+			if button.InRect(x, y) {
+				switch action {
+				case tview.MouseLeftClick:
+					return action, nil // Native mouse-down already focused the button.
+				case tview.MouseLeftDoubleClick:
+					return tview.MouseLeftClick, event
+				}
+			}
+			return action, event
+		})
+	}
 }
 
 type managerButton struct {
@@ -1644,6 +1652,16 @@ func (ui *tviewUI) newManagerTable(headers []string) *tview.Table {
 		table.SetCell(0, column, tview.NewTableCell(header).SetTextColor(tcell.ColorLightCyan).SetSelectable(false).SetExpansion(1))
 	}
 	table.Select(1, 0)
+	table.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+		x, y := event.Position()
+		if action == tview.MouseLeftDoubleClick && table.InRect(x, y) {
+			row, column := table.CellAt(x, y)
+			if selectedRow, selectedColumn := table.GetSelection(); row > 0 && row == selectedRow && column == selectedColumn {
+				table.InputHandler()(tcell.NewEventKey(tcell.KeyEnter, 0, tcell.ModNone), func(p tview.Primitive) { ui.app.SetFocus(p) })
+			}
+		}
+		return action, event
+	})
 	return table
 }
 
@@ -1819,15 +1837,16 @@ type tviewManagerFooter struct {
 }
 
 func managerFooter(shortcuts string, buttons []managerButton) *tviewManagerFooter {
-	form := tview.NewForm()
-	form.SetBorder(false)
+	form := tview.NewForm().SetHorizontal(true)
+	form.SetBorderPadding(0, 0, 0, 0)
 	form.SetButtonTextColor(tcell.ColorBlack).SetButtonBackgroundColor(tcell.ColorTeal)
 	for _, button := range buttons {
 		form.AddButton(button.label, button.run)
 	}
+	configureEditButtons(form)
 	view := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(tview.NewTextView().SetDynamicColors(true).SetText("[gray]"+shortcuts), 1, 0, false).
-		AddItem(form, 1, 0, false)
+		AddItem(form, 0, 1, false)
 	return &tviewManagerFooter{view: view, form: form}
 }
 
@@ -1838,11 +1857,17 @@ func (ui *tviewUI) showManagerModal(title string, header tview.Primitive, header
 	}
 	body.AddItem(manager, 0, 1, true).AddItem(footer.view, 3, 0, false)
 	panel := tview.NewFrame(body).SetBorders(1, 1, 0, 1, 1, 1)
+	panel.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+		if ui.servicePickerReturnFocus != nil {
+			return action, nil
+		}
+		return action, event
+	})
 	panel.SetBorder(true).SetTitle(title).SetTitleAlign(tview.AlignLeft)
 	panel.SetBorderColor(tcell.ColorTeal).SetTitleColor(tcell.ColorLightCyan)
 	modal := centerPrimitive(panel, 86, 22)
 	ui.editOpen = true
-	ui.modalFocus = ui.modalFocus[:0]
+	ui.modalFocus = nil
 	if headerFocus != nil {
 		ui.modalFocus = append(ui.modalFocus, headerFocus)
 	}
@@ -1853,29 +1878,21 @@ func (ui *tviewUI) showManagerModal(title string, header tview.Primitive, header
 	ui.app.SetFocus(ui.modalFocus[ui.modalFocusIndex])
 }
 
-func (ui *tviewUI) openNameEdit(title, value string, save func(string), cancel ...func()) {
-	cancelFunc := ui.closeEdit
-	if len(cancel) > 0 {
-		cancelFunc = cancel[0]
-	}
+func (ui *tviewUI) openNameEdit(title, value string, save func(string)) {
 	form := tview.NewForm()
 	addEditInputField(form, "Name", value)
-	form.AddButton("Apply", func() { save(formInputText(form, 0)) })
-	form.AddButton("Cancel", cancelFunc)
-	ui.showEditForm(form, title)
+	ui.showEditForm(form, title, func() { save(formInputText(form, 0)) })
 }
 
 func (ui *tviewUI) openFieldEdit(title string, row tviewManagerRow, save func(tviewManagerRow)) {
 	form := tview.NewForm()
 	addEditInputField(form, "Name", row.name)
 	addEditInputField(form, "Type", trimmedDefault(row.typeName, "string"))
-	form.AddButton("Apply", func() {
+	ui.showEditForm(form, title, func() {
 		row.name = formInputText(form, 0)
 		row.typeName = formInputText(form, 1)
 		save(row)
 	})
-	form.AddButton("Cancel", ui.closeEdit)
-	ui.showEditForm(form, title)
 }
 
 func tviewServicesStateFromPlan(plan application.GenerationPlan) *tviewServicesEditState {
@@ -1884,12 +1901,9 @@ func tviewServicesStateFromPlan(plan application.GenerationPlan) *tviewServicesE
 		services = serviceSummaryNames(plan.Config.Services)
 	}
 	state := &tviewServicesEditState{rows: make([]tviewManagerRow, 0, len(services))}
-	for i, name := range services {
-		connStr := ""
-		if i < len(plan.Config.Services) {
-			connStr = plan.Config.Services[i].ConnectionString
-		}
-		state.rows = append(state.rows, tviewManagerRow{original: name, name: name, connectionString: connStr})
+	for _, name := range services {
+		summary, _ := serviceSummaryByName(plan.Config.Services, name)
+		state.rows = append(state.rows, tviewManagerRow{original: name, name: name, hasConnection: summary.HasConnectionString})
 	}
 	return state
 }
@@ -2032,7 +2046,33 @@ func boolRulePointerFromFormLabel(form *tview.Form, label string) *bool {
 	return &checked
 }
 
+// Retain the actual parent primitive so its viewport and selection survive.
+func (ui *tviewUI) parentEditor() func() {
+	if !ui.editOpen {
+		return nil
+	}
+	_, page := ui.root.GetFrontPage()
+	focus, modalFocus, index := ui.app.GetFocus(), ui.modalFocus, ui.modalFocusIndex
+	back, apply := ui.editBack, ui.childApply
+	return func() {
+		ui.editBack, ui.childApply = back, apply
+		ui.modalFocus, ui.modalFocusIndex = modalFocus, index
+		ui.root.RemovePage(tviewEditModalPage)
+		ui.root.AddPage(tviewEditModalPage, page, true, true)
+		ui.app.SetFocus(focus)
+	}
+}
+
+func (ui *tviewUI) backFromEdit() {
+	if ui.editBack != nil {
+		ui.editBack()
+		return
+	}
+	ui.closeEdit()
+}
+
 func (ui *tviewUI) closeEdit() {
+	ui.editBack, ui.childApply = nil, nil
 	ui.editOpen = false
 	ui.modalFocus = nil
 	ui.modalFocusIndex = 0
@@ -2043,14 +2083,25 @@ func (ui *tviewUI) closeEdit() {
 	ui.refresh()
 }
 
+type centeredModal struct {
+	*tview.Flex
+	row           *tview.Flex
+	content       tview.Primitive
+	width, height int
+}
+
+func (modal *centeredModal) Draw(screen tcell.Screen) {
+	_, _, width, height := modal.GetRect()
+	modal.ResizeItem(modal.row, min(modal.height, height), 0)
+	modal.row.ResizeItem(modal.content, min(modal.width, width), 0)
+	modal.Flex.Draw(screen)
+}
+
 func centerPrimitive(primitive tview.Primitive, width, height int) tview.Primitive {
-	return tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(nil, 0, 1, false).
-		AddItem(tview.NewFlex().
-			AddItem(nil, 0, 1, false).
-			AddItem(primitive, width, 0, true).
-			AddItem(nil, 0, 1, false), height, 0, true).
-		AddItem(nil, 0, 1, false)
+	row := tview.NewFlex().AddItem(nil, 0, 1, false).AddItem(primitive, width, 0, true).AddItem(nil, 0, 1, false)
+	column := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(nil, 0, 1, false).AddItem(row, height, 0, true).AddItem(nil, 0, 1, false)
+	return &centeredModal{Flex: column, row: row, content: primitive, width: width, height: height}
 }
 
 func (ui *tviewUI) closeEditWithMessage(message string) {
@@ -2323,7 +2374,10 @@ func (ui *tviewUI) renderSidebar() {
 			prefix = "> "
 			color = tcell.ColorLightCyan
 		}
-		ui.sidebar.SetCell(row, 0, tview.NewTableCell(prefix+route.label).SetTextColor(color).SetExpansion(1))
+		ui.sidebar.SetCell(row, 0, tview.NewTableCell(prefix+route.label).SetTextColor(color).SetExpansion(1).SetClickedFunc(func() bool {
+			ui.open(route.screen)
+			return true
+		}))
 	}
 	ui.sidebar.Select(int(ui.screen), 0)
 }

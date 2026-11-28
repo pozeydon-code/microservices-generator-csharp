@@ -1,13 +1,17 @@
 package application
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/pozeydon-code/microservices-generator-csharp/internal/configloader"
 	"github.com/pozeydon-code/microservices-generator-csharp/internal/spec"
 )
 
@@ -72,6 +76,7 @@ func TestServicePlanGenerationReturnsUIReadyFileListWithoutWriting(t *testing.T)
 		SolutionDescription: "Product management.",
 		TargetFramework:     "net8.0",
 		SolutionFormat:      "sln",
+		GenerationMode:      "enterprise",
 		ServiceCount:        2,
 		EntityCount:         3,
 		ValueObjectCount:    3,
@@ -295,6 +300,154 @@ func TestServiceUpdateSolutionSettingsRejectsInvalidSettingsWithoutSaving(t *tes
 			}
 			if gen.called {
 				t.Fatal("expected invalid settings not to regenerate plan")
+			}
+		})
+	}
+}
+
+func TestServiceUpdateConnectionStringsByName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "microgen.json")
+	cfg := validPersistableConfig()
+	cfg.Services[0].ConnectionString = "SyntheticFirst"
+	other := cfg.Services[0]
+	other.Name = "SecondService"
+	other.ConnectionString = "SyntheticSecond"
+	cfg.Services = append(cfg.Services, other)
+	if err := configloader.SaveJSON(path, cfg); err != nil {
+		t.Fatal("seed config failed")
+	}
+	service := NewService(Ports{ConfigLoader: modeTestJSONStore{}, ConfigSaver: modeTestJSONStore{}, ConfigValidator: specValidator{}, Generator: &fakeGenerator{}, OutputPlanner: fakeOutputPlanner{}})
+	result, err := service.UpdateServiceSettings(GenerateRequest{ConfigPath: path, OutputDir: t.TempDir()}, ServiceSettings{Services: []ServiceNameSetting{
+		{Name: other.Name}, {OriginalName: cfg.Services[0].Name, Name: "RenamedService"},
+	}})
+	if err != nil || !result.Saved || result.PlanError != nil {
+		t.Fatal("service update failed")
+	}
+	loaded, err := configloader.LoadJSON(path)
+	if err != nil || len(loaded.Services) != 2 || loaded.Services[0].Name != other.Name || loaded.Services[0].ConnectionString != other.ConnectionString || loaded.Services[1].Name != "RenamedService" || loaded.Services[1].ConnectionString != cfg.Services[0].ConnectionString {
+		t.Fatal("omitted updates did not preserve both strings by service name")
+	}
+	for _, summary := range []ConfigSummary{result.Config, result.Plan.Config} {
+		if len(summary.Services) != 2 || !summary.Services[0].HasConnectionString || !summary.Services[1].HasConnectionString {
+			t.Fatal("summaries did not retain connection status")
+		}
+		if text := fmt.Sprintf("%+v", summary); strings.Contains(text, cfg.Services[0].ConnectionString) || strings.Contains(text, other.ConnectionString) {
+			t.Fatal("summary disclosed a connection string")
+		}
+	}
+	blank, replacement := "", "  SyntheticReplacement  "
+	result, err = service.UpdateServiceSettings(GenerateRequest{ConfigPath: path, OutputDir: t.TempDir()}, ServiceSettings{Services: []ServiceNameSetting{
+		{Name: "RenamedService", ConnectionString: &replacement}, {Name: other.Name, ConnectionString: &blank},
+	}})
+	if err != nil || !result.Saved || result.PlanError != nil {
+		t.Fatal("explicit connection update failed")
+	}
+	loaded, err = configloader.LoadJSON(path)
+	if err != nil || len(loaded.Services) != 2 || loaded.Services[0].Name != "RenamedService" || loaded.Services[0].ConnectionString != replacement || loaded.Services[1].Name != other.Name || loaded.Services[1].ConnectionString != "" {
+		t.Fatal("replacement and explicit clear did not round-trip by name")
+	}
+}
+
+func TestServiceConnectionUpdateRejectsInvalidNameThenGenerates(t *testing.T) {
+	service, err := DefaultService()
+	if err != nil {
+		t.Fatal("default service unavailable")
+	}
+	dir := t.TempDir()
+	request := GenerateRequest{ConfigPath: filepath.Join(dir, "microgen.json"), OutputDir: filepath.Join(dir, "generated")}
+	cfg := validPersistableConfig()
+	cfg.Services[0].ConnectionString = "SyntheticInitialMarker"
+	if err := configloader.SaveJSON(request.ConfigPath, cfg); err != nil {
+		t.Fatal("seed failed")
+	}
+	digest := func() [32]byte {
+		data, err := os.ReadFile(request.ConfigPath)
+		if err != nil {
+			t.Fatal("config read failed")
+		}
+		return sha256.Sum256(data)
+	}
+	before := digest()
+	replacement := "SyntheticMarker<>&\u2028;\\\"\n\t"
+	name := cfg.Services[0].Name
+	update := func(nextName string) (UpdateServiceSettingsResult, error) {
+		return service.UpdateServiceSettings(request, ServiceSettings{Services: []ServiceNameSetting{{OriginalName: name, Name: nextName, ConnectionString: &replacement}}})
+	}
+	result, err := update("1Invalid")
+	if err == nil || !strings.Contains(err.Error(), "valid C# identifier") || strings.Contains(err.Error(), "Synthetic") || result.Saved || digest() != before {
+		t.Fatal("rejection leaked, saved, or returned the wrong error")
+	}
+	result, err = update(name)
+	if err != nil || !result.Saved || result.PlanError != nil {
+		t.Fatal("update failed")
+	}
+	if data, err := json.Marshal(result); err != nil || strings.Contains(string(data), "Synthetic") {
+		t.Fatal("update or plan summary leaked")
+	}
+	if _, err := service.Generate(request); err != nil {
+		t.Fatal("generate failed")
+	}
+	for _, file := range []string{"appsettings.json", "appsettings.Development.json"} {
+		data, err := os.ReadFile(filepath.Join(request.OutputDir, name, "src", name+".WebApi", file))
+		if err != nil {
+			t.Fatalf("missing %s", file)
+		}
+		var settings struct{ ConnectionStrings map[string]string }
+		if json.Unmarshal(data, &settings) != nil || settings.ConnectionStrings["DefaultConnection"] != replacement {
+			t.Fatalf("%s did not round-trip", file)
+		}
+	}
+}
+
+type modeTestJSONStore struct{}
+
+func (modeTestJSONStore) LoadConfig(path string) (spec.Config, error) {
+	return configloader.LoadJSON(path)
+}
+
+func (modeTestJSONStore) SaveConfig(path string, cfg spec.Config) error {
+	return configloader.SaveJSON(path, cfg)
+}
+
+func TestServiceUpdateSolutionSettingsPersistsMode(t *testing.T) {
+	for _, tt := range []struct{ name, initial, update, want string }{
+		{"simple", "enterprise", "simple", "simple"},
+		{"enterprise", "simple", "enterprise", "enterprise"},
+		{"omitted", "simple", "", "simple"},
+		{"invalid", "simple", "invalid", "simple"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "microgen.json")
+			cfg := validPersistableConfig()
+			cfg.Generation.Mode = tt.initial
+			if err := configloader.SaveJSON(path, cfg); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gen := &fakeGenerator{}
+			service := NewService(Ports{ConfigLoader: modeTestJSONStore{}, ConfigSaver: modeTestJSONStore{}, ConfigValidator: specValidator{}, Generator: gen, OutputPlanner: fakeOutputPlanner{}})
+			result, err := service.UpdateSolutionSettings(GenerateRequest{ConfigPath: path, OutputDir: t.TempDir()}, SolutionSettings{
+				SolutionName: cfg.Solution.Name, SolutionDescription: "Updated description.", TargetFramework: cfg.TargetFramework(), GenerationMode: tt.update,
+			})
+			if tt.name == "invalid" {
+				if err == nil || err.Error() != "invalid config:\n- generation.mode must be simple or enterprise" || result.Saved || gen.called {
+					t.Fatalf("invalid update did not fail before save and replan: saved=%v planned=%v err=%v", result.Saved, gen.called, err)
+				}
+				after, err := os.ReadFile(path)
+				if err != nil || string(after) != string(before) {
+					t.Fatalf("invalid update changed the config file (read error: %v)", err)
+				}
+				return
+			}
+			if err != nil || !result.Saved || result.PlanError != nil || result.Config.GenerationMode != tt.want || !gen.called {
+				t.Fatalf("mode update did not save and replan: saved=%v mode=%q err=%v plan error=%v", result.Saved, result.Config.GenerationMode, err, result.PlanError)
+			}
+			loaded, err := configloader.LoadJSON(path)
+			if err != nil || loaded.Generation.Mode != tt.want || loaded.Solution.Description != "Updated description." {
+				t.Fatalf("disk did not preserve the expected mode and unrelated update: mode=%q err=%v", loaded.Generation.Mode, err)
 			}
 		})
 	}

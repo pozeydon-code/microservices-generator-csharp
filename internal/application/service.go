@@ -80,9 +80,9 @@ type ServiceSettings struct {
 }
 
 type ServiceNameSetting struct {
-	OriginalName   string
-	Name           string
-	ConnectionString string
+	OriginalName     string
+	Name             string
+	ConnectionString *string // nil preserves the stored value; an empty string clears it.
 }
 
 type EntitySettings struct {
@@ -223,7 +223,7 @@ type ConfigSummary struct {
 
 type ServiceSummary struct {
 	Name                  string
-	ConnectionString      string
+	HasConnectionString   bool
 	EntityNames           []string
 	ValueObjectNames      []string
 	ValueObjects          []ValueObjectSummary
@@ -600,27 +600,22 @@ func updatedServices(existing []spec.Service, settings []ServiceNameSetting) []s
 	services := make([]spec.Service, 0, len(settings))
 	used := make([]bool, len(existing))
 	for _, setting := range settings {
+		var service spec.Service
+		var found bool
 		if setting.OriginalName != "" {
-			if service, ok := serviceByName(existing, used, setting.OriginalName); ok {
-				service.Name = setting.Name
-				if setting.ConnectionString != "" {
-					service.ConnectionString = setting.ConnectionString
-				}
-				services = append(services, service)
-				continue
-			}
+			service, found = serviceByName(existing, used, setting.OriginalName)
 		}
-		if service, ok := serviceByName(existing, used, setting.Name); ok {
-			if setting.ConnectionString != "" {
-				service.ConnectionString = setting.ConnectionString
-			}
-			services = append(services, service)
-			continue
+		if !found {
+			service, found = serviceByName(existing, used, setting.Name)
 		}
-		services = append(services, defaultServiceForName(setting.Name))
-		if setting.ConnectionString != "" {
-			services[len(services)-1].ConnectionString = setting.ConnectionString
+		if !found {
+			service = defaultServiceForName(setting.Name)
 		}
+		service.Name = setting.Name
+		if setting.ConnectionString != nil {
+			service.ConnectionString = *setting.ConnectionString
+		}
+		services = append(services, service)
 	}
 	return services
 }
@@ -1032,7 +1027,7 @@ func summarizeConfig(cfg spec.Config) ConfigSummary {
 		for relationshipIndex, relationship := range service.Relationships {
 			relationships[relationshipIndex] = summarizeRelationship(relationship)
 		}
-		summary.Services[index] = ServiceSummary{Name: service.Name, ConnectionString: service.ConnectionString, EntityNames: make([]string, len(service.Entities)), ValueObjectNames: valueObjectNames, ValueObjects: valueObjects, Relationships: relationships, Entities: make([]EntitySummary, len(service.Entities))}
+		summary.Services[index] = ServiceSummary{Name: service.Name, HasConnectionString: service.ConnectionString != "", EntityNames: make([]string, len(service.Entities)), ValueObjectNames: valueObjectNames, ValueObjects: valueObjects, Relationships: relationships, Entities: make([]EntitySummary, len(service.Entities))}
 		for entityIndex, entity := range service.Entities {
 			summary.Services[index].EntityNames[entityIndex] = entity.Name
 			summary.Services[index].Entities[entityIndex] = EntitySummary{Name: entity.Name, Fields: make([]FieldSummary, len(entity.Fields))}
