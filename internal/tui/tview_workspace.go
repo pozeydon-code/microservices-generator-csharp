@@ -133,7 +133,7 @@ func (ui *tviewUI) propertyLines() []string {
 	escape := tview.Escape
 	service, ok := serviceSummaryByName(ui.plan.Config.Services, ui.selection.service)
 	if !ok {
-		return []string{"No services yet. Open Services to add one.", "", readinessLines(ui.plan.Readiness)}
+		return []string{"No services yet. Open Services to add one."}
 	}
 	target := escape(service.Name)
 	index := ui.selectedEntityIndex(service)

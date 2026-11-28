@@ -2381,7 +2381,7 @@ func (ui *tviewUI) finishGeneration(result application.GenerateResult, err error
 	ui.planStale = false
 	ui.message = fmt.Sprintf("Generated %d files in %s.", result.Plan.FileCount, result.OutputDir)
 	if result.Warning != "" {
-		ui.message += " Warning: " + result.Warning
+		ui.message = "Generation completed with a warning. See Result."
 	}
 	ui.open(tviewScreenResult)
 }
@@ -2500,6 +2500,12 @@ func (ui *tviewUI) detailLines() []string {
 	switch ui.screen {
 	case tviewScreenOverview, tviewScreenEntities:
 		lines = ui.propertyLines()
+		if ui.screen == tviewScreenOverview && len(ui.plan.Readiness.Hints) > 0 {
+			lines = append(lines, "", "[yellow]Hints[-]")
+			for _, hint := range ui.plan.Readiness.Hints {
+				lines = append(lines, "  "+tview.Escape(hint))
+			}
+		}
 	case tviewScreenProject:
 		lines = append(lines, "", fmt.Sprintf("Description: %s", emptyDash(ui.plan.Config.SolutionDescription)), fmt.Sprintf("Target Framework: %s", emptyDash(ui.plan.Config.TargetFramework)), fmt.Sprintf("Solution Format: %s", emptyDash(ui.plan.Config.SolutionFormat)), fmt.Sprintf("Gateway: %t", ui.plan.Config.GatewayEnabled), "Press e to edit project settings in this dashboard.")
 	case tviewScreenServices:
@@ -2540,7 +2546,11 @@ func (ui *tviewUI) resultSummary() string {
 	if ui.result.OutputDir == "" {
 		return "No generation has run in this session yet."
 	}
-	return fmt.Sprintf("[green]Generated %d files in %s.[white]", ui.result.Plan.FileCount, ui.result.OutputDir)
+	summary := fmt.Sprintf("[green]Generated %d files in %s.[-]", ui.result.Plan.FileCount, tview.Escape(ui.result.OutputDir))
+	if ui.result.Warning != "" {
+		summary += "\n\n[yellow]Warning:[-] " + tview.Escape(ui.result.Warning)
+	}
+	return summary
 }
 
 func prefixedList(values []string) []string {
@@ -2589,17 +2599,6 @@ func relationshipLines(services []application.ServiceSummary) []string {
 		return []string{"  -"}
 	}
 	return lines
-}
-
-func readinessLines(readiness application.ReadinessSummary) string {
-	lines := []string{fmt.Sprintf("Readiness: services=%d entities=%d fields=%d valueObjects=%d", readiness.ServiceCount, readiness.EntityCount, readiness.FieldCount, readiness.ValueObjectCount)}
-	if len(readiness.Hints) > 0 {
-		lines = append(lines, "", "[yellow]Hints[white]")
-		for _, hint := range readiness.Hints {
-			lines = append(lines, "  "+hint)
-		}
-	}
-	return strings.Join(lines, "\n")
 }
 
 func emptyDash(value string) string {
